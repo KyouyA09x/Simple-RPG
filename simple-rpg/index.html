@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Stick RPG</title>
+<style>
+  /* ---- design tokens ---- */
+  :root {
+    --bg: #0e0e14; --panel: #191922; --panel-2: #21212c; --line: #33334a; --line-soft: #2a2a38;
+    --ink: #eceaf5; --ink-dim: #9a98ad; --accent: #7fd08a; --accent-dim: #3d6b46;
+    --gold: #f5c451; --danger: #e2565a; --focus: #8fb7ff;
+    --r: 10px; --shadow: 0 10px 30px rgba(0,0,0,.55);
+  }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden; color: var(--ink);
+    font-family: "Segoe UI", system-ui, sans-serif; -webkit-font-smoothing: antialiased; }
+  #wrap { position: absolute; left: 50%; transform: translate(-50%, -50%); }   /* size/top set by fit() */
+  #wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  #gl { display: none; }
+  canvas.pixel { image-rendering: pixelated; }
+  #help { position: absolute; bottom: 3px; width: 100%; text-align: center; font-size: 12px; color: #6d6b7d; letter-spacing: .2px; }
+  :fullscreen #help { display: none; }
+
+  /* ---- overlays & panels ---- */
+  .overlay { position: absolute; inset: 0; background: rgba(6,6,10,.72); backdrop-filter: blur(3px);
+    display: none; align-items: center; justify-content: center; padding: 3%; box-sizing: border-box; }
+  .overlay.show { display: flex; animation: fade .14s ease-out; }
+  @keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+  .overlay.clear { background: transparent; backdrop-filter: none; align-items: flex-end; padding-bottom: 5%; }
+  .panel { background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line);
+    border-radius: var(--r); box-shadow: var(--shadow); padding: 22px 26px; min-width: 300px;
+    max-width: 100%; max-height: 100%; overflow: auto; box-sizing: border-box; text-align: center; }
+  .panel.wide { min-width: 560px; }
+  .panel::-webkit-scrollbar { width: 10px }
+  .panel::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px }
+  .panel h2 { margin: 0 0 16px; letter-spacing: 3px; font-size: 20px; font-weight: 700; }
+  .panel h2::after { content: ''; display: block; width: 46px; height: 2px; margin: 9px auto 0;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent); }
+  h3 { margin: 16px 0 6px; font-size: 11px; color: var(--ink-dim); letter-spacing: 1.6px; text-align: left;
+    text-transform: uppercase; border-bottom: 1px solid var(--line-soft); padding-bottom: 5px; }
+
+  button { font: inherit; }
+  .panel button { display: block; width: 100%; margin: 8px 0; padding: 10px; font-size: 15px;
+    background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 8px;
+    cursor: pointer; transition: background .12s, border-color .12s, transform .06s; }
+  .panel button:hover:not(:disabled) { background: #2c2c3b; border-color: #46466a; }
+  .panel button:active:not(:disabled) { transform: translateY(1px); }
+  .panel button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .panel button:disabled { opacity: .35; cursor: default; }
+  .row { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; gap: 16px; font-size: 14px; }
+  .opts { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
+  .opts button { width: auto; margin: 0; padding: 6px 12px; font-size: 13px; }
+  .opts button.on { background: var(--accent-dim); border-color: var(--accent); color: #eaffee; }
+  select, input[type=text] { background: var(--panel-2); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 7px; padding: 7px 9px; font-size: 14px; }
+  select:focus, input:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+  input[type=range] { accent-color: var(--accent); width: 190px; }
+  .hint { font-size: 12px; color: var(--ink-dim); margin-top: 10px; text-align: left; line-height: 1.6; }
+  .hint em { color: var(--gold); font-style: normal; }
+
+  /* ---- level menu ---- */
+  .lvhead { display: flex; justify-content: space-between; align-items: center; gap: 12px;
+    background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 14px; font-size: 14px; }
+  .pts { color: var(--gold); font-weight: 700; font-size: 17px; }
+  .lvcols { display: grid; grid-template-columns: 1.35fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 760px) { .lvcols { grid-template-columns: 1fr } .panel.wide { min-width: 0 } }
+  .stat { display: flex; align-items: center; gap: 10px; margin: 7px 0; text-align: left;
+    background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 10px; }
+  .stat.maxed { border-color: var(--accent-dim); }
+  .stat-main { flex: 1; min-width: 0; }
+  .stat-top { display: flex; align-items: baseline; gap: 7px; font-size: 14px; }
+  .stat-top .stat-val { margin-left: auto; color: var(--ink-dim); font-variant-numeric: tabular-nums; }
+  .tag { font-size: 10px; letter-spacing: 1px; color: var(--accent); border: 1px solid var(--accent-dim);
+    border-radius: 4px; padding: 1px 5px; }
+  .stat small, .sword small, .slot small { color: var(--ink-dim); display: block; font-size: 11px; margin-top: 3px; }
+  .meter { height: 4px; background: #14141c; border-radius: 3px; overflow: hidden; margin: 6px 0 2px; }
+  .meter i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent-dim), var(--accent)); }
+  button.plus { width: 34px !important; height: 34px; margin: 0 !important; padding: 0 !important;
+    font-size: 19px; line-height: 1; flex: none; }
+  .summary { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 6px 12px; }
+  .sumrow { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; padding: 6px 0;
+    border-bottom: 1px solid var(--line-soft); }
+  .sumrow:last-child { border-bottom: 0; }
+  .sumrow span { color: var(--ink-dim); }
+  .sumrow b { font-variant-numeric: tabular-nums; }
+
+  /* ---- swords / slots / dev ---- */
+  .swords { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin: 8px 0 12px; }
+  .sword, .slot { display: flex; justify-content: space-between; align-items: center; gap: 8px;
+    background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 7px 10px;
+    text-align: left; font-size: 13px; }
+  .sword.on, .slot.on { border-color: var(--accent); background: #1e2a20; }
+  .sword button, .slot button { width: auto; margin: 0; padding: 5px 11px; font-size: 13px; }
+  .slot { margin: 7px 0; }
+  .slot .btns { display: flex; gap: 5px; }
+  .title-panel { background: rgba(14,14,20,.82); min-width: 280px; }
+  .dev-panel { border-color: #7a5a2a; }
+  .dev-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+  .dev-grid button { width: auto; margin: 0; padding: 6px 10px; font-size: 13px; }
+  .dev-grid button.on { background: #6d4a1e; border-color: var(--gold); }
+  .dev-grid input { width: 68px; }
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+  <canvas id="gl"></canvas>
+
+  <div class="overlay clear" id="title">
+    <div class="panel title-panel">
+      <button data-act="continue" id="btnContinue">Continue</button>
+      <button data-act="newgame">New Game</button>
+      <button data-act="load">Load Game</button>
+      <button data-act="settings">Settings</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="newgame">
+    <div class="panel wide">
+      <h2>NEW GAME</h2>
+      <div class="row"><span>Hero name</span><input type="text" id="ngName" maxlength="14" value="Hero"></div>
+      <h3>DIFFICULTY</h3>
+      <div class="opts" id="ngDiff" style="justify-content:flex-start"></div>
+      <div class="hint" id="ngDiffDesc"></div>
+      <h3>SAVE SLOT</h3>
+      <div id="ngSlots"></div>
+      <button data-act="startNew">Start Adventure</button>
+      <button data-act="toTitle">Back</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="load">
+    <div class="panel wide">
+      <h2>LOAD GAME</h2>
+      <div id="slots"></div>
+      <div class="hint">Export writes a slot to a <b>.json save file</b> you can keep anywhere (backup, another PC). Import reads one back into a slot.</div>
+      <button data-act="toTitle">Back</button>
+      <input type="file" id="importFile" accept=".json,application/json" hidden>
+    </div>
+  </div>
+
+  <div class="overlay" id="menu">
+    <div class="panel">
+      <h2>PAUSED</h2>
+      <button data-act="resume">Resume</button>
+      <button data-act="level">Level Up (L)</button>
+      <button data-act="save">Save Game</button>
+      <button data-act="settings">Settings</button>
+      <button data-act="quit">Quit to Title</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="settings">
+    <div class="panel wide">
+      <h2>SETTINGS</h2>
+      <div class="row"><span>Quality</span><div class="opts" data-set="quality">
+        <button data-v="low">Low</button><button data-v="medium">Medium</button><button data-v="high">High</button><button data-v="ultra">Ultra</button>
+      </div></div>
+      <div class="row"><span>Resolution</span><select data-set="res">
+        <option value="auto">Native (match screen)</option>
+        <option value="1280x720">1280 × 720 (HD)</option>
+        <option value="1366x768">1366 × 768</option>
+        <option value="1600x900">1600 × 900 (HD+)</option>
+        <option value="1920x1080">1920 × 1080 (Full HD)</option>
+        <option value="2560x1440">2560 × 1440 (QHD)</option>
+        <option value="3840x2160">3840 × 2160 (4K)</option>
+      </select></div>
+      <div class="row"><span>Display</span><div class="opts"><button data-act="fullscreen" id="btnFs">Fullscreen (F)</button></div></div>
+      <div class="row"><span>FPS cap</span><select data-set="fps">
+        <option value="30">30</option><option value="60">60</option><option value="90">90</option><option value="120">120</option>
+        <option value="144">144</option><option value="165">165</option><option value="240">240</option><option value="0">Unlimited (monitor rate)</option>
+      </select></div>
+      <div class="row"><span>Frame generation</span><div class="opts" data-set="frameGen">
+        <button data-v="off">Off</button><button data-v="2">2×</button><button data-v="3">3×</button>
+        <button data-v="4">4×</button><button data-v="5">5×</button>
+      </div></div>
+      <div class="row"><span>Show FPS</span><div class="opts" data-set="showFps">
+        <button data-v="true">On</button><button data-v="false">Off</button>
+      </div></div>
+      <div class="row"><span>Reduce flashing &amp; shake</span><div class="opts" data-set="comfort">
+        <button data-v="true">On</button><button data-v="false">Off</button>
+      </div></div>
+      <div class="row"><span>Music volume</span><input type="range" min="0" max="100" data-set="musicVol"></div>
+      <div class="row"><span>Sound effects</span><input type="range" min="0" max="100" data-set="sfxVol"></div>
+      <div class="hint">
+        <b>Low</b> half resolution, no effects · <b>Medium</b> shadows, sword trails, hit particles ·
+        <b>High</b> grass, flowers, glow · <b>Ultra</b> animated grass that reacts to you, weather, screen shake,
+        and a GPU (WebGL) post-processing pass: bloom, color grading, vignette.<br>
+        <b>Frame generation:</b> the game simulates fewer times per second and fills the gaps with generated
+        (interpolated) frames — 3× means 1 simulated frame and 2 generated ones. Saves CPU, but each step adds
+        input delay, so 2× or 3× is the sweet spot.<br>
+        <b>Reduce flashing &amp; shake:</b> removes white screen flashes, blinking, screen shake and hit freeze-frames.<br>
+        <span id="gpuInfo"></span>
+      </div>
+      <button data-act="back">Back</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="dev">
+    <div class="panel wide dev-panel">
+      <h2>DEV MENU <small style="font-size:12px;color:#fa4">(testing)</small></h2>
+      <div id="devBody"></div>
+      <button data-act="close">Close (` / Esc)</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="level">
+    <div class="panel wide">
+      <h2>CHARACTER</h2>
+      <div class="lvhead"><span>Level <b id="lvNum"></b></span><span>Unspent points: <span class="pts" id="lvPts"></span></span></div>
+      <div class="lvcols">
+        <div><h3>Stats</h3><div id="lvStats"></div></div>
+        <div><h3>Summary</h3><div class="summary" id="lvSummary"></div></div>
+      </div>
+      <h3>Swords</h3>
+      <div class="swords" id="lvSwords"></div>
+      <button data-act="close">Close (L / Esc)</button>
+    </div>
+  </div>
+</div>
+<div id="help">WASD / Arrows: move · Space: attack · Shift: flip (invincible) · L: level menu · Esc / P: menu · hold Esc: exit fullscreen · F: fullscreen · `: dev menu</div>
+<script src="sfx.js"></script>
+<script src="postfx.js"></script>
+<script src="sky.js"></script>
+<script src="game.js"></script>
+</body>
+</html>
