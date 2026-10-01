@@ -1,4 +1,4 @@
-// Stick RPG: stickman hero in a scrolling world of 4 biomes. Monster waves, a boss every 5 waves,
+// Stick RPG: stickman hero in a scrolling world of biomes. Monster waves, a boss every 10 waves,
 // stat/sword level menu (L), drops, save slots, difficulty, quality presets up to Ultra (WebGL post-FX),
 // resolution options, frame generation (fixed-step simulation + interpolated rendering).
 const canvas = document.getElementById('game');
@@ -11,6 +11,7 @@ const FLIP_TIME = 0.4, FLIP_SPEED = 420, FLIP_COOLDOWN = 0.7;
 const FLIP_COST = 40, REGEN_DELAY = 0.7;
 const HP_REGEN_DELAY = 6, HP_REGEN_RATE = 0.012;   // out-of-combat health regen: 1.2% max HP per second   // no stamina regen for a moment after acting
 const POINTS_PER_LEVEL = 3;
+const GOLD_BASE = 3, GOLD_PER_WAVE = 1.5, GOLD_BOSS_BASE = 60, GOLD_BOSS_PER_WAVE = 12;
 const SAVE_KEY = i => `stickrpg_slot${i}`, SLOTS = [1, 2, 3];
 
 // --- Swords (unlocked by hero level) ---
@@ -42,14 +43,23 @@ const DIFFS = {
   nightmare: { name: 'Nightmare', hp: 2,   dmg: 1.8, spd: 1.18, xp: 1.25, drop: 0.6, desc: 'Brutal. Monsters hit almost twice as hard and move faster.' },
 };
 
-// --- Biomes: the map changes every 5 waves (after each boss) ---
-const BIOMES = [
-  { name: 'Whispering Forest', ground: '#3a5a40', patch: '#2f4d36', patch2: '#4d7050', grass: ['#4c7352', '#5f8d5c'], prop: 'tree',   props: 90, decor: ['#f4e04d', '#f28ab2', '#ffffff', '#a0c4ff'], ambient: 'firefly', music: 'forest', warm: 0 },
-  { name: 'Scorched Desert',   ground: '#c9a86a', patch: '#b8955a', patch2: '#dcc088', grass: ['#9c8a4a', '#b09a55'], prop: 'cactus', props: 55, decor: ['#8a7454', '#a08a66'],                       ambient: 'sand',    music: 'desert', warm: 1 },
-  { name: 'Frozen Wastes',     ground: '#d9e3ec', patch: '#c2d1dd', patch2: '#eef3f8', grass: ['#9fb3c2', '#b6c6d2'], prop: 'pine',   props: 80, decor: ['#ffffff', '#cfe8ff'],                       ambient: 'snow',    music: 'snow',   warm: -1 },
-  { name: 'Molten Caldera',    ground: '#3a2b28', patch: '#2a1f1d', patch2: '#4a3530', grass: ['#5a4038', '#6a4a3a'], prop: 'rock',   props: 60, decor: ['#ff7a30', '#555555'],                       ambient: 'ember',   music: 'volcano', warm: 0.8, lava: true },
-];
-const zoneFor = w => Math.floor(Math.max(0, w - 1) / 5);
+// --- Biomes: the map changes every 10 waves (after each boss) ---
+const WAVES_PER_SET = 10;                                  // one boss and one biome per set of waves
+const zoneFor = w => Math.floor(Math.max(0, w - 1) / WAVES_PER_SET);
+const tierOf = zoneFor;                                    // bosses defeated so far = how far monsters have grown
+const setPos = w => w <= 0 ? 0 : ((w - 1) % WAVES_PER_SET) + 1;   // 1..10 within the current set; 10 is the boss
+
+// --- Enemy scaling: every boss defeated is a tier; monsters also grow a little with the hero's level ---
+const TIER_HP = 0.12, TIER_DMG = 0.10, TIER_SPD = 0.02, TIER_SPD_CAP = 0.10;
+const LEVEL_HP = 0.025, LEVEL_DMG = 0.02, LEVEL_CAP = 0.6;
+function threat() {
+  const t = tierOf(wave), lv = Math.max(0, (hero ? hero.level : 1) - 1);
+  return {
+    hp: (1 + TIER_HP * t) * (1 + Math.min(LEVEL_CAP, LEVEL_HP * lv)),
+    dmg: (1 + TIER_DMG * t) * (1 + Math.min(LEVEL_CAP, LEVEL_DMG * lv)),
+    spd: 1 + Math.min(TIER_SPD_CAP, TIER_SPD * t),
+  };
+}
 // after a boss the next area is random (never the same one twice in a row)
 function randomBiome() {
   let z = Math.floor(Math.random() * BIOMES.length);
@@ -64,12 +74,18 @@ const QUALITY = {
   high:   { rs: 1,   shadows: true,  trail: true,  particles: true,  grass: 1500, decor: true,  glow: true,  anim: false, ambient: false, shake: true,  post: false },
   ultra:  { rs: 1,   shadows: true,  trail: true,  particles: true,  grass: 3200, decor: true,  glow: true,  anim: true,  ambient: true,  shake: true,  post: true },
 };
-const settings = { quality: 'high', res: 'auto', fps: 0, frameGen: 'off', showFps: false, musicVol: 50, sfxVol: 80, comfort: false };
+const settings = { quality: 'high', res: 'auto', renderScale: '100', sharpness: 60, fps: 0, frameGen: 'off', showFps: false, musicVol: 50, sfxVol: 80, ambVol: 60, comfort: false };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('rpgSettings')) || {}); } catch {}
 if (!QUALITY[settings.quality]) settings.quality = 'high';
+if (!['100', '85', '75', '67', '50'].includes(String(settings.renderScale))) settings.renderScale = '100';
+settings.renderScale = String(settings.renderScale);
+settings.sharpness = Math.max(0, Math.min(100, Number(settings.sharpness) || 0));
 if (settings.frameGen === 'smooth') settings.frameGen = 'off';
 if (settings.frameGen === 'perf') settings.frameGen = '2';
-let gfx, postActive = false;
+let gfx, postActive = false, fxActive = false;     // postActive: the WebGL pass shows the picture; fxActive: ...and also applies the Ultra effects
+let outRes = { w: 1280, h: 720 };                  // size the picture is shown at; the game renders at outRes x render scale
+const renderScale = () => (+settings.renderScale || 100) / 100;
+const upscaling = () => settings.quality !== 'low' && renderScale() < 1;
 
 function fit() {
   const helpH = document.fullscreenElement ? 0 : 20;
@@ -78,7 +94,9 @@ function fit() {
   if (h > ah) { h = ah; w = h * 16 / 9; }
   wrap.style.width = w + 'px'; wrap.style.height = h + 'px'; wrap.style.top = ah / 2 + 'px';
   let rw = settings.res === 'auto' ? w * (devicePixelRatio || 1) : +settings.res.split('x')[0];
-  rw = Math.round(Math.min(3840, rw) * gfx.rs);
+  rw = Math.round(Math.min(3840, rw));
+  outRes = { w: rw, h: Math.round(rw * 9 / 16) };
+  rw = Math.max(480, Math.round(rw * gfx.rs * (settings.quality === 'low' ? 1 : renderScale())));
   const rh = Math.round(rw * 9 / 16);
   if (canvas.width !== rw || canvas.height !== rh) { canvas.width = rw; canvas.height = rh; }
 }
@@ -87,15 +105,17 @@ function applySettings() {
   gfx = QUALITY[settings.quality];
   fit();
   canvas.classList.toggle('pixel', settings.quality === 'low');
-  postActive = PostFX.setActive(gfx.post, canvas);
+  postActive = PostFX.setActive(gfx.post || upscaling(), canvas);
+  fxActive = postActive && gfx.post;
   document.querySelectorAll('.opts[data-set]').forEach(g => g.querySelectorAll('button').forEach(b =>
     b.classList.toggle('on', b.dataset.v === String(settings[g.dataset.set]))));
   document.querySelectorAll('select[data-set], input[data-set]').forEach(el => { el.value = String(settings[el.dataset.set]); });
-  Sound.setVolume(settings.sfxVol / 100, settings.musicVol / 100);
+  Sound.setVolume(settings.sfxVol / 100, settings.musicVol / 100, settings.ambVol / 100);
   const gpu = PostFX.info();
   document.getElementById('gpuInfo').innerHTML = `<b>GPU in use:</b> ${escapeHtml(gpu)}` +
-    (gfx.post && !postActive ? ' — WebGL unavailable, post-FX off' : '') +
+    ((gfx.post || upscaling()) && !postActive ? ' — WebGL unavailable: post-FX and sharpening are off' : '') +
     `<br><b>Render resolution:</b> ${canvas.width} × ${canvas.height}` +
+    (upscaling() ? ` → shown at ${outRes.w} × ${outRes.h} (${postActive ? 'bicubic upscale + sharpening on the GPU' : 'stretched by the browser'})` : '') +
     `<br><b>Frame cap:</b> ${cappedFpsLabel()}` +
     `<br><b>Frame generation:</b> ${genLabel()}`;
   if (world) buildGrass();
@@ -165,7 +185,7 @@ let state = 'splash';            // splash | intro | title | play
 let introT = 0, introFlags = {}, tAnim = 0;
 let hero, enemies, corpses, wave, waveTimer, spawnQueue, spawnTimer, popups, drops, projectiles, shockwaves, particles, boss;
 let cam = { x: 0, y: 0, shake: 0 }, hitStop = 0, flash = 0;
-let diffKey = 'normal', currentSlot = 1, lastSavedWave = -1, playTime = 0, zone = 0, lastZoneStep = 0;
+let diffKey = 'normal', currentSlot = 1, lastSavedWave = -1, savedGold = 0, playTime = 0, zone = 0, lastZoneStep = 0;
 let world = null;                // current biome data: props, grass, decor, lava, ground cache
 const D = () => DIFFS[diffKey];
 
@@ -176,29 +196,46 @@ function reset() {
     x: WW / 2, y: WH / 2, speed: 180, facing: 1, walkT: 0, moving: false, stepT: 0,
     attackT: 0, attackDur: 0.3, hitSet: null,
     flipT: 0, flipCd: 0, flipDx: 1, flipDy: 0,
-    hurtT: 0, dead: false, deadT: 0, auraT: 0, hpRegenT: 0,
+    hurtT: 0, dead: false, deadT: 0, auraT: 0, hpRegenT: 0, gold: 0, lostGold: 0, goldPulse: 0,
+    potions: 0, lamp: 0, lightBonus: 0, potionCd: 0,
     scarf: Array.from({ length: 7 }, () => ({ x: WW / 2, y: WH / 2 - 50 })),
   };
+  initGear();
   enemies = []; corpses = []; popups = []; drops = []; projectiles = []; shockwaves = []; particles = [];
-  boss = null;
+  boss = null; vil = null; villageSkip = -1;
   wave = 0; waveTimer = 2; spawnQueue = []; spawnTimer = 0; lastZoneStep = 0;
-  playTime = 0; lastSavedWave = -1; hitStop = 0; flash = 0;
+  playTime = 0; lastSavedWave = -1; savedGold = 0; hitStop = 0; flash = 0;
   cam.x = hero.x - VW / 2; cam.y = hero.y - VH / 2; cam.shake = 0;
 }
 
 // --- Saves (localStorage slots + .json export/import) ---
 function readSlot(i) { try { return JSON.parse(localStorage.getItem(SAVE_KEY(i))); } catch { return null; } }
+// In the desktop app (preload.js exposes window.stickApp) every save is also mirrored to a file in the app's data
+// folder, so a wiped browser profile can't take the saves with it. In a normal browser these are plain localStorage.
+function writeSlot(i, json) { localStorage.setItem(SAVE_KEY(i), json); try { window.stickApp && window.stickApp.writeSave(i, json); } catch {} }
+function eraseSlot(i) { localStorage.removeItem(SAVE_KEY(i)); try { window.stickApp && window.stickApp.deleteSave(i); } catch {} }
+function restoreSavesFromDisk() {
+  if (!window.stickApp) return;
+  for (const i of SLOTS) {
+    try {
+      if (localStorage.getItem(SAVE_KEY(i))) continue;
+      const json = window.stickApp.readSave(i);
+      if (json && validSave(JSON.parse(json))) localStorage.setItem(SAVE_KEY(i), json);
+    } catch {}
+  }
+}
 function wavesCleared() { return spawnQueue.length === 0 && enemies.length === 0 ? wave : wave - 1; }
-function saveGame(auto = false) {
+function saveGame(auto = false, quiet = false) {
   const data = {
     v: 1, name: hero.name, diff: diffKey, level: hero.level, xp: hero.xp, xpNext: hero.xpNext,
     points: hero.points, stats: { ...hero.stats }, maxHp: hero.maxHp, sword: hero.sword.id,
     wave: Math.max(0, wavesCleared()), playTime: Math.round(playTime), savedAt: Date.now(),
-    biome: zone, tod, dayCount, weather: weather.kind,
+    biome: zone, tod, dayCount, weather: weather.kind, gold: hero.gold, potions: hero.potions | 0, lamp: hero.lamp | 0, ...serializeGear(),
   };
   try {
-    localStorage.setItem(SAVE_KEY(currentSlot), JSON.stringify(data));
-    popups.push({ text: auto ? 'Autosaved' : `Saved to slot ${currentSlot}`, x: VW - 90, y: 78, t: 1.5, color: '#9f9', screen: true, small: true });
+    writeSlot(currentSlot, JSON.stringify(data));
+    lastSavedWave = data.wave; savedGold = hero.gold;
+    if (!quiet) popups.push({ text: hero.gold > 0 ? `Progress saved · ${hero.gold.toLocaleString()} gold banked` : 'Progress saved', x: VW - 135, y: 78, t: 2.4, color: '#9f9', screen: true, small: true });
     if (!auto) sfx('save');
   } catch { popups.push({ text: 'Save failed (storage full?)', x: VW / 2, y: 60, t: 2, color: '#f66', screen: true }); }
 }
@@ -217,6 +254,9 @@ function loadSlot(i) {
   });
   hero.stamina = maxStamina();
   diffKey = d.diff; currentSlot = i; wave = d.wave; lastSavedWave = d.wave; playTime = d.playTime || 0;
+  hero.gold = d.gold | 0; savedGold = hero.gold;
+  hero.potions = Math.max(0, Math.min(POTION_MAX, d.potions | 0)); hero.lamp = Math.max(0, Math.min(LAMPS.length - 1, d.lamp | 0)); applyLamp();
+  loadGear(d);
   lastZoneStep = zoneFor(d.wave + 1);
   if (Number.isFinite(d.tod)) tod = d.tod;
   if (Number.isFinite(d.dayCount)) dayCount = d.dayCount;
@@ -245,7 +285,7 @@ function startPlay() {
 const fmtTime = s => `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, '0')}m`;
 function slotHtml(i, d) {
   return d ? `<div><b>Slot ${i}: ${escapeHtml(d.name)}</b> — ${DIFFS[d.diff]?.name ?? '?'}
-    <small>Lv ${d.level} · ${d.wave} waves cleared · ${fmtTime(d.playTime || 0)} played · ${new Date(d.savedAt).toLocaleString()}</small></div>`
+    <small>Lv ${d.level} · ${d.wave} waves cleared · ${(d.gold | 0).toLocaleString()} gold · ${fmtTime(d.playTime || 0)} played · ${new Date(d.savedAt).toLocaleString()}</small></div>`
     : `<div><b>Slot ${i}</b><small>Empty</small></div>`;
 }
 function renderLoad() {
@@ -264,7 +304,7 @@ document.getElementById('slots').addEventListener('click', e => {
   if (!act) return;
   sfx('click');
   if (act === 'load') loadSlot(i);
-  if (act === 'delete' && confirm(`Delete save in slot ${i}? This can't be undone.`)) { localStorage.removeItem(SAVE_KEY(i)); renderLoad(); }
+  if (act === 'delete' && confirm(`Delete save in slot ${i}? This can't be undone.`)) { eraseSlot(i); renderLoad(); }
   if (act === 'export') {
     const d = readSlot(i);
     const a = document.createElement('a');
@@ -282,7 +322,7 @@ document.getElementById('importFile').addEventListener('change', async e => {
   try { d = JSON.parse(await f.text()); } catch {}
   if (!validSave(d)) { alert('That file is not a valid Stick RPG save.'); return; }
   if (readSlot(importTarget) && !confirm(`Overwrite slot ${importTarget}?`)) return;
-  localStorage.setItem(SAVE_KEY(importTarget), JSON.stringify(d));
+  writeSlot(importTarget, JSON.stringify(d));
   sfx('save'); renderLoad();
 });
 
@@ -310,20 +350,23 @@ function latestSlot() {
 }
 
 // --- Menus ---
-const OVERLAYS = ['title', 'newgame', 'load', 'menu', 'settings', 'level', 'dev'];
+const OVERLAYS = ['title', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'talk', 'shop', 'inv'];
 let paused = false, openMenu = null, settingsReturn = 'title';
 function showMenu(which) {
   openMenu = which;
-  paused = state === 'play' && which !== null;
+  paused = (state === 'play' || state === 'village') && which !== null;
   for (const id of OVERLAYS) document.getElementById(id).classList.toggle('show', id === which);
   for (const k in keys) keys[k] = false;
   if (which === 'level') renderLevelMenu();
+  if (which === 'shop') renderShop();
+  if (which === 'inv') renderInventory();
   if (which === 'dev') renderDev();
+  if (which === 'menu') renderMenuInfo();
   if (which === 'load') renderLoad();
   if (which === 'newgame') { ngSlot = SLOTS.find(i => !readSlot(i)) ?? 1; renderNewGame(); }
   if (which === 'title') document.getElementById('btnContinue').style.display = latestSlot() ? 'block' : 'none';
-  Sound.muffle(paused);
-  if (which) document.querySelector(`#${which} button:not(:disabled), #${which} input`)?.focus();
+  Sound.muffle(paused && which !== 'talk' && which !== 'shop');   // talking and shopping keep the music clear
+  if (which) document.querySelector(`#${which} button:not(:disabled), #${which} input`)?.focus({ preventScroll: true });
   else canvas.focus();
 }
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
@@ -333,6 +376,7 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
   if (a === 'settings') { settingsReturn = openMenu; showMenu('settings'); }
   if (a === 'back') showMenu(settingsReturn);
   if (a === 'level') showMenu('level');
+  if (a === 'inv') showMenu('inv');
   if (a === 'newgame') showMenu('newgame');
   if (a === 'load') showMenu('load');
   if (a === 'toTitle') showMenu('title');
@@ -343,9 +387,26 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
     if (d && !confirm(`Slot ${ngSlot} already has a save (${d.name}). Overwrite it?`)) return;
     newRun(document.getElementById('ngName').value, ngDiff, ngSlot);
   }
-  if (a === 'save') { saveGame(false); showMenu(null); }
-  if (a === 'quit') goTitle();
+  if (a === 'quitApp') {
+    const inRun = hero && (state === 'play' || state === 'village');
+    const atRisk = inRun && (wave > Math.max(0, lastSavedWave) || hero.gold > savedGold);
+    if (atRisk && !confirm(`Quit to desktop? Progress since your last save (wave ${Math.max(0, lastSavedWave)}) will be lost.`)) return;
+    if (window.stickApp) window.stickApp.quit(); else window.close();
+  }
+  if (a === 'openSaves' && window.stickApp) window.stickApp.openSaveFolder();
+  if (a === 'quit') {
+    const atRisk = wave > Math.max(0, lastSavedWave) || hero.gold > savedGold;
+    if (atRisk && !confirm(`Quit to title? Progress since your last campfire save (wave ${Math.max(0, lastSavedWave)}) will be lost.`)) return;
+    goTitle();
+  }
 }));
+function renderMenuInfo() {
+  const el = document.getElementById('menuInfo');
+  if (!el || !hero) return;
+  const w = Math.max(0, lastSavedWave), lostW = Math.max(0, wave - w), lostG = Math.max(0, hero.gold - savedGold);
+  el.innerHTML = `Saves happen at the village (wave 9 of each set) and at campfires (after each boss). <em>Last save: wave ${w}</em>` +
+    (lostW || lostG ? `<br>At risk if you die: ${lostW} wave${lostW === 1 ? '' : 's'}, ${lostG.toLocaleString()} gold` : '<br>Nothing at risk right now.');
+}
 function goTitle() {
   state = 'title';
   reset();
@@ -353,6 +414,7 @@ function goTitle() {
   setBiome(0, false);
   showMenu('title');
   Sound.music('title');
+  Sound.setScene(null);
 }
 
 function renderLevelMenu() {
@@ -374,31 +436,23 @@ function renderLevelMenu() {
   }).join('');
   document.getElementById('lvSummary').innerHTML = [
     ['Damage', swordDmg()],
-    ['Crit', `${pct(critChance())} · ${critMult().toFixed(2)}× dmg`],
+    ['Crit', `${pct(critChance())} (cap ${pct(GEAR_CAPS.crit)}) · ${critMult().toFixed(2)}× (cap ${GEAR_CAPS.critDmg}×)`],
     ['Max HP', hero.maxHp],
-    ['Damage taken', `-${pct(dmgReduction())}`],
-    ['Move speed', `+${pct(moveSpeed() / BASE_SPEED - 1)}`],
+    ['Damage taken', `-${pct(dmgReduction())} (cap ${pct(GEAR_CAPS.dr)})`],
+    ['Move speed', `+${pct(moveSpeed() / BASE_SPEED - 1)} (cap +${pct(GEAR_CAPS.speed)})`],
     ['Stamina', `${maxStamina()} · +${staminaRegen().toFixed(0)}/s`],
     ['Swing cost', `${hero.sword.cost} · flip ${FLIP_COST}`],
     ['Flip cooldown', `${flipCooldown().toFixed(2)}s`],
   ].map(([k, v]) => `<div class="sumrow"><span>${k}</span><b>${v}</b></div>`).join('');
-  document.getElementById('lvSwords').innerHTML = SWORDS.map(s => {
-    const locked = hero.level < s.lvl && !dev.swords, on = hero.sword === s;
-    const fx = [s.burn && 'burn', s.slow && 'slow'].filter(Boolean).join(', ');
-    return `<div class="sword ${on ? 'on' : ''}"><div><b style="color:${s.color}">${s.name}</b>
-      <small>${locked ? `Unlocks at Lv ${s.lvl}` : `Dmg ${s.dmg} · Rng ${s.range} · Spd ${s.time}s${fx ? ' · ' + fx : ''}`}</small></div>
-      <button data-sword="${s.id}" ${locked || on ? 'disabled' : ''}>${on ? '✓' : locked ? '🔒' : 'Equip'}</button></div>`;
-  }).join('');
 }
 document.getElementById('level').addEventListener('click', e => {
-  const st = e.target.dataset.stat, sw = e.target.dataset.sword;
+  const st = e.target.dataset.stat;
   if (st && hero.points > 0) {
     hero.points--; hero.stats[st]++;
     if (st === 'hp') { hero.maxHp += 20; hero.hp += 20; }
     if (st === 'sta') hero.stamina = Math.min(maxStamina(), hero.stamina + 10);
     sfx('click'); renderLevelMenu();
   }
-  if (sw) { hero.sword = SWORDS.find(s => s.id === sw); sfx('pickup'); renderLevelMenu(); }
 });
 
 // --- Input ---
@@ -432,6 +486,18 @@ addEventListener('keydown', e => {
     showMenu(openMenu === 'level' ? null : 'level');
     return;
   }
+  if (e.code === 'KeyI' && !e.repeat && !hero.dead && (openMenu === null || openMenu === 'inv')) {
+    showMenu(openMenu === 'inv' ? null : 'inv');
+    return;
+  }
+  if ((openMenu === 'talk' || openMenu === 'shop') && /^(Digit|Numpad)[0-9]$/.test(e.code)) {   // number keys pick dialogue / shop options
+    e.preventDefault(); if (e.repeat) return;
+    const n = +e.code.slice(-1);
+    const btns = [...document.querySelectorAll(openMenu === 'talk' ? '#talkBtns button' : '#shopBody [data-buy]')];
+    if (n === 0 && openMenu === 'shop') showMenu(null);
+    else if (btns[n - 1] && !btns[n - 1].disabled) btns[n - 1].click();
+    return;
+  }
   if (paused) return;
   keys[e.code] = true;
   if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
@@ -440,12 +506,14 @@ addEventListener('keydown', e => {
     if (e.code === 'KeyR' && hero.deadT > 1) { if (!loadSlot(currentSlot)) newRun(hero.name, diffKey, currentSlot); }
     return;
   }
+  if (e.code === 'KeyQ') drinkPotion();
+  if (state === 'village') { if (e.code === 'KeyE') villageInteract(); return; }     // no fighting in the village
   if (e.code === 'Space') startAttack();
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') startFlip();
 });
 addEventListener('keyup', e => { keys[e.code] = false; });
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
-document.addEventListener('visibilitychange', () => { if (document.hidden && state === 'play' && !paused) showMenu('menu'); });
+document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'village') && !paused) showMenu('menu'); });
 
 // --- World generation ---
 function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
@@ -453,26 +521,13 @@ function mulberry(a) { return () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Ma
 function setBiome(z, announce = true) {
   zone = z;
   const B = BIOMES[z % BIOMES.length];
-  const r = mulberry(1000 + z * 7919);
-  const nearCenter = (x, y, d) => Math.hypot(x - WW / 2, y - WH / 2) < d;
-  const lava = [];
-  if (B.lava) while (lava.length < 12) {
-    const x = 150 + r() * (WW - 300), y = 150 + r() * (WH - 300);
-    if (!nearCenter(x, y, 260)) lava.push({ x, y, rx: 50 + r() * 70, ry: 25 + r() * 30 });
-  }
-  const inLava = (x, y) => lava.some(l => ((x - l.x) / (l.rx + 20)) ** 2 + ((y - l.y) / (l.ry + 20)) ** 2 < 1);
-  const props = [];
-  while (props.length < B.props) {
-    const x = r() * WW, y = 40 + r() * (WH - 40);
-    if (nearCenter(x, y, 120) || inLava(x, y)) continue;
-    props.push({ x, y, s: 0.8 + r() * 0.6, v: r() });
-  }
-  const decor = Array.from({ length: 380 }, () => ({ x: r() * WW, y: r() * WH, c: B.decor[Math.floor(r() * B.decor.length)], s: 1 + r() * 1.2 }))
-    .filter(d => !inLava(d.x, d.y));
-  world = { B, props, decor, lava, rand: r };
+  const seed = (Math.random() * 1e9) | 0;
+  particles = [];
+  world = { B, seed, ...buildWorldFeatures(B, seed) };
   setWeather(rollWeather(z), true);
   buildGround();
   buildGrass();
+  if (typeof spawnCritters === 'function') spawnCritters();
   if (announce) {
     popups.push({ text: `— ${B.name} —`, x: VW / 2, y: 190, t: 3, big: true, screen: true, color: '#fff' });
     Sound.music(B.music);
@@ -480,7 +535,7 @@ function setBiome(z, announce = true) {
 }
 
 function buildGround() {
-  const { B, lava } = world, r = mulberry(55 + zone);
+  const { B, lava, water } = world, r = mulberry(world.seed ^ 0x5bd1e995);
   const g = document.createElement('canvas');
   g.width = WW; g.height = WH;
   const c = g.getContext('2d');
@@ -492,16 +547,20 @@ function buildGround() {
     grad.addColorStop(0, withAlpha(col, 0.67)); grad.addColorStop(1, withAlpha(col, 0));
     c.fillStyle = grad; c.beginPath(); c.ellipse(x, y, rad, rad * 0.6, 0, 0, Math.PI * 2); c.fill();
   }
-  // winding dirt path through the middle
-  c.strokeStyle = B.patch + '88'; c.lineWidth = 34; c.lineCap = 'round';
-  c.beginPath();
-  for (let x = -50; x <= WW + 50; x += 40) c.lineTo(x, WH / 2 + Math.sin(x / 260 + zone) * 180 + Math.sin(x / 90) * 20);
-  c.stroke();
+  bakeGroundDetail(c, r, B);
+  if (!B.noPath) {                                      // winding dirt path through the middle
+    const ph = world.seed % 7;
+    c.strokeStyle = B.patch + '88'; c.lineWidth = 34; c.lineCap = 'round';
+    c.beginPath();
+    for (let x = -50; x <= WW + 50; x += 40) c.lineTo(x, WH / 2 + Math.sin(x / 260 + ph) * 180 + Math.sin(x / 90) * 20);
+    c.stroke();
+  }
   for (const l of lava) {
     const grad = c.createRadialGradient(l.x, l.y, 0, l.x, l.y, l.rx * 1.3);
     grad.addColorStop(0, '#ffd070'); grad.addColorStop(0.45, '#ff6a1a'); grad.addColorStop(0.8, '#a21c08'); grad.addColorStop(1, 'rgba(40,10,5,0)');
     c.fillStyle = grad; c.beginPath(); c.ellipse(l.x, l.y, l.rx * 1.3, l.ry * 1.3, 0, 0, Math.PI * 2); c.fill();
   }
+  for (const w of water) bakeWater(c, w);
   // darken the world edges so the boundary reads as the edge of the map
   const edge = (x0, y0, x1, y1) => {
     const grad = c.createLinearGradient(x0, y0, x1, y1);
@@ -517,27 +576,28 @@ function buildGround() {
 }
 
 function buildGrass() {
-  const r = mulberry(99 + zone);
+  const r = mulberry(world.seed + 99);
   world.grass = Array.from({ length: gfx.grass }, () => ({ x: r() * WW, y: r() * WH, s: 4 + r() * 6, c: r() < 0.5 ? 0 : 1, ph: r() * 6.28 }))
-    .filter(g => !world.lava.some(l => ((g.x - l.x) / l.rx) ** 2 + ((g.y - l.y) / l.ry) ** 2 < 1.4));
+    .filter(g => !world.lava.some(l => ((g.x - l.x) / l.rx) ** 2 + ((g.y - l.y) / l.ry) ** 2 < 1.4) && !world.water.some(w => inEllipse(g.x, g.y, w, 6)));
 }
 
 // --- Hero ---
-const swordDmg = () => hero.sword.dmg + hero.stats.str * 5;
-const maxStamina = () => 100 + hero.stats.sta * 10;
+// Gear adds on top of the level stats (gearStat / capValue live in gear.js); the ceilings are in GEAR_CAPS.
+const swordDmg = () => hero.sword.dmg + hero.stats.str * 5 + Math.round(gearStat('dmg'));
+const maxStamina = () => 100 + hero.stats.sta * 10 + Math.round(gearStat('stamina'));
 const staminaRegen = () => Math.min(32, 14 + hero.stats.sta * 1.2);      // hard cap: stamina still matters late
-const flipCooldown = () => FLIP_COOLDOWN * (1 - hero.stats.cd * 0.06);
-const dmgReduction = () => Math.min(0.30, hero.stats.hp * 0.005);        // capped so Vitality can't trivialise damage
-const moveSpeed = () => BASE_SPEED * (1 + Math.min(0.20, hero.stats.sta * 0.004));
-const critChance = () => Math.min(0.5, BASE_CRIT + hero.stats.crit * 0.01);
-const critMult = () => Math.min(4, BASE_CRIT_MULT + hero.stats.critDmg * 0.08);
+const flipCooldown = () => FLIP_COOLDOWN * (1 - hero.stats.cd * 0.06) * (1 - Math.min(0.5, gearStat('cdr')));
+const dmgReduction = () => capValue('dr', Math.min(0.30, hero.stats.hp * 0.005));        // Vitality is capped at 30%; with gear the ceiling is 60%
+const moveSpeed = () => BASE_SPEED * (1 + capValue('speed', Math.min(0.20, hero.stats.sta * 0.004)));
+const critChance = () => capValue('crit', Math.min(0.5, BASE_CRIT + hero.stats.crit * 0.01));
+const critMult = () => capValue('critDmg', Math.min(4, BASE_CRIT_MULT + hero.stats.critDmg * 0.08));
 
 function startAttack() {
   if (hero.attackT > 0 || hero.flipT > 0) return;
   if (hero.stamina < hero.sword.cost) { sfx('tired'); return; }
   hero.stamina -= hero.sword.cost;
   hero.regenT = REGEN_DELAY;
-  hero.attackDur = hero.sword.time * (1 - hero.stats.cd * 0.04);
+  hero.attackDur = hero.sword.time * (1 - hero.stats.cd * 0.04) * (1 - Math.min(0.35, gearStat('cdr') * 0.6));
   hero.attackT = hero.attackDur;
   hero.hitSet = new Set();
   sfx('swing');
@@ -575,7 +635,10 @@ function damageHero(dmg, sound = true) {
   popups.push({ text: `-${dmg}`, x: hero.x, y: hero.y - 70, t: 0.8, color: '#f55', pop: 0 });
   burst(hero.x, hero.y - 35, '#c22', 10, 160, 2.5, 300);
   if (sound) sfx('hurt');
-  if (hero.hp === 0) { hero.dead = true; hero.deadT = 0; sfx('death'); Sound.music('gameover'); }
+  if (hero.hp === 0) {
+    hero.dead = true; hero.deadT = 0; sfx('death'); Sound.music('gameover');
+    hero.lostGold = hero.gold; hero.gold = 0;       // carried gold is lost; the last save still has what was banked
+  }
 }
 
 // --- Effects ---
@@ -595,33 +658,28 @@ function updateParticles(dt) {
     if (p.kind === 'fly') { p.vx += (Math.random() - 0.5) * 60 * dt; p.vy += (Math.random() - 0.5) * 60 * dt; }
     if (p.kind === 'leaf') p.vx = Math.sin(tAnim * 2 + p.ph) * 30;
     p.vy += (p.g || 0) * dt;
+    if (p.grow) p.size += p.grow * dt;
     p.x += p.vx * dt; p.y += p.vy * dt;
   }
   particles = particles.filter(p => p.life > 0);
   if (!gfx.ambient || !world) return;
-  // ambient weather around the camera
-  const amb = world.B.ambient, want = amb === 'firefly' ? 45 : 110;
+  // ambient particles around the camera, different for each biome (see critters.js)
+  const amb = world.B.ambient, want = ambientCount(amb);
   let count = 0;
   for (const p of particles) if (p.amb) count++;
   for (let i = count; i < want; i++) {
-    const x = cam.x + Math.random() * VW, y = cam.y + Math.random() * VH;
-    const base = { x, y, amb: true, life: 3 + Math.random() * 4, max: 7, g: 0 };
-    if (amb === 'firefly') particles.push(Math.random() < 0.7
-      ? { ...base, kind: 'fly', vx: 0, vy: 0, size: 2, color: '#e8ff80', add: true }
-      : { ...base, kind: 'leaf', y: cam.y - 10, vx: 0, vy: 30 + Math.random() * 20, size: 3, color: '#8a6', ph: Math.random() * 6 });
-    if (amb === 'sand') particles.push({ ...base, x: cam.x - 10 + Math.random() * 40, vx: 250 + Math.random() * 150, vy: (Math.random() - 0.5) * 20, size: 1.5, color: '#f0dca0', streak: true });
-    if (amb === 'snow') particles.push({ ...base, y: cam.y - 10 + Math.random() * 60, vx: -20 + Math.random() * 15, vy: 40 + Math.random() * 40, size: 1.5 + Math.random() * 2, color: '#fff' });
-    if (amb === 'ember') particles.push({ ...base, y: cam.y + VH + 5 - Math.random() * 60, vx: (Math.random() - 0.5) * 30, vy: -40 - Math.random() * 60, size: 1.5 + Math.random() * 1.5, color: '#ff8a30', add: true });
+    const p = makeAmbient(amb, cam.x + Math.random() * VW, cam.y + Math.random() * VH);
+    if (p) particles.push(p);
   }
 }
 
 // --- Monsters ---
 const TYPES = {
-  goblin:   { hp: 30, speed: 110, r: 12, dmg: 8,  xp: 12, from: 1, color: '#3d8b3d' },
-  minotaur: { hp: 60, speed: 60,  r: 18, dmg: 10, xp: 22, from: 1, color: '#6b3e26' },
-  slime:    { hp: 45, speed: 0,   r: 16, dmg: 8,  xp: 15, from: 2, color: '#5b5' },
-  archer:   { hp: 35, speed: 70,  r: 12, dmg: 12, xp: 20, from: 3, color: '#ddd' },
-  ogre:     { hp: 160, speed: 40, r: 24, dmg: 20, xp: 45, from: 6, color: '#6a7a3a' },
+  goblin:   { hp: 30, speed: 110, r: 12, dmg: 8,  xp: 12, from: 1, color: '#3d8b3d', gold: 1 },
+  minotaur: { hp: 60, speed: 60,  r: 18, dmg: 10, xp: 22, from: 1, color: '#6b3e26', gold: 1.4 },
+  slime:    { hp: 45, speed: 0,   r: 16, dmg: 8,  xp: 15, from: 2, color: '#5b5', gold: 1 },
+  archer:   { hp: 35, speed: 70,  r: 12, dmg: 12, xp: 20, from: 3, color: '#ddd', gold: 1.2 },
+  ogre:     { hp: 160, speed: 40, r: 24, dmg: 20, xp: 45, from: 6, color: '#6a7a3a', gold: 2.2 },
 };
 
 function edgePos() {
@@ -632,11 +690,11 @@ function edgePos() {
 }
 
 function spawnEnemy(type, pos = edgePos(), extra = {}) {
-  const T = TYPES[type], d = D();
-  const hp = Math.round(T.hp * (1 + wave * 0.15) * d.hp);
+  const T = TYPES[type], d = D(), th = threat();
+  const hp = Math.round(T.hp * (1 + wave * 0.15) * d.hp * th.hp);
   enemies.push({
-    type, x: pos.x, y: pos.y, hp, maxHp: hp, r: T.r, dmg: Math.round((T.dmg + Math.floor(wave / 2)) * d.dmg), xp: Math.round((T.xp + wave * 3) * d.xp),
-    speed: (T.speed * (0.85 + Math.random() * 0.3) + wave * 2) * d.spd,
+    type, x: pos.x, y: pos.y, hp, maxHp: hp, r: T.r, dmg: Math.round((T.dmg + Math.floor(wave / 2)) * d.dmg * th.dmg), xp: Math.round((T.xp + wave * 3) * d.xp),
+    speed: (T.speed * (0.85 + Math.random() * 0.3) + wave * 2) * d.spd * th.spd,
     facing: 1, walkT: Math.random() * 6, state: 'walk', stateT: Math.random(), spawnT: 0.5,
     chargeDx: 0, chargeDy: 0, knockX: 0, knockY: 0, flashT: 0, burnT: 0, slowT: 0, hopZ: 0, size: 1,
     ...extra,
@@ -645,12 +703,12 @@ function spawnEnemy(type, pos = edgePos(), extra = {}) {
 }
 
 function spawnBoss() {
-  const d = D(), hp = Math.round((700 + wave * 120) * d.hp);
+  const d = D(), th = threat(), hp = Math.round((700 + wave * 120) * d.hp * th.hp);
   const pos = edgePos();
   boss = {
-    type: 'boss', name: wave % 10 === 0 ? 'Minotaur Emperor' : 'Minotaur King',
-    x: pos.x, y: pos.y, hp, maxHp: hp, r: 34, dmg: Math.round((20 + wave) * d.dmg), xp: Math.round((150 + wave * 20) * d.xp),
-    speed: (70 + wave) * d.spd, facing: 1, walkT: 0, state: 'walk', stateT: 1.5, charges: 0, summoned: false, spawnT: 0.8,
+    type: 'boss', name: Math.max(1, Math.round(wave / WAVES_PER_SET)) % 2 === 0 ? 'Minotaur Emperor' : 'Minotaur King',
+    x: pos.x, y: pos.y, hp, maxHp: hp, r: 34, dmg: Math.round((20 + wave) * d.dmg * th.dmg), xp: Math.round((150 + wave * 20) * d.xp),
+    speed: (70 + wave) * d.spd * th.spd, facing: 1, walkT: 0, state: 'walk', stateT: 1.5, charges: 0, summoned: false, spawnT: 0.8,
     chargeDx: 0, chargeDy: 0, knockX: 0, knockY: 0, flashT: 0, burnT: 0, slowT: 0,
   };
   enemies.push(boss);
@@ -659,10 +717,16 @@ function spawnBoss() {
   popups.push({ text: `⚠ ${boss.name} ⚠`, x: VW / 2, y: 150, t: 2.5, big: true, screen: true, color: '#f66' });
 }
 
+// Waves are counted within their set of ten, so a longer gap between bosses doesn't mean ever-larger crowds:
+// the halfway wave (5) is a goblin horde, the last wave before the boss (9) is a heavier push.
 function buildWave() {
   const pool = Object.keys(TYPES).filter(t => wave >= TYPES[t].from);
-  const n = 2 + Math.floor(Math.random() * (2 + wave));
-  return Array.from({ length: n }, () => pool[Math.floor(Math.random() * pool.length)]);
+  const pos = setPos(wave);
+  let n = 2 + Math.floor(Math.random() * (2 + pos)) + 2 * tierOf(wave);
+  if (pos === 9) n = Math.round(n * 1.3);
+  const list = Array.from({ length: n }, () => pool[Math.floor(Math.random() * pool.length)]);
+  if (pos === 5) for (let i = 0; i < 3 + tierOf(wave); i++) list.push('goblin');
+  return list;
 }
 
 function updateWaves(dt) {
@@ -675,18 +739,19 @@ function updateWaves(dt) {
       spawnTimer = 0.3 + Math.random() * 1.3;
     }
   } else if (enemies.length === 0 && !hero.dead) {
-    if (wave > 0 && lastSavedWave !== wave) { lastSavedWave = wave; saveGame(true); }
     waveTimer -= dt;
     if (waveTimer <= 0) {
+      if ((wave + 1) % WAVES_PER_SET === 0 && villageSkip !== wave + 1) { enterVillage(); return; }   // a village before every boss
       wave++;
       if (zoneFor(wave) !== lastZoneStep) { lastZoneStep = zoneFor(wave); startCamp(randomBiome()); }
       else if (Sound.current === 'boss') Sound.music(BIOMES[zone % BIOMES.length].music);
-      if (wave % 5 === 0) {
+      if (wave % WAVES_PER_SET === 0) {
         spawnQueue = ['boss', ...Array(Math.floor(wave / 5)).fill('goblin')];
         popups.push({ text: `Wave ${wave}: BOSS WAVE!`, x: VW / 2, y: 110, t: 2, big: true, screen: true, color: '#f66' });
       } else {
         spawnQueue = buildWave();
-        popups.push({ text: `Wave ${wave}: ${spawnQueue.length} monsters!`, x: VW / 2, y: 110, t: 2, big: true, screen: true });
+        const pos = setPos(wave), tag = pos === 5 ? ' — horde!' : pos === 9 ? ' — a village, then the boss!' : '';
+        popups.push({ text: `Wave ${wave}: ${spawnQueue.length} monsters${tag}`, x: VW / 2, y: 110, t: 2, big: true, screen: true, color: pos === 9 ? '#fb8' : undefined });
         sfx('wave');
       }
       spawnTimer = 0.5;
@@ -745,8 +810,9 @@ function updateEnemies(dt) {
       if (gfx.particles && Math.random() < 0.3) particles.push({ x: m.x + (Math.random() - 0.5) * 20, y: m.y - 30 - Math.random() * 20, vx: 0, vy: -50, life: 0.5, max: 0.5, size: 2.5, color: '#f73', add: true });
     }
     m.stateT -= dt;
-    const spd = m.speed * (m.slowT > 0 ? 0.5 : 1);
-    const slowMul = m.slowT > 0 ? 0.5 : 1;
+    const wm = waterAt(m.x, m.y) ? 0.75 : 1;
+    const spd = m.speed * (m.slowT > 0 ? 0.5 : 1) * wm;
+    const slowMul = (m.slowT > 0 ? 0.5 : 1) * wm;
 
     if (m.type === 'boss') updateBoss(m, dt, dx, dy, dist, spd);
     else if (m.type === 'minotaur' || m.type === 'ogre') {
@@ -822,7 +888,8 @@ function updateEnemies(dt) {
       if (Math.hypot(dx, dy) < sw.range + m.r * 0.6 && Math.sign(dx) !== -hero.facing) {
         hero.hitSet.add(m);
         const crit = Math.random() < critChance(), dmg = dev.oneHit ? Math.max(1, Math.ceil(m.hp)) : Math.round(swordDmg() * (crit ? critMult() : 1));
-        m.hp -= dmg;
+        const hpBefore = m.hp; m.hp -= dmg;
+        if (gearHas('lifesteal')) hero.hp = Math.min(hero.maxHp, hero.hp + Math.min(dmg, hpBefore) * 0.04);
         m.flashT = 0.15;
         m.knockX = hero.facing * (m.type === 'boss' ? 120 : m.type === 'ogre' ? 200 : 500);
         if (sw.burn) m.burnT = 3;
@@ -867,6 +934,15 @@ function onKill(m) {
     else if (r < 0.35) dropItem('energy', m.x, m.y);
     else if (r < 0.45) dropItem('gem', m.x, m.y);
   }
+  // gold: every kill drops a coin that's worth more in later waves; a boss showers coins
+  if (m.type === 'boss') {
+    const total = (GOLD_BOSS_BASE + wave * GOLD_BOSS_PER_WAVE) * (1 + gearStat('gold'));
+    for (let i = 0; i < 6; i++) dropItem('gold', m.x + Math.cos(i * 1.05) * 44, m.y + Math.sin(i * 1.05) * 26, { amount: Math.round(total / 6) });
+  } else {
+    const base = (GOLD_BASE + wave * GOLD_PER_WAVE) * (1 + gearStat('gold')) * (TYPES[m.type]?.gold ?? 1) * ((m.size ?? 1) < 1 ? 0.4 : 1) * (0.7 + Math.random() * 0.6);
+    dropItem('gold', m.x + (Math.random() - 0.5) * 22, m.y + (Math.random() - 0.5) * 12, { amount: Math.max(1, Math.round(base)) });
+  }
+  for (const it of gearDropsFor(m)) dropGear(it, m.x + (Math.random() - 0.5) * 50, m.y + 10 + Math.random() * 22);
   gainXp(m.xp, m);
 }
 
@@ -877,24 +953,31 @@ const DROPS = {
   gem:    { color: '#8cf', label: 'XP Gem' },
   star:   { color: '#fd4', label: '+1 Stat Point' },
   big:    { color: '#f6c', label: 'Mega Potion' },
+  gold:   { color: '#f5c451', label: 'Gold' },
+  gear:   { color: '#fff', label: 'Gear' },
 };
-function dropItem(kind, x, y) {
-  drops.push({ kind, x: Math.max(20, Math.min(WW - 20, x)), y: Math.max(60, Math.min(WH - 15, y)), t: 15, bob: Math.random() * 6, pop: 0.4 });
+function dropItem(kind, x, y, extra = {}) {
+  if (kind === 'gear' && !extra.item) extra = { ...extra, item: rollItem({ tier: depthOf(), level: hero.level }) };
+  drops.push({ kind, x: Math.max(20, Math.min(WW - 20, x)), y: Math.max(60, Math.min(WH - 15, y)),
+    t: kind === 'gold' ? 30 : 15, bob: Math.random() * 6, pop: 0.4, amount: kind === 'gold' ? 10 : 0, ...extra });
 }
 function updateDrops(dt) {
   for (const d of drops) {
-    d.t -= dt; d.bob += dt * 4; d.pop = Math.max(0, d.pop - dt);
+    d.t -= dt; d.bob += dt * 4; d.pop = Math.max(0, d.pop - dt); if (d.warnT > 0) d.warnT -= dt;
     const dist = Math.hypot(hero.x - d.x, hero.y - 10 - d.y);
     if (hero.dead) continue;
-    if (dist < 70 && dist > 28) { d.x += (hero.x - d.x) / dist * 120 * dt; d.y += (hero.y - 10 - d.y) / dist * 120 * dt; }  // magnet
+    const mm = gearHas('magnet') ? 1.8 : 1, mag = (d.kind === 'gold' ? 120 : 70) * mm, pull = (d.kind === 'gold' ? 240 : 120) * mm;     // coins are pulled in from further away
+    if (dist < mag && dist > 28) { d.x += (hero.x - d.x) / dist * pull * dt; d.y += (hero.y - 10 - d.y) / dist * pull * dt; }  // magnet
     if (dist > 28) continue;
+    if (d.kind === 'gear' && !pickUpGear(d)) continue;          // full backpack: it stays on the ground
     d.t = 0;
-    burst(d.x, d.y, DROPS[d.kind].color, 10, 120, 2, -50, true);
+    burst(d.x, d.y, d.kind === 'gear' ? RARITIES[d.item.rarity].color : DROPS[d.kind].color, 10, 120, 2, -50, true);
     const lbl = DROPS[d.kind].label;
     if (d.kind === 'potion') { const h = Math.round(hero.maxHp * 0.3); hero.hp = Math.min(hero.maxHp, hero.hp + h); sfx('potion'); popups.push({ text: `+${h} HP`, x: d.x, y: d.y - 30, t: 1, color: '#f77' }); }
     if (d.kind === 'big') { hero.hp = hero.maxHp; hero.stamina = maxStamina(); sfx('potion'); popups.push({ text: 'Fully healed!', x: d.x, y: d.y - 30, t: 1, color: '#f6c' }); }
     if (d.kind === 'energy') { hero.stamina = maxStamina(); sfx('pickup'); popups.push({ text: 'Stamina!', x: d.x, y: d.y - 30, t: 1, color: '#5d5' }); }
     if (d.kind === 'gem') { sfx('pickup'); gainXp(Math.round((15 + wave * 4) * D().xp), d); }
+    if (d.kind === 'gold') { hero.gold += d.amount; hero.goldPulse = 0.5; sfx('coin'); popups.push({ text: `+${d.amount}`, x: d.x, y: d.y - 24, t: 0.8, color: '#f5c451' }); }
     if (d.kind === 'star') { hero.points++; sfx('unlock'); popups.push({ text: lbl, x: d.x, y: d.y - 30, t: 1.2, color: '#fd4' }); }
   }
   drops = drops.filter(d => d.t > 0);
@@ -943,14 +1026,16 @@ function gainXp(n, m) {
 function updateHero(dt) {
   if (hero.dead) { hero.deadT += dt; return; }
   hero.flipCd = Math.max(0, hero.flipCd - dt);
+  hero.potionCd = Math.max(0, (hero.potionCd || 0) - dt);
   hero.hurtT = Math.max(0, hero.hurtT - dt);
   hero.auraT = Math.max(0, hero.auraT - dt);
   if (hero.attackT > 0) hero.attackT -= dt;
   hero.regenT = Math.max(0, hero.regenT - dt);
   // health slowly returns when you haven't been hit for a while
   hero.hpRegenT = Math.max(0, (hero.hpRegenT ?? 0) - dt);
+  hero.goldPulse = Math.max(0, (hero.goldPulse || 0) - dt * 2);
   if (hero.hpRegenT <= 0 && hero.hp < hero.maxHp) {
-    hero.hp = Math.min(hero.maxHp, hero.hp + hero.maxHp * HP_REGEN_RATE * dt);
+    hero.hp = Math.min(hero.maxHp, hero.hp + hero.maxHp * HP_REGEN_RATE * (gearHas('vigor') ? 2.5 : 1) * dt);
     if (gfx.particles && Math.random() < dt * 3) particles.push({ x: hero.x + (Math.random() - 0.5) * 18, y: hero.y - 20 - Math.random() * 30, vx: 0, vy: -26, life: 0.6, max: 0.6, size: 2, color: '#7fd08a', add: true });
   }
   if (hero.flipT <= 0 && hero.attackT <= 0 && hero.regenT <= 0) hero.stamina = Math.min(maxStamina(), hero.stamina + staminaRegen() * dt);
@@ -971,7 +1056,7 @@ function updateHero(dt) {
     hero.moving = !!(dx || dy);
     if (hero.moving) {
       const len = Math.hypot(dx, dy);
-      const spd = moveSpeed();
+      const spd = moveSpeed() * (hero.inWater ? 0.7 : 1);
       hero.x += (dx / len) * spd * dt;
       hero.y += (dy / len) * spd * dt;
       if (dx) hero.facing = Math.sign(dx);
@@ -980,12 +1065,14 @@ function updateHero(dt) {
       if (hero.stepT <= 0) {
         hero.stepT = 0.31;
         if (gfx.anim) burst(hero.x - hero.facing * 6, hero.y, world.B.patch2, 3, 30, 2.5, -10);
-        sfx('step');
+        Sound.step(surfaceAt(hero.x, hero.y));
       }
     } else hero.walkT = 0;
   }
   hero.x = Math.max(20, Math.min(WW - 20, hero.x));
   hero.y = Math.max(50, Math.min(WH - 10, hero.y));
+  const wet = !!waterAt(hero.x, hero.y);                  // wading: slower, with splashes
+  if (wet !== !!hero.inWater) { hero.inWater = wet; burst(hero.x, hero.y, '#bfe4f4', 12, 130, 2.2, 260); sfx('splash'); }
 
   // lava burns (unless mid-flip)
   if (world.lava.length && hero.flipT <= 0 && world.lava.some(l => ((hero.x - l.x) / l.rx) ** 2 + ((hero.y - l.y) / l.ry) ** 2 < 1)) {
@@ -1013,6 +1100,17 @@ function updateCamera(dt) {
   cam.shake = Math.max(0, cam.shake - dt * 30);
 }
 
+// what the world sounds like: biome calls, wind and rain follow the weather system
+let sceneT = 0;
+function updateSoundScene(dt) {
+  sceneT -= dt; if (sceneT > 0 || !world) return; sceneT = 0.25;
+  const p = weatherPower(), a = WEATHER[weather.kind], b = WEATHER[weather.next];
+  const rainOf = w => w.fx === 'rain' ? 0.09 * (w.dens || 1) : w.fx === 'hail' ? 0.1 : 0;
+  const pitchOf = w => w.fx === 'sand' ? 1100 : (w.fx === 'snow' && w.fall) ? 700 : 450;
+  Sound.setScene({ biome: world.B.ambience, night: night01() > 0.5, wind: clampN(0.035 + windMul() * 0.05, 0, 0.3),
+    rain: rainOf(a) * (1 - p) + rainOf(b) * p, pitch: pitchOf(a) * (1 - p) + pitchOf(b) * p });
+}
+
 function update(dt) {
   dt *= dev.speed;
   tAnim += dt;
@@ -1026,6 +1124,9 @@ function update(dt) {
   updateProjectiles(dt);
   updateDrops(dt);
   updateParticles(dt);
+  updateCritters(dt);
+  updateDarkEyes(dt);
+  updateSoundScene(dt);
   updateCamera(dt);
   for (const c of corpses) c.dieT += dt;
   corpses = corpses.filter(c => c.dieT < c.dieMax);
@@ -1372,7 +1473,7 @@ function drawEnemy(m) {
 }
 
 function drawDrop(d) {
-  const { color } = DROPS[d.kind];
+  const color = d.kind === 'gear' ? RARITIES[d.item.rarity].color : DROPS[d.kind].color;
   const fadeOut = d.t < 3 ? 0.35 + 0.65 * Math.abs(Math.sin(d.t * 3)) : 1;   // gentle pulse before despawning
   const y = d.y - 8 + Math.sin(d.bob) * 3 - d.pop * 40;
   drawShadow(d.x, d.y, 7);
@@ -1389,6 +1490,15 @@ function drawDrop(d) {
     ctx.beginPath(); ctx.arc(d.x, y, 7 * s, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
     ctx.fillStyle = '#ccc'; ctx.fillRect(d.x - 2.5 * s, y - 12 * s, 5 * s, 6 * s);
     ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.beginPath(); ctx.arc(d.x - 2.5 * s, y - 2.5 * s, 2 * s, 0, Math.PI * 2); ctx.fill();
+  } else if (d.kind === 'gold') {
+    const sz = 4.5 + Math.min(3.5, Math.log10(d.amount + 1) * 2), spin = Math.abs(Math.cos(tAnim * 3.5 + d.bob));
+    ctx.strokeStyle = '#8a6a1c';
+    ctx.beginPath(); ctx.ellipse(d.x, y, sz * (0.28 + 0.72 * spin), sz, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,243,192,0.8)'; ctx.beginPath(); ctx.ellipse(d.x - sz * 0.25 * spin, y - sz * 0.3, sz * 0.2 * spin + 0.5, sz * 0.35, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (d.kind === 'gear') {                              // a little chest in the rarity colour; the good ones send up a beam
+    if (d.item.rarity >= 4) { const bg = ctx.createLinearGradient(0, y - 80, 0, y); bg.addColorStop(0, withAlpha(color, 0)); bg.addColorStop(1, withAlpha(color, 0.55)); ctx.fillStyle = bg; ctx.fillRect(d.x - 4, y - 80, 8, 80); }
+    ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(d.x - 9, y - 7, 18, 14, 3); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(d.x - 9, y - 1, 18, 2); ctx.fillStyle = '#fff'; ctx.fillRect(d.x - 1.5, y - 3, 3, 5);
   } else if (d.kind === 'gem') {
     ctx.beginPath(); ctx.moveTo(d.x, y - 9); ctx.lineTo(d.x + 7, y); ctx.lineTo(d.x, y + 9); ctx.lineTo(d.x - 7, y); ctx.closePath(); ctx.fill(); ctx.stroke();
   } else {
@@ -1403,60 +1513,12 @@ function drawDrop(d) {
   ctx.restore();
 }
 
-// --- Props ---
-function drawProp(p) {
-  const { x, y, s } = p, kind = world.B.prop;
-  const sway = gfx.anim ? Math.sin(tAnim * 1.2 + x * 0.01) * 2 : 0;
-  if (kind === 'tree') {
-    drawShadow(x, y + 2, 26 * s, 0.3);
-    ctx.fillStyle = '#5c3d1e'; ctx.fillRect(x - 4 * s, y - 14 * s, 8 * s, 16 * s);
-    const r = 22 * s, cy = y - 14 * s - r * 0.8;
-    ctx.fillStyle = p.v < 0.5 ? '#2d4a2f' : '#335436';
-    ctx.beginPath(); ctx.arc(x + sway, cy, r, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x - r * 0.6 + sway, cy + r * 0.3, r * 0.65, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + r * 0.6 + sway, cy + r * 0.3, r * 0.65, 0, Math.PI * 2); ctx.fill();
-    if (gfx.glow) {
-      ctx.fillStyle = 'rgba(140,200,120,0.3)';
-      ctx.beginPath(); ctx.arc(x - r * 0.35 + sway, cy - r * 0.35, r * 0.45, 0, Math.PI * 2); ctx.fill();
-    }
-  } else if (kind === 'cactus') {
-    drawShadow(x, y + 2, 14 * s, 0.3);
-    ctx.fillStyle = '#4a7a3a'; ctx.strokeStyle = '#3a6030'; ctx.lineWidth = 1;
-    const h = 40 * s;
-    const pill = (px, py, w, hh) => { ctx.beginPath(); ctx.roundRect(px - w / 2, py - hh, w, hh, w / 2); ctx.fill(); ctx.stroke(); };
-    pill(x, y, 12 * s, h);
-    pill(x - 11 * s, y - h * 0.35, 7 * s, h * 0.4); ctx.fillRect(x - 11 * s, y - h * 0.4, 8 * s, 5 * s);
-    pill(x + 11 * s, y - h * 0.5, 7 * s, h * 0.35); ctx.fillRect(x + 4 * s, y - h * 0.55, 8 * s, 5 * s);
-    if (p.v > 0.6) { ctx.fillStyle = '#f6a'; ctx.beginPath(); ctx.arc(x, y - h, 3 * s, 0, Math.PI * 2); ctx.fill(); }
-  } else if (kind === 'pine') {
-    drawShadow(x, y + 2, 20 * s, 0.25);
-    ctx.fillStyle = '#4a3020'; ctx.fillRect(x - 3 * s, y - 12 * s, 6 * s, 14 * s);
-    for (let i = 0; i < 3; i++) {
-      const w = (26 - i * 6) * s, ty = y - 10 * s - i * 16 * s, sx = sway * (i + 1) * 0.4;
-      ctx.fillStyle = '#2d4a3a';
-      ctx.beginPath(); ctx.moveTo(x - w + sx, ty); ctx.lineTo(x + w + sx, ty); ctx.lineTo(x + sx, ty - 26 * s); ctx.fill();
-      ctx.fillStyle = '#f4f8fb';
-      ctx.beginPath(); ctx.moveTo(x - w * 0.45 + sx, ty - 14 * s); ctx.lineTo(x + w * 0.45 + sx, ty - 14 * s); ctx.lineTo(x + sx, ty - 26 * s); ctx.fill();
-    }
-  } else if (kind === 'rock') {
-    drawShadow(x, y + 2, 20 * s, 0.35);
-    ctx.fillStyle = '#2a2220';
-    ctx.beginPath();
-    ctx.moveTo(x - 20 * s, y); ctx.lineTo(x - 16 * s, y - 18 * s); ctx.lineTo(x - 4 * s, y - 30 * s); ctx.lineTo(x + 12 * s, y - 24 * s); ctx.lineTo(x + 20 * s, y);
-    ctx.closePath(); ctx.fill();
-    const glow = 0.6 + Math.sin(tAnim * 2 + x) * 0.4;
-    ctx.strokeStyle = `rgba(255,${100 + glow * 60},30,${0.5 + glow * 0.5})`; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.moveTo(x - 10 * s, y - 4 * s); ctx.lineTo(x - 4 * s, y - 16 * s); ctx.lineTo(x + 4 * s, y - 12 * s); ctx.lineTo(x + 8 * s, y - 20 * s); ctx.stroke();
-  }
-}
-
 function drawGrassAndDecor() {
   const B = world.B;
   if (gfx.decor) {
     for (const d of world.decor) {
-      if (!inView(d.x, d.y, 10)) continue;
-      ctx.fillStyle = d.c;
-      ctx.beginPath(); ctx.arc(d.x, d.y, d.s, 0, Math.PI * 2); ctx.fill();
+      if (!inView(d.x, d.y, 14)) continue;
+      (DECOR_ART[d.k] || DECOR_ART.dot)(d);
     }
   }
   if (!gfx.grass) return;
@@ -1501,6 +1563,7 @@ function drawParticles() {
     if (!inView(p.x, p.y, 20)) continue;
     ctx.globalAlpha = Math.max(0, Math.min(1, p.life / Math.min(p.max, 0.5)));
     ctx.globalCompositeOperation = p.add && gfx.glow ? 'lighter' : 'source-over';
+    if (drawSpecialParticle(p)) continue;
     ctx.fillStyle = p.color;
     if (p.streak) ctx.fillRect(p.x, p.y, 8, 1);
     else if (p.kind === 'fly') {
@@ -1515,8 +1578,10 @@ function drawParticles() {
 
 function drawWorld() {
   ctx.drawImage(world.ground, cam.x, cam.y, VW, VH, cam.x, cam.y, VW, VH);
+  drawWater();
   drawLavaGlow();
   drawGrassAndDecor();
+  drawCloudShadows();
   for (const s of shockwaves) {
     ctx.strokeStyle = `rgba(255,220,150,${1 - s.r / s.maxR})`; ctx.lineWidth = 6;
     ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r, s.r / 1.6, 0, 0, Math.PI * 2); ctx.stroke();
@@ -1527,6 +1592,8 @@ function drawWorld() {
 
   const things = [];
   for (const p of world.props) if (inView(p.x, p.y)) things.push({ y: p.y, d: () => drawProp(p) });
+  for (const c of critters) if (inView(c.x, c.y, c.kind === 'fish' ? 200 : 100)) things.push({ y: c.y, d: () => drawCritter(c) });
+  for (const d of devils) if (inView(d.x, d.y, 120)) things.push({ y: d.y, d: () => drawDevil(d) });
   for (const c of corpses) if (inView(c.x, c.y)) things.push({ y: c.y, d: () => drawEnemy(c) });
   for (const m of enemies) if (inView(m.x, m.y, 120)) things.push({ y: m.y, d: () => drawEnemy(m) });
   things.push({ y: hero.y, d: () => drawHero(hero) });
@@ -1569,7 +1636,7 @@ function hudBar(x, y, w, h, frac, bg, fg, label, glow) {
 }
 
 function drawHUD() {
-  const W0 = 268, H0 = 112;
+  const W0 = 268, H0 = 154;
   ctx.fillStyle = 'rgba(10,10,16,0.62)'; ctx.strokeStyle = 'rgba(120,120,160,0.28)'; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(10, 10, W0, H0, 10); ctx.fill(); ctx.stroke();
 
@@ -1600,15 +1667,38 @@ function drawHUD() {
   ctx.fillText(hero.flipCd <= 0 ? 'FLIP READY' : `flip ${hero.flipCd.toFixed(1)}s`, 266, 88);
   ctx.textAlign = 'left';
 
-  ctx.fillStyle = hero.sword.color; ctx.font = 'bold 12px "Segoe UI", sans-serif';
-  ctx.fillText(hero.sword.name, 22, 106);
+  const wi = hero.equip.weapon;
+  ctx.fillStyle = RARITIES[wi.rarity].color; ctx.font = 'bold 12px "Segoe UI", sans-serif';
+  ctx.fillText(wi.name, 22, 106, 150);
   ctx.fillStyle = '#6a6a7c'; ctx.font = '10px "Segoe UI", sans-serif'; ctx.textAlign = 'right';
   ctx.fillText(`${Math.round(critChance() * 100)}% crit · -${Math.round(dmgReduction() * 100)}% dmg taken`, 266, 106);
   ctx.textAlign = 'left';
 
+  // gold, and ten pips counting the waves to the next boss
+  const gp = Math.max(0, hero.goldPulse || 0);
+  ctx.save(); ctx.translate(30, 126); ctx.scale(1 + gp, 1 + gp);
+  ctx.fillStyle = '#f5c451'; ctx.strokeStyle = '#8a6a1c'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff3c0'; ctx.beginPath(); ctx.arc(-1.8, -1.8, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.fillStyle = '#f5c451'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.textAlign = 'left';
+  ctx.fillText(hero.gold.toLocaleString(), 42, 131);
+  const pos = wave === 0 ? 0 : ((wave - 1) % 10) + 1;
+  for (let i = 1; i <= 10; i++) {
+    const px = 126 + (i - 1) * 14;
+    if (i === 10) {                                                  // the boss
+      ctx.fillStyle = pos === 10 ? '#ff5a5a' : '#8a2a2e';
+      ctx.beginPath(); ctx.moveTo(px + 5, 120); ctx.lineTo(px + 10, 126); ctx.lineTo(px + 5, 132); ctx.lineTo(px, 126); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle = i < pos ? '#7fd08a' : i === pos ? (enemies.length || spawnQueue.length ? '#fff' : '#7fd08a') : '#2c3140';
+      ctx.beginPath(); ctx.roundRect(px, 122, 10, 8, 2); ctx.fill();
+    }
+  }
+
+  drawPotionHud(22, 148);
   if (hero.points > 0 && Math.floor(tAnim * 2) % 2) {
     ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    ctx.fillText(`${hero.points} stat points — press L`, 22, 136);
+    ctx.fillText(`${hero.points} stat points — press L`, 22, 178);
   }
 
   drawClock(VW - 164, 10);
@@ -1622,11 +1712,19 @@ function drawHUD() {
   ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
   ctx.strokeRect(mx + cam.x * sx, my + cam.y * sy, VW * sx, VH * sy);
   ctx.fillStyle = '#f5c451';
-  for (const d of drops) ctx.fillRect(mx + d.x * sx - 1, my + d.y * sy - 1, 2.5, 2.5);
+  for (const d of drops) if (visibilityAt(d.x, d.y) > 0.4) ctx.fillRect(mx + d.x * sx - 1, my + d.y * sy - 1, 2.5, 2.5);
   for (const m of enemies) {
+    if (visibilityAt(m.x, m.y) < 0.4) continue;      // hidden in the dark / fog: no safety net on the minimap
     ctx.fillStyle = m.type === 'boss' ? '#ff5ce0' : '#ff5a5a';
     const r = m.type === 'boss' ? 3 : 1.6;
     ctx.beginPath(); ctx.arc(mx + m.x * sx, my + m.y * sy, r, 0, Math.PI * 2); ctx.fill();
+  }
+  const sev = visibilitySeverity();
+  if (sev > 0.05) {                                   // the map goes dark beyond what the hero can see
+    const hx = mx + hero.x * sx, hy = my + hero.y * sy, rr = Math.min(visibilityClearRadius(), 900) * sx;
+    const gr = ctx.createRadialGradient(hx, hy, rr, hx, hy, rr + 16);
+    gr.addColorStop(0, 'rgba(4,8,16,0)'); gr.addColorStop(1, `rgba(4,8,16,${0.8 * sev})`);
+    ctx.fillStyle = gr; ctx.fillRect(mx, my, mw, mh);
   }
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(mx + hero.x * sx, my + hero.y * sy, 2.6, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
@@ -1761,7 +1859,7 @@ function drawTitle() {
 }
 
 // --- Dev / cheat menu (` key) ---
-const dev = { god: false, oneHit: false, stamina: false, swords: false, hitboxes: false, speed: 1, freezeTime: false };
+const dev = { god: false, oneHit: false, stamina: false, swords: false, hitboxes: false, speed: 1, freezeTime: false, noFog: false };
 function renderDev() {
   const tog = (k, label) => `<button data-dev="tog" data-k="${k}" class="${dev[k] ? 'on' : ''}">${label}</button>`;
   const btn = (act, label, extra = '') => `<button data-dev="${act}" ${extra}>${label}</button>`;
@@ -1769,12 +1867,15 @@ function renderDev() {
   document.getElementById('devBody').innerHTML = `
     <h3>TOGGLES</h3><div class="dev-grid">
       ${tog('god', 'God mode')}${tog('oneHit', 'One-hit kills')}${tog('stamina', 'Infinite stamina')}
-      ${tog('swords', 'Unlock all swords')}${tog('hitboxes', 'Show hitboxes')}</div>
+      ${tog('swords', 'Ignore weapon level limits')}${tog('hitboxes', 'Show hitboxes')}${tog('noFog', 'Disable fog-of-war')}</div>
     <h3>GAME SPEED</h3><div class="dev-grid">
       ${[0.25, 0.5, 1, 2, 4].map(v => `<button data-dev="speed" data-v="${v}" class="${dev.speed === v ? 'on' : ''}">${v}×</button>`).join('')}</div>
     ${inPlay ? `
     <h3>HERO</h3><div class="dev-grid">
+      ${btn('gold100', '+100 gold')}${btn('gold1000', '+1000 gold')}${btn('savenow', 'Save now')}
       ${btn('heal', 'Full heal')}${btn('lvl1', '+1 level')}${btn('lvl10', '+10 levels')}${btn('pts', '+10 stat points')}${btn('kill', 'Kill hero')}</div>
+    <h3>GEAR</h3><div class="dev-grid">
+      ${RARITIES.map((r, i) => `<button data-dev="gear" data-t="${i}" style="border-color:${r.color}">${r.name}</button>`).join('')}${btn('fillpack', 'Fill backpack')}${btn('clearpack', 'Clear backpack')}</div>
     <h3>WAVES</h3><div class="dev-grid">
       ${btn('clear', 'Kill all enemies')}${btn('next', 'Skip wave')}
       <input type="text" id="devWave" value="${wave + 1}"> ${btn('goto', 'Go to wave')}</div>
@@ -1782,7 +1883,7 @@ function renderDev() {
       ${Object.keys(TYPES).map(t => btn('spawn', t, `data-t="${t}"`)).join('')}${btn('boss', 'BOSS')}
       ${Object.keys(DROPS).map(d => btn('drop', 'drop: ' + d, `data-t="${d}"`)).join('')}</div>
     <h3>WORLD</h3><div class="dev-grid">
-      ${BIOMES.map((b, i) => btn('biome', b.name, `data-t="${i}"`)).join('')}${btn('biome', 'Random biome', 'data-t="rand"')}${btn('camp', 'Play campfire scene')}</div>
+      ${BIOMES.map((b, i) => btn('biome', b.name, `data-t="${i}"`)).join('')}${btn('biome', 'Random biome', 'data-t="rand"')}${btn('camp', 'Play campfire scene')}${btn('village', 'Visit the village')}</div>
     <h3>TIME &amp; WEATHER</h3><div class="dev-grid">
       ${[['Dawn', 0.28], ['Noon', 0.5], ['Dusk', 0.75], ['Night', 0.95]].map(([n, v]) => btn('time', n, `data-t="${v}"`)).join('')}
       ${btn('freeze', dev.freezeTime ? 'Time frozen' : 'Freeze time', dev.freezeTime ? 'class="on"' : '')}</div>
@@ -1806,22 +1907,29 @@ document.getElementById('devBody').addEventListener('click', e => {
     for (let i = 0; i < n; i++) gainXp(hero.xpNext - hero.xp, hero);
   }
   if (act === 'pts') hero.points += 10;
+  if (act === 'gear') { const it = rollItem({ rarity: +t, level: hero.level }); if (!addToBag(it)) dropGear(it, hero.x + 60, hero.y); }
+  if (act === 'fillpack') while (hero.inv.length < INV_MAX) hero.inv.push(rollItem({ tier: depthOf(), level: hero.level }));
+  if (act === 'clearpack') hero.inv = [];
+  if (act === 'gold100') hero.gold += 100;
+  if (act === 'gold1000') hero.gold += 1000;
+  if (act === 'savenow') saveGame(false);
   if (act === 'kill') { dev.god = false; hero.hurtT = 0; hero.flipT = 0; damageHero(hero.hp); showMenu(null); return; }
   if (act === 'clear') { for (const m of enemies) m.hp = 0; spawnQueue = []; updateEnemies(0); }
   if (act === 'next' || act === 'goto') {
     const target = act === 'goto' ? Math.max(1, parseInt(document.getElementById('devWave').value) || 1) : wave + 1;
     enemies = []; spawnQueue = []; boss = null; projectiles = []; shockwaves = [];
-    wave = target - 1; lastSavedWave = wave; waveTimer = 0.2;
-    if (zoneFor(target) === zone && Sound.current === 'boss') Sound.music(BIOMES[zone % BIOMES.length].music);
+    wave = target - 1; waveTimer = 0.2;
+    if (Sound.current === 'boss') Sound.music(BIOMES[zone % BIOMES.length].music);
   }
   if (act === 'spawn') spawnEnemy(t, near(), { spawnT: 0.3 });
-  if (act === 'boss') { const w = wave; wave = Math.max(5, wave); spawnBoss(); wave = w; }
+  if (act === 'boss') { const w = wave; wave = Math.max(WAVES_PER_SET, wave); spawnBoss(); wave = w; }
   if (act === 'drop') dropItem(t, hero.x + hero.facing * 50, hero.y - 20);
   if (act === 'biome') { const z = t === 'rand' ? randomBiome() : +t; setBiome(z); Sound.music(BIOMES[z].music); }
   if (act === 'time') tod = +t;
   if (act === 'freeze') dev.freezeTime = !dev.freezeTime;
   if (act === 'weather') setWeather(t, true);
   if (act === 'camp') { showMenu(null); startCamp((zone + 1) % BIOMES.length); return; }
+  if (act === 'village') { showMenu(null); enterVillage(); return; }
   renderDev();
 });
 function drawHitboxes() {
@@ -1847,6 +1955,7 @@ function startCamp(z) {
   for (const k in keys) keys[k] = false;
   hero.hp = hero.maxHp; hero.stamina = maxStamina();      // a night's rest
   Sound.music('camp');
+  Sound.setScene({ biome: 'camp', night: true, wind: 0.03, rain: 0, pitch: 450 });
 }
 function updateCamp(dt) {
   campT += dt;
@@ -1870,6 +1979,8 @@ function endCamp() {
   const B = BIOMES[camp.zone % BIOMES.length];
   popups.push({ text: `— ${B.name} —`, x: VW / 2, y: 190, t: 3, big: true, screen: true, color: '#fff' });
   popups.push({ text: 'Rested: HP & stamina restored', x: VW / 2, y: 225, t: 3, screen: true, small: true, color: '#9f9' });
+  popups.push({ text: `Monsters grow stronger (tier ${tierOf(wave)})`, x: VW / 2, y: 250, t: 3, screen: true, small: true, color: '#fb8' });
+  saveGame(true);                       // campfires are save points (gold is banked here)
   Sound.music(B.music);
   camp = null;
   acc = 0;
@@ -1984,6 +2095,7 @@ function render(alpha) {
   if (state === 'intro') return drawIntro(introT);
   if (state === 'title') { updateParticles(1 / 60); return drawTitle(); }
   if (state === 'camp') return drawCamp(campT);
+  if (state === 'village') return drawVillage();
 
   // interpolate positions between the last two simulation steps (frame generation)
   const lerped = [];
@@ -2002,15 +2114,15 @@ function render(alpha) {
   if (dev.hitboxes) drawHitboxes();
   drawPopups(false);
   ctx.restore();
-  for (const [e, x, y] of lerped) { e.x = x; e.y = y; }
 
   // low-HP vignette when post-FX is off
-  if (!postActive && gfx.glow && hero.hp / hero.maxHp < 0.3 && !hero.dead) {
+  if (!fxActive && gfx.glow && hero.hp / hero.maxHp < 0.3 && !hero.dead) {
     const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VH * 0.9);
     g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(150,0,0,${0.3 + (settings.comfort ? 0 : Math.sin(tAnim * 3) * 0.08)})`);
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   }
   drawSky();
+  for (const [e, x, y] of lerped) { e.x = x; e.y = y; }   // after drawSky: the light circle must follow the interpolated hero
   if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, flash)})`; ctx.fillRect(0, 0, VW, VH); }
   drawHUD();
   drawPopups(true);
@@ -2023,8 +2135,11 @@ function render(alpha) {
     ctx.font = 'bold 54px Georgia, serif'; ctx.fillText('YOU DIED', VW / 2, VH / 2);
     ctx.fillStyle = '#fff'; ctx.font = '18px sans-serif';
     ctx.fillText(`Reached wave ${wave}, level ${hero.level}`, VW / 2, VH / 2 + 38);
-    ctx.fillStyle = '#bbb'; ctx.font = '15px sans-serif';
-    ctx.fillText('R: retry from last save   ·   Esc: menu', VW / 2, VH / 2 + 66);
+    const lostW = Math.max(0, wave - Math.max(0, lastSavedWave));
+    ctx.fillStyle = '#f5c451'; ctx.font = '15px sans-serif';
+    ctx.fillText(`Lost ${hero.lostGold.toLocaleString()} gold  ·  ${lostW} wave${lostW === 1 ? '' : 's'} since your last save`, VW / 2, VH / 2 + 64);
+    ctx.fillStyle = '#bbb';
+    ctx.fillText('R: reload your last save   ·   Esc: menu', VW / 2, VH / 2 + 92);
     ctx.globalAlpha = 1;
   }
 }
@@ -2061,6 +2176,7 @@ function loop(now) {
     if (state === 'intro') introT += dt;
     if (state === 'title') tAnim += dt;
     if (state === 'camp') updateCamp(dt);
+    if (state === 'village' && !paused) updateVillage(Math.min(0.05, dt));
     if (state === 'play' && !paused) {
       if (genFactor() <= 1) { update(Math.min(0.05, dt)); acc = 0; }
       else {
@@ -2094,6 +2210,7 @@ function loop(now) {
     ctx.fillText(`${fpsShown} FPS${label} · ${Math.round(1000 / refreshMs)} Hz`, VW - 16, 73);
   }
   if (postActive) PostFX.present(canvas, {
+    fx: gfx.post, sharp: settings.sharpness / 100, outW: outRes.w, outH: outRes.h,
     hurt: hero && state === 'play'
       ? Math.max(hero.hurtT > 0.5 ? (hero.hurtT - 0.5) * (settings.comfort ? 0.8 : 2) : 0,
                  hero.hp / hero.maxHp < 0.3 && !hero.dead ? 0.3 + (settings.comfort ? 0 : Math.sin(tAnim * 3) * 0.1) : 0)
@@ -2103,6 +2220,8 @@ function loop(now) {
 }
 
 canvas.tabIndex = 0;
+if (window.stickApp) document.querySelectorAll('.app-only').forEach(el => el.classList.remove('app-only'));   // desktop-only buttons
+restoreSavesFromDisk();
 gfx = QUALITY[settings.quality];
 reset(); hero = null;
 setBiome(0, false);

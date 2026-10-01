@@ -1,0 +1,29 @@
+# Builds the desktop app for Windows, macOS and Linux. Run it from the repo's "Actions" tab (Run workflow),
+# then download the artifacts. NOTE: written but not yet run, the Windows build is the one tested locally.
+name: Build desktop app
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: node build/pack.js
+      - run: node build/selftest.js
+        if: runner.os == 'Windows'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stick-rpg-${{ matrix.os }}
+          path: dist/*
+          if-no-files-found: error

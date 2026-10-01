@@ -57,16 +57,20 @@ const WEATHER = {
   emberstorm: { name: 'Ember Storm',  fx: 'ember', dens: 1,  tint: [255, 110, 40, 0.20], vig: 0.20, windMul: 2.6 },
   lavarain:   { name: 'Lava Rain',    fx: 'lava', dens: 1,   tint: [255, 90, 30, 0.26],  vig: 0.24, windMul: 1.6 },
 };
-const BIOME_WEATHER = {                     // index matches BIOMES order
-  0: [['clear', 5], ['windy', 3], ['drizzle', 3], ['rain', 3], ['fog', 2], ['leafstorm', 2], ['storm', 1]],
-  1: [['clear', 5], ['heat', 4], ['windy', 2], ['mirage', 2], ['sandstorm', 2]],
-  2: [['snowfall', 5], ['clear', 3], ['blizzard', 2], ['fog', 2], ['hail', 2], ['whiteout', 1], ['aurora', 2]],
-  3: [['ashfall', 4], ['clear', 3], ['emberstorm', 3], ['heat', 2], ['smog', 2], ['lavarain', 1]],
+const BIOME_WEATHER = {                     // keyed by biome key (see biomes.js)
+  forest:    [['clear', 5], ['windy', 3], ['drizzle', 3], ['rain', 3], ['fog', 2], ['leafstorm', 2], ['storm', 1]],
+  desert:    [['clear', 5], ['heat', 4], ['windy', 2], ['mirage', 2], ['sandstorm', 2]],
+  snow:      [['snowfall', 5], ['clear', 3], ['blizzard', 2], ['fog', 2], ['hail', 2], ['whiteout', 1], ['aurora', 2]],
+  volcano:   [['ashfall', 4], ['clear', 3], ['emberstorm', 3], ['heat', 2], ['smog', 2], ['lavarain', 1]],
+  swamp:     [['fog', 5], ['drizzle', 4], ['rain', 3], ['clear', 3], ['storm', 2], ['windy', 1]],
+  jungle:    [['rain', 4], ['storm', 3], ['drizzle', 3], ['fog', 2], ['clear', 3], ['leafstorm', 2], ['windy', 1]],
+  ruins:     [['fog', 5], ['clear', 3], ['windy', 3], ['storm', 2], ['drizzle', 2], ['smog', 1]],
+  highlands: [['windy', 5], ['clear', 4], ['fog', 3], ['hail', 2], ['snowfall', 2], ['storm', 1], ['blizzard', 1]],
 };
 
-const weather = { kind: 'clear', next: 'clear', t: 1, timer: 45, thunderT: 3 };
+const weather = { kind: 'clear', next: 'clear', t: 1, timer: 45, thunderT: 3, revealAge: 99 };
 function rollWeather(zoneIdx) {
-  const pool = BIOME_WEATHER[zoneIdx % 4] || BIOME_WEATHER[0];
+  const pool = BIOME_WEATHER[BIOMES[zoneIdx % BIOMES.length].key] || BIOME_WEATHER.forest;
   const usable = pool.filter(([k]) => !WEATHER[k].nightOnly || isNight());
   let tot = 0;
   for (const [, w] of usable) tot += w;
@@ -81,6 +85,7 @@ function setWeather(kind, instant = false) {
   weather.timer = 50 + Math.random() * 90;
 }
 function updateSky(dt, zoneIdx) {
+  weather.revealAge += dt;
   const before = tod;
   tod = (tod + dt / DAY_LEN) % 1;
   if (tod < before) dayCount++;
@@ -100,6 +105,7 @@ function updateSky(dt, zoneIdx) {
     weather.thunderT -= dt;
     if (weather.thunderT <= 0) {
       weather.thunderT = 6 + Math.random() * 14;
+      weather.revealAge = 0;                      // lightning briefly reveals everything (see vision.js)
       if (!settings.comfort) flash = Math.max(flash, 0.25);
       sfx('thunder');
     }
@@ -261,7 +267,7 @@ function drawSky() {
     ctx.globalCompositeOperation = 'multiply';
     const [r, g, bl] = sky.c;
     if (state === 'play' && hero && !hero.dead && gfx.glow) {
-      const hx = hero.x - cam.x, hy = hero.y - cam.y - 20, rad = 300;
+      const hx = hero.x - cam.x, hy = hero.y - cam.y - 28, rad = lightRadius() + 70;
       const grad = ctx.createRadialGradient(hx, hy, 20, hx, hy, rad);
       const lit = Math.max(0, sky.dark - 0.30);
       grad.addColorStop(0, `rgba(255,236,200,${1 - lit})`);
@@ -274,6 +280,9 @@ function drawSky() {
     ctx.fillRect(0, 0, VW, VH);
     ctx.restore();
   }
+
+  // fog-of-war: hide whatever is beyond the hero's sight (night, fog, storms...)
+  drawVision();
 
   // storm/blizzard vignette
   const vig = cur.vig + (nxt.vig - cur.vig) * p;

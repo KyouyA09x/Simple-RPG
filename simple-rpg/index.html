@@ -99,6 +99,49 @@
   .dev-grid button { width: auto; margin: 0; padding: 6px 10px; font-size: 13px; }
   .dev-grid button.on { background: #6d4a1e; border-color: var(--gold); }
   .dev-grid input { width: 68px; }
+
+  /* ---- village: dialogue and shop ---- */
+  .overlay.clear.talk { padding-bottom: 4%; }
+  .talk-panel { min-width: 440px; max-width: 620px; text-align: left; padding: 16px 22px 12px; }
+  .talk-name { font-weight: 700; color: var(--gold); letter-spacing: 1px; margin-bottom: 6px; font-size: 16px; }
+  .talk-name small { color: var(--ink-dim); font-weight: 400; letter-spacing: .5px; margin-left: 8px; font-size: 12px; }
+  .talk-text { font-size: 15px; line-height: 1.55; margin-bottom: 8px; min-height: 2.6em; }
+  .talk-panel button { margin: 5px 0; padding: 8px 12px; font-size: 14px; text-align: left; }
+  .item { display: flex; align-items: center; gap: 12px; background: var(--panel-2); border: 1px solid var(--line-soft);
+    border-radius: 8px; padding: 10px 12px; margin: 8px 0; text-align: left; }
+  .item .im { flex: 1; min-width: 0; font-size: 14px; }
+  .item small { display: block; color: var(--ink-dim); font-size: 11.5px; margin-top: 3px; line-height: 1.45; }
+  .item .pr { text-align: right; min-width: 92px; }
+  kbd { display: inline-block; min-width: 18px; padding: 1px 5px; margin-right: 9px; text-align: center; font: 700 12px "Segoe UI", sans-serif;
+    color: var(--gold); background: #14141c; border: 1px solid var(--line); border-radius: 5px; }
+  .price { color: var(--gold); font-weight: 700; font-size: 15px; }
+  .panel .item button { width: auto; margin: 0; padding: 8px 16px; font-size: 14px; }
+  .item .ic { width: 38px; height: 38px; border-radius: 8px; background: #14141c; border: 1px solid var(--line-soft); flex: none; position: relative; }
+  .app-only { display: none !important; }
+  .inv-panel { min-width: 900px; max-width: 98%; text-align: left; padding: 16px 22px 14px; }
+  .inv-panel h2 { margin-bottom: 10px; } .inv-panel h3 { margin: 10px 0 5px; } .inv-panel .summary { padding: 3px 10px; } .inv-panel .srow { padding: 2px 0; font-size: 12.5px; }
+  .inv-panel h2 { text-align: center; }
+  .invcols { display: grid; grid-template-columns: 1fr 1.15fr 1fr; gap: 16px; align-items: start; margin-top: 4px; }
+  @media (max-width: 960px) { .inv-panel { min-width: 0 } .invcols { grid-template-columns: 1fr } }
+  .equipgrid { display: grid; gap: 6px; }
+  .eqslot { display: flex; align-items: center; gap: 9px; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 5px 9px; cursor: pointer; min-height: 40px; }
+  .eqslot:not([data-eq]) { cursor: default; opacity: .75; }
+  .eqslot.sel, .cell.sel { outline: 2px solid var(--focus); outline-offset: 1px; }
+  .eqslot .ico { width: 28px; flex: none; } .eqtxt { min-width: 0; font-size: 13px; line-height: 1.25; }
+  .eqtxt small { display: block; color: var(--ink-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; } .eqtxt em { color: #5a5a6c; }
+  .eqtxt b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .invgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
+  .cell { aspect-ratio: 1.5; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line-soft); border-radius: 8px; background: #14141c; cursor: pointer; }
+  .cell.empty { cursor: default; opacity: .55; } .cell:not(.empty):hover { filter: brightness(1.25); }
+  .invdetail { background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px; font-size: 13px; min-height: 220px; }
+  .dname { font-weight: 700; font-size: 15px; } .dsub { color: var(--ink-dim); font-size: 11.5px; margin: 2px 0 8px; }
+  .srow { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-bottom: 1px solid var(--line-soft); font-size: 13px; }
+  .srow:last-child { border-bottom: 0; } .srow span { color: var(--ink-dim); } .srow small { font-size: 11px; color: var(--ink-dim); }
+  .up { color: #7fd08a !important; } .down { color: #e2565a !important; }
+  .uniq { margin-top: 8px; padding: 6px 8px; border: 1px solid #3ff2e055; border-radius: 6px; background: #3ff2e012; font-size: 12px; }
+  .dbtns button { margin: 6px 0 0; padding: 7px 10px; font-size: 13px; } button.danger:hover:not(:disabled) { background: #4a2024; border-color: #8a3a40; }
+  .item .ic.potion::after { content: ''; position: absolute; left: 11px; top: 8px; width: 14px; height: 20px; border-radius: 3px 3px 8px 8px; background: #d9534f; box-shadow: 0 0 10px #d9534f88; }
+  .item .ic.lamp::after { content: ''; position: absolute; left: 12px; top: 9px; width: 14px; height: 20px; border-radius: 4px; background: #ffd88a; box-shadow: 0 0 14px #ffd88aaa; }
 </style>
 </head>
 <body>
@@ -112,6 +155,7 @@
       <button data-act="newgame">New Game</button>
       <button data-act="load">Load Game</button>
       <button data-act="settings">Settings</button>
+      <button data-act="quitApp" class="app-only">Quit to Desktop</button>
     </div>
   </div>
 
@@ -134,6 +178,7 @@
       <h2>LOAD GAME</h2>
       <div id="slots"></div>
       <div class="hint">Export writes a slot to a <b>.json save file</b> you can keep anywhere (backup, another PC). Import reads one back into a slot.</div>
+      <button data-act="openSaves" class="app-only">Open save folder</button>
       <button data-act="toTitle">Back</button>
       <input type="file" id="importFile" accept=".json,application/json" hidden>
     </div>
@@ -144,9 +189,11 @@
       <h2>PAUSED</h2>
       <button data-act="resume">Resume</button>
       <button data-act="level">Level Up (L)</button>
-      <button data-act="save">Save Game</button>
+      <button data-act="inv">Inventory (I)</button>
       <button data-act="settings">Settings</button>
       <button data-act="quit">Quit to Title</button>
+      <button data-act="quitApp" class="app-only">Quit to Desktop</button>
+      <div class="hint" id="menuInfo"></div>
     </div>
   </div>
 
@@ -166,6 +213,10 @@
         <option value="3840x2160">3840 × 2160 (4K)</option>
       </select></div>
       <div class="row"><span>Display</span><div class="opts"><button data-act="fullscreen" id="btnFs">Fullscreen (F)</button></div></div>
+      <div class="row"><span>Render scale <small>(FSR-style upscaler)</small></span><div class="opts" data-set="renderScale">
+        <button data-v="100">100%</button><button data-v="85">85%</button><button data-v="75">75%</button><button data-v="67">67%</button><button data-v="50">50%</button>
+      </div></div>
+      <div class="row"><span>Upscaler sharpness</span><input type="range" min="0" max="100" data-set="sharpness"></div>
       <div class="row"><span>FPS cap</span><select data-set="fps">
         <option value="30">30</option><option value="60">60</option><option value="90">90</option><option value="120">120</option>
         <option value="144">144</option><option value="165">165</option><option value="240">240</option><option value="0">Unlimited (monitor rate)</option>
@@ -182,10 +233,14 @@
       </div></div>
       <div class="row"><span>Music volume</span><input type="range" min="0" max="100" data-set="musicVol"></div>
       <div class="row"><span>Sound effects</span><input type="range" min="0" max="100" data-set="sfxVol"></div>
+      <div class="row"><span>Ambience</span><input type="range" min="0" max="100" data-set="ambVol"></div>
       <div class="hint">
         <b>Low</b> half resolution, no effects · <b>Medium</b> shadows, sword trails, hit particles ·
         <b>High</b> grass, flowers, glow · <b>Ultra</b> animated grass that reacts to you, weather, screen shake,
         and a GPU (WebGL) post-processing pass: bloom, color grading, vignette.<br>
+        <b>Render scale:</b> draws the game at a lower resolution and enlarges it on the GPU with a bicubic filter plus contrast-adaptive
+        sharpening (an FSR-style upscaler). Lower scales run faster on weak GPUs or 4K screens; 75% is a good start. It needs WebGL and is
+        not used on Low quality.<br>
         <b>Frame generation:</b> the game simulates fewer times per second and fills the gaps with generated
         (interpolated) frames — 3× means 1 simulated frame and 2 generated ones. Saves CPU, but each step adds
         input delay, so 2× or 3× is the sweet spot.<br>
@@ -204,6 +259,36 @@
     </div>
   </div>
 
+  <div class="overlay clear talk" id="talk">
+    <div class="panel talk-panel">
+      <div class="talk-name" id="talkName"></div>
+      <div class="talk-text" id="talkText"></div>
+      <div id="talkBtns"></div>
+    </div>
+  </div>
+
+  <div class="overlay" id="shop">
+    <div class="panel wide">
+      <h2 id="shopTitle">SHOP</h2>
+      <div class="lvhead"><span>Your gold</span><span class="pts" id="shopGold"></span></div>
+      <div id="shopBody"></div>
+      <button data-act="close">Close (Esc or 0)</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="inv">
+    <div class="panel inv-panel">
+      <h2>INVENTORY</h2>
+      <div class="lvhead"><span id="invCount"></span><span>Gold: <span class="pts" id="invGold"></span></span></div>
+      <div class="invcols">
+        <div><h3>Equipped</h3><div id="invEquip" class="equipgrid"></div></div>
+        <div><h3>Backpack</h3><div id="invGrid" class="invgrid"></div><h3>Gear totals</h3><div class="summary" id="invTotals"></div></div>
+        <div><h3>Details</h3><div id="invDetail" class="invdetail"></div></div>
+      </div>
+      <button data-act="close">Close (I / Esc)</button>
+    </div>
+  </div>
+
   <div class="overlay" id="level">
     <div class="panel wide">
       <h2>CHARACTER</h2>
@@ -212,16 +297,23 @@
         <div><h3>Stats</h3><div id="lvStats"></div></div>
         <div><h3>Summary</h3><div class="summary" id="lvSummary"></div></div>
       </div>
-      <h3>Swords</h3>
-      <div class="swords" id="lvSwords"></div>
+      <div class="hint">Weapons and gear are in the <b>Inventory</b> (press <b>I</b>).</div>
       <button data-act="close">Close (L / Esc)</button>
     </div>
   </div>
 </div>
-<div id="help">WASD / Arrows: move · Space: attack · Shift: flip (invincible) · L: level menu · Esc / P: menu · hold Esc: exit fullscreen · F: fullscreen · `: dev menu</div>
+<div id="help">WASD / Arrows: move · Space: attack · Shift: flip (invincible) · Q: potion · I: inventory · E: talk (village) · L: level menu · Esc / P: menu · hold Esc: exit fullscreen · F: fullscreen · `: dev menu</div>
 <script src="sfx.js"></script>
 <script src="postfx.js"></script>
 <script src="sky.js"></script>
+<script src="vision.js"></script>
+<script src="biomes.js"></script>
+<script src="props.js"></script>
+<script src="terrain.js"></script>
+<script src="critters.js"></script>
+<script src="gear.js"></script>
+<script src="villagers.js"></script>
+<script src="village.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

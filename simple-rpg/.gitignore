@@ -1,0 +1,10 @@
+.claude/
+*.tmp
+_*.py
+node_modules/
+dist/
+*.lnk
+Stick RPG/
+build/_out/
+/saves/
+/data/

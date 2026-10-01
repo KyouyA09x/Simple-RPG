@@ -1,0 +1,3 @@
+# Keep line endings identical on every machine so `git revert` never conflicts on Windows.
+* text=auto eol=lf
+*.ico binary
