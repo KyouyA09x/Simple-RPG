@@ -1,2 +1,2 @@
 # Simple-RPG
-random bs go
+AI coded game slop :)
