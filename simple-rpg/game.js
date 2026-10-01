@@ -1,5 +1,5 @@
 // Stick RPG: stickman hero in a scrolling world of biomes. Monster waves, a boss every 10 waves,
-// stat/sword level menu (L), drops, save slots, difficulty, quality presets up to Ultra (WebGL post-FX),
+// character and inventory menu (M), drops, save slots, difficulty, quality presets up to Ultra (WebGL post-FX),
 // resolution options, frame generation (fixed-step simulation + interpolated rendering).
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha: false });
@@ -14,7 +14,7 @@ const POINTS_PER_LEVEL = 3;
 const GOLD_BASE = 3, GOLD_PER_WAVE = 1.5, GOLD_BOSS_BASE = 60, GOLD_BOSS_PER_WAVE = 12;
 const SAVE_KEY = i => `stickrpg_slot${i}`, SLOTS = [1, 2, 3];
 
-// --- Swords (unlocked by hero level) ---
+// --- Weapon types: every weapon item is one of these; `lvl` is the hero level needed to wield it ---
 const SWORDS = [
   { id: 'wood', cost: 10,   name: 'Wooden Sword', lvl: 1,  dmg: 20, range: 52, time: 0.30, len: 24, color: '#b8864b' },
   { id: 'iron', cost: 11,   name: 'Iron Sword',   lvl: 3,  dmg: 28, range: 56, time: 0.30, len: 26, color: '#ccc' },
@@ -351,9 +351,10 @@ function latestSlot() {
 
 // --- Menus ---
 const OVERLAYS = ['title', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'talk', 'shop', 'inv'];
-let paused = false, openMenu = null, settingsReturn = 'title';
+let paused = false, openMenu = null, settingsReturn = 'title', lastCharTab = 'level';
 function showMenu(which) {
   openMenu = which;
+  if (which === 'level' || which === 'inv') lastCharTab = which;
   paused = (state === 'play' || state === 'village') && which !== null;
   for (const id of OVERLAYS) document.getElementById(id).classList.toggle('show', id === which);
   for (const k in keys) keys[k] = false;
@@ -482,12 +483,8 @@ addEventListener('keydown', e => {
     showMenu(openMenu === 'dev' ? null : 'dev');
     return;
   }
-  if (e.code === 'KeyL' && !e.repeat && !hero.dead && (openMenu === null || openMenu === 'level')) {
-    showMenu(openMenu === 'level' ? null : 'level');
-    return;
-  }
-  if (e.code === 'KeyI' && !e.repeat && !hero.dead && (openMenu === null || openMenu === 'inv')) {
-    showMenu(openMenu === 'inv' ? null : 'inv');
+  if (e.code === 'KeyM' && !e.repeat && !hero.dead && (openMenu === null || openMenu === 'level' || openMenu === 'inv')) {      // one menu with two tabs: Character and Inventory
+    showMenu(openMenu ? null : lastCharTab);
     return;
   }
   if ((openMenu === 'talk' || openMenu === 'shop') && /^(Digit|Numpad)[0-9]$/.test(e.code)) {   // number keys pick dialogue / shop options
@@ -1012,14 +1009,9 @@ function gainXp(n, m) {
     hero.hp = hero.maxHp;
     hero.stamina = maxStamina();
     hero.auraT = 1.2;
-    popups.push({ text: `LEVEL UP! +${POINTS_PER_LEVEL} points (L)`, x: VW / 2, y: 230, t: 1.8, color: '#fd4', big: true, screen: true });
+    popups.push({ text: `LEVEL UP! +${POINTS_PER_LEVEL} points (M)`, x: VW / 2, y: 230, t: 1.8, color: '#fd4', big: true, screen: true });
     burst(hero.x, hero.y - 30, '#fd4', 30, 200, 2.5, -40, true);
     sfx('levelup');
-    const sw = SWORDS.find(s => s.lvl === hero.level);
-    if (sw) {
-      popups.push({ text: `New sword: ${sw.name}!`, x: VW / 2, y: 270, t: 2.5, color: sw.color, big: true, screen: true });
-      setTimeout(() => sfx('unlock'), 450);
-    }
   }
 }
 
@@ -1698,7 +1690,7 @@ function drawHUD() {
   drawPotionHud(22, 148);
   if (hero.points > 0 && Math.floor(tAnim * 2) % 2) {
     ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    ctx.fillText(`${hero.points} stat points — press L`, 22, 178);
+    ctx.fillText(`${hero.points} stat points — press M`, 22, 178);
   }
 
   drawClock(VW - 164, 10);
@@ -1949,7 +1941,7 @@ function drawHitboxes() {
 let campT = 0, camp = null;
 const CAMP_LEN = 7;
 function startCamp(z) {
-  camp = { zone: z, day: 1 + wave * 2, built: false, sparks: [], crackleT: 0 };
+  camp = { zone: z, plan: campPlan(tod, dayCount), built: false, sparks: [], crackleT: 0 };      // the rest runs the real clock on to the next morning
   campT = 0;
   state = 'camp';
   for (const k in keys) keys[k] = false;
@@ -1962,6 +1954,7 @@ function updateCamp(dt) {
   // build the next biome while the screen is dark (hides the loading hitch)
   if (!camp.built && campT > 0.9) {
     camp.built = true;
+    tod = camp.plan.endTod; dayCount = camp.plan.endDay;        // morning has come (before the biome rolls its weather)
     setBiome(camp.zone, false);
     hero.x = WW / 2; hero.y = WH / 2; cam.x = hero.x - VW / 2; cam.y = hero.y - VH / 2;
     drops = []; projectiles = []; shockwaves = []; particles = []; corpses = [];
@@ -1974,7 +1967,7 @@ function updateCamp(dt) {
   if (campT >= CAMP_LEN) endCamp();
 }
 function endCamp() {
-  if (!camp.built) setBiome(camp.zone, false);
+  if (!camp.built) { tod = camp.plan.endTod; dayCount = camp.plan.endDay; setBiome(camp.zone, false); }
   state = 'play';
   const B = BIOMES[camp.zone % BIOMES.length];
   popups.push({ text: `— ${B.name} —`, x: VW / 2, y: 190, t: 3, big: true, screen: true, color: '#fff' });
@@ -1989,29 +1982,14 @@ function endCamp() {
 function drawCamp(t) {
   const fx = VW * 0.5, fy = VH * 0.74;              // fire position
   const flick = Math.sin(t * 17) * 0.5 + Math.sin(t * 23 + 1) * 0.3 + Math.sin(t * 7) * 0.2;
-  // night sky + stars + moon
-  const g = ctx.createLinearGradient(0, 0, 0, VH);
-  g.addColorStop(0, '#050814'); g.addColorStop(0.6, '#141a36'); g.addColorStop(1, '#1d1a2a');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
-  ctx.fillStyle = '#fff';
-  for (let i = 0; i < 110; i++) {
-    const sx = (i * 197.3) % VW, sy = (i * 83.7) % (VH * 0.55), big = i % 7 === 0;
-    ctx.globalAlpha = 0.35 + 0.65 * Math.abs(Math.sin(t * (0.4 + (i % 5) * 0.15) + i));
-    ctx.fillRect(sx, sy, big ? 2 : 1.2, big ? 2 : 1.2);
-  }
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = '#f4efd8'; ctx.beginPath(); ctx.arc(VW * 0.8, VH * 0.18, 26, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#0a0e20'; ctx.beginPath(); ctx.arc(VW * 0.8 + 10, VH * 0.18 - 6, 23, 0, Math.PI * 2); ctx.fill();
-  // treeline + ground
-  ctx.fillStyle = '#0b0f1c';
-  ctx.beginPath(); ctx.moveTo(0, VH);
-  for (let x = 0; x <= VW; x += 16) ctx.lineTo(x, VH * 0.6 - Math.abs(Math.sin(x * 0.05)) * 28 - Math.sin(x * 0.013) * 18);
-  ctx.lineTo(VW, VH); ctx.fill();
-  ctx.fillStyle = '#15121c'; ctx.fillRect(0, VH * 0.66, VW, VH * 0.34);
+  // sky on the real clock (it runs on to the next morning), landscape of the biome the hero wakes up in
+  const B = BIOMES[camp.zone % BIOMES.length], prog = Math.max(0, Math.min(1, (t - 0.6) / 5.2)), ck = campClock(camp.plan, prog * prog * (3 - 2 * prog));
+  const { d: night } = campDraw(B, ck, t);
   // firelight on the ground (flickers smoothly, no hard flashing)
   const glowR = 240 + flick * 10;
   const lg = ctx.createRadialGradient(0, 0, 0, 0, 0, glowR);
-  lg.addColorStop(0, 'rgba(255,150,60,0.5)'); lg.addColorStop(0.4, 'rgba(255,110,40,0.16)'); lg.addColorStop(1, 'rgba(255,90,30,0)');
+  const fl = 0.4 + 0.6 * night;
+  lg.addColorStop(0, `rgba(255,150,60,${0.5 * fl})`); lg.addColorStop(0.4, `rgba(255,110,40,${0.16 * fl})`); lg.addColorStop(1, 'rgba(255,90,30,0)');
   ctx.save(); ctx.translate(fx, fy); ctx.scale(1, 0.55);       // squash the gradient itself so it fades out with no edge
   ctx.fillStyle = lg; ctx.fillRect(-glowR, -glowR, glowR * 2, glowR * 2);
   ctx.restore();
@@ -2070,17 +2048,20 @@ function drawCamp(t) {
   for (const p of camp.sparks) { ctx.globalAlpha = Math.min(1, p.life); ctx.fillRect(fx + p.x, fy - 20 + p.y, 2, 2); }
   ctx.restore();
 
+  campAmbient(B, t, night);
+
   // text
+  ctx.shadowColor = 'rgba(0,0,0,0.7)'; ctx.shadowBlur = 8;
   const fadeIn = (a, b) => Math.max(0, Math.min(1, (t - a) / (b - a)));
   const out = 1 - fadeIn(5.6, 6.3);
   ctx.textAlign = 'center';
   ctx.globalAlpha = fadeIn(1.0, 2.0) * out;
   ctx.fillStyle = '#f3e3c0'; ctx.font = 'italic 38px Georgia, serif';
-  ctx.fillText(`Day ${camp.day} of the journey`, VW / 2, VH * 0.2);
+  ctx.fillText(`Day ${ck.day} of the journey`, VW / 2, VH * 0.2);
   ctx.globalAlpha = fadeIn(2.6, 3.4) * out;
   ctx.fillStyle = '#c9c3d8'; ctx.font = '17px Georgia, serif';
-  ctx.fillText(`The road leads on to the ${BIOMES[camp.zone % BIOMES.length].name}...`, VW / 2, VH * 0.2 + 36);
-  ctx.globalAlpha = 1;
+  ctx.fillText(`${campClockLabel(ck.tod)} · ${campPhase(ck.tod)}   —   the road leads on to the ${B.name}...`, VW / 2, VH * 0.2 + 36);
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0; ctx.shadowColor = 'transparent';
   const black = Math.max(1 - fadeIn(0, 1.0), fadeIn(6.2, CAMP_LEN));
   if (black > 0) { ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, VW, VH); }
   if (t > 1.5 && t < 6) { ctx.fillStyle = 'rgba(255,255,255,0.4)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right'; ctx.fillText('Press any key to continue', VW - 14, VH - 12); }

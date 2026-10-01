@@ -89,18 +89,26 @@ function createWindow() {
   const win = new BrowserWindow({
     width: st.width || 1280, height: st.height || 720, x: st.x, y: st.y, minWidth: 800, minHeight: 450,
     backgroundColor: '#000000', title: 'Stick RPG', autoHideMenuBar: true, show: false,
-    icon: path.join(__dirname, 'launcher', 'stickrpg.ico'),
+    icon: path.join(__dirname, 'icon', 'stickrpg.ico'),
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
   });
   mainWin = win;
   if (st.maximized) win.maximize();
-  win.once('ready-to-show', () => win.show());
+  const goFullscreen = () => win.webContents.executeJavaScript("document.documentElement.requestFullscreen().then(() => navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape'])).then(() => true).catch(e => String(e))", true).catch(() => null);
+  win.once('ready-to-show', () => {
+    win.show(); win.focus();
+    if (!SELFTEST) setTimeout(async () => { for (let i = 0; i < 4; i++) { const r = await goFullscreen(); if (r === true) break; await new Promise(res => setTimeout(res, 500)); } }, 400);   // starts fullscreen (the page's own fullscreen, so F and the Settings button toggle it)
+  });
   win.on('close', () => saveState(win));
   win.on('closed', () => { mainWin = null; });
   // the window only ever shows the game: no navigation away, no pop-ups
   win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
   win.webContents.on('will-navigate', e => e.preventDefault());
   win.webContents.on('render-process-gone', (e, d) => { console.error('renderer gone', d.reason); if (!SELFTEST && d.reason !== 'clean-exit') win.reload(); });
+  if (process.env.STICKRPG_FSCHECK) setTimeout(async () => {     // test hook: report whether the game came up fullscreen, then exit
+    const fs1 = await win.webContents.executeJavaScript('!!document.fullscreenElement && innerWidth >= screen.width - 2', true).catch(() => null);
+    console.log('FSCHECK ' + JSON.stringify({ fullscreen: fs1, bounds: win.getBounds() })); app.exit(0);
+  }, 4000);
   win.loadFile(path.join(__dirname, 'index.html'));
   if (process.env.STICKRPG_DEVTOOLS) win.webContents.openDevTools({ mode: 'detach' });
   return win;

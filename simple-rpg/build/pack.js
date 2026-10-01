@@ -1,5 +1,5 @@
 // Builds the desktop app for this computer (or `node build/pack.js <platform> <arch>`).
-// The finished app is a self-contained folder at the top of the project: <project>/Stick RPG/Stick RPG.exe
+// The finished app is a self-contained folder at the top of the project: <project>/launcher/Stick RPG.exe
 // Only the files the game needs are packaged (an allow-list), so backups, history and dev tools never ship.
 const path = require('path');
 const fs = require('fs');
@@ -7,11 +7,11 @@ const { execFileSync } = require('child_process');
 const { packager } = require('@electron/packager');
 
 const root = path.resolve(__dirname, '..');
-const stage = path.join(__dirname, '_out');                  // packager output and the zip; the app itself is moved to <project>/Stick RPG
+const stage = path.join(__dirname, '_out');                  // packager output and the zip; the app itself is moved to <project>/launcher
 const GAME_FILES = ['index.html', 'main.js', 'preload.js', 'package.json',
-  'sfx.js', 'postfx.js', 'sky.js', 'vision.js', 'biomes.js', 'props.js', 'terrain.js', 'critters.js', 'gear.js', 'villagers.js', 'village.js', 'game.js'];
+  'sfx.js', 'postfx.js', 'sky.js', 'vision.js', 'biomes.js', 'props.js', 'terrain.js', 'critters.js', 'gear.js', 'villagers.js', 'village.js', 'camp.js', 'game.js'];
 // allow-list: everything else (including the finished "Stick RPG" folder and the staging folder) is never packaged
-const keep = new Set(['', ...GAME_FILES.map(f => '/' + f), '/launcher', '/launcher/stickrpg.ico']);
+const keep = new Set(['', ...GAME_FILES.map(f => '/' + f), '/icon', '/icon/stickrpg.ico']);
 
 // Chromium ships ~55 language packs; the game is English only, so keep one (saves ~40 MB unpacked).
 async function trimLocales({ buildPath }) {
@@ -25,26 +25,26 @@ const README = [
   'Run "Stick RPG.exe" to play. No installation needed; keep this whole folder together.',
   'Your saves are in the "saves" folder next to the exe, and settings in "data"; both survive updates, and you can back them up by copying the folders.',
   'Settings > Load Game can also export a save to a file.',
-  'Controls: WASD/arrows move, Space attack, Shift flip, Q potion, E talk, L level menu, Esc pause, F fullscreen.',
+  'Controls: WASD/arrows move, Space attack, Shift flip, Q potion, E talk, M character and inventory, Esc pause, F fullscreen. The game starts fullscreen.',
   '',
 ].join('\r\n');
 
 (async () => {
   const platform = process.argv[2] || process.platform, arch = process.argv[3] || process.arch;
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  const icon = platform === 'win32' ? path.join(root, 'launcher', 'stickrpg.ico') : undefined;
+  const icon = platform === 'win32' ? path.join(root, 'icon', 'stickrpg.ico') : undefined;
   const out = await packager({
     dir: root, out: stage, name: 'Stick RPG', executableName: platform === 'win32' ? 'Stick RPG' : 'stick-rpg',
     platform, arch, overwrite: true, asar: true, prune: true, icon,
     appVersion: pkg.version, appCopyright: 'Stick RPG',
-    ignore: p => !keep.has(p) && !p.startsWith('/launcher/'),
+    ignore: p => !keep.has(p) && !p.startsWith('/icon/'),
     afterExtract: platform === 'darwin' ? [] : [trimLocales],
     win32metadata: { FileDescription: 'Stick RPG', ProductName: 'Stick RPG', CompanyName: 'Stick RPG' },
   });
   for (const built of out) {
     fs.writeFileSync(path.join(built, 'README.txt'), README);
     if (platform !== process.platform) { console.log('built', built); continue; }
-    const final = path.join(root, 'Stick RPG');
+    const final = path.join(root, 'launcher');
     // 1) a clean copy named "Stick RPG" in the staging folder (this is what gets zipped: it never contains anyone's saves)
     const clean = path.join(stage, 'Stick RPG');
     fs.rmSync(clean, { recursive: true, force: true });

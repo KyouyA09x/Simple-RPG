@@ -1,6 +1,6 @@
 # GAME IMPORTANCE
 
-**Stick RPG: what is in the game** · updated 2026-10-01
+**Stick RPG: what is in the game** · updated 2026-10-01 (evening)
 
 Stick RPG is a stickman action RPG. You fight waves of monsters across eight biomes, level up, collect gear, rest in a
 village before every boss, and try to survive the dark. It runs as a Windows desktop app (and, for development, in any
@@ -28,6 +28,7 @@ browser). Everything is drawn in code and the music and sound effects are synthe
 ### Waves, bosses and biomes
 - Monsters come in waves. A **boss arrives every 10 waves**, and every boss you beat makes later monsters stronger.
 - After each boss you rest at a campfire and wake in a **new random biome** (never the same one twice in a row).
+- **The campfire follows the real clock.** The sky fast-forwards from the time you finished the boss to the next morning, the day counter ticks over at midnight exactly like the one in the corner of the screen, and the scene shows the **biome you are about to wake up in** (its trees, ground, sky and drifting particles).
 - **Eight biomes**: Whispering Forest, Scorched Desert, Frozen Wastes, Molten Caldera, Murky Swamp, Emerald Jungle,
   Haunted Ruins and Windswept Highlands. Each has its own trees, rocks, water you can wade through, ground, harmless
   roaming creatures, air effects, music and ambience.
@@ -43,14 +44,23 @@ browser). Everything is drawn in code and the music and sound effects are synthe
 ### The village
 - A safe village appears at **wave 9 of every set**, just before the boss. The game saves when you enter and again when
   you leave. Each biome gives it its own name, colours and buildings.
-- **11 villagers live there with daily routines**: a gardener who waters the beds, a woodcutter who hauls and chops, a
-  blacksmith who hammers, an innkeeper who sweeps, an alchemist, a merchant, a gate guard, an old woman who knits, three
+- **Every village is laid out differently**: the five shops along the north road, the yards to the south (garden, kids' lawn,
+  forge, woodcutter) and the side of the gate are shuffled, and clutter, benches, lamps and trees are rolled too. The village
+  is drawn 50% bigger than the battlefield so people and buildings are easy to read.
+- **13 villagers live there with daily routines**: a gardener who waters the beds, a woodcutter who hauls and chops, a
+  blacksmith who hammers, an innkeeper who sweeps, an alchemist, a merchant, an armourer, a jeweller, a gate guard, an old woman who knits, three
   children who play ball and tag, plus a dog that follows you and hens. They greet you, chat, and go home at night.
 - **Alchemist:** healing potions (heal 45%, carry up to 5, press **Q**). **General store:** three lantern tiers.
-  **Inn:** rest and save for free, or **reset your stat points** for gold. **Blacksmith:** buys spare gear.
+  **Inn:** rest and save for free, or **reset your stat points** for gold.
+  **Blacksmith (Brann):** sells weapons, **upgrades gear** (each level adds 10% to every stat on the piece, up to +3 to +5 depending on the grade) and buys spare gear.
+  **Armourer (Dagna)** sells armour and helmets; **Jeweller (Lysa)** sells rings and necklaces. Stock is new in every village and never above Legendary.
 - Talk with **E**; number keys pick dialogue and shop options.
 
-### Gear and inventory (press I)
+### Character and inventory (press M)
+- **M opens one menu with two tabs**: **Character** (spend stat points) and **Inventory** (gear). It remembers the tab you used last. The pause menu no longer holds them.
+- Weapons are items: every weapon is one of the seven swords plus rolled bonus stats. A sword's level only decides whether you can wield it; there is no unlock list.
+
+### Gear and inventory
 - **Six equipment slots** (weapon, armor, helmet, two rings, necklace) and a **24-slot backpack**.
 - **Eight rarity grades**: Broken, Common, Uncommon, Rare, Polished, Legendary, Mythical and Secret. Higher grades roll
   more stat lines and bigger numbers; Secret pieces also carry a special effect (Lifesteal, Vigor or Magnet).
@@ -73,7 +83,7 @@ browser). Everything is drawn in code and the music and sound effects are synthe
   village work sounds that fade with distance. Separate music, effects and ambience volumes.
 
 ### The desktop app
-- `Stick RPG.exe` is a self-contained folder: keep it together and run the exe.
+- `launcher\Stick RPG.exe` is a self-contained folder: keep it together and run the exe. **The game starts fullscreen** (F toggles).
 - Saves and settings are kept in `saves` and `data` folders next to the exe. Updating the app keeps them.
 - **Quit to Desktop** is in the title menu and the pause menu. The window remembers its size and position.
 
@@ -86,13 +96,18 @@ browser). Everything is drawn in code and the music and sound effects are synthe
 | Shift | Flip (invincible) |
 | Q | Drink a healing potion |
 | E | Talk (village) |
-| I | Inventory |
-| L | Level up screen |
+| M | Character and inventory menu |
 | Esc / P | Pause menu |
 | F | Fullscreen |
 | ` | Dev menu (testing) |
 
 ## Changelog
+
+### 2026-10-01 (evening)
+- ✅ Random village layouts, bigger villagers and buildings, the armourer and jeweller, blacksmith upgrades
+- ✅ Campfire time follows the HUD clock and shows the next biome
+- ✅ One character and inventory menu on **M**; removed the leftover sword-unlock popup
+- ✅ The app lives in `launcher` and starts fullscreen
 
 ### 2026-10-01
 - ✅ Environmental visibility (fog-of-war), later made harsher and scarier
@@ -126,6 +141,8 @@ Each change from 2026-10-01 is its own commit with a tag:
 | `feature-desktop-app`, `desktop-only`, `portable-saves-quit` | the desktop app, its folder layout, saves next to the exe, Quit to Desktop |
 | `feature-respec-fsr` | stat reset, render scale and upscaler |
 | `feature-gear-inventory` | gear, inventory, rarity and drops |
+| `feature-camp-clock` | campfire on the real clock with biome scenery, `launcher` folder, fullscreen start |
+| `feature-village-overhaul` | random village layouts, zoom, gear shops, upgrades, the M menu |
 | `tweak-vision-lights`, `tweak-vision-scary`, `tweak-audio-levels` | visibility, lighting and sound tuning |
 
 - See the history: `git log --oneline`

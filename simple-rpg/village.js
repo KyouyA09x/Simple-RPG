@@ -3,7 +3,8 @@
 // (`world`, `enemies`, `wave`...) is left exactly as it was and play resumes where it stopped.
 // villagers.js holds the drawing; this file holds the layout, villager routines, hero control, shops and saving.
 
-const VIL_W = 1600, VIL_H = 1000, VIL_ROAD = 548, VIL_LANE = 905;
+const VIL_W = 1800, VIL_H = 1000, VIL_ROAD = 548, VIL_LANE = 905;
+const VIL_ZOOM = 1.5;           // the village is drawn this much bigger than the battlefield, so people and buildings read clearly
 let vil = null;                 // the village being visited, or null
 let villageSkip = -1;           // boss wave whose village was already visited (it only appears once per set)
 let curNight = 0;               // 0 day .. 1 night, refreshed every frame so the art closures can read it
@@ -105,20 +106,36 @@ function vilCollide(v, x, y, r, ox, oy) {
 }
 
 // ---------------------------------------------------------------- building the village
+// Every village is laid out fresh: the shop row and the yards below the road are shuffled, the gate can be on either
+// side, and the small things (clutter, benches, lamps, trees) are rolled too. People and routines are placed from the
+// buildings and props they belong to, so any arrangement works.
+const SHOP_ROW = {                                     // the row north of the road: every door faces south
+  inn:     { w: 240, wh: 78, rh: 50, sign: 'inn', flowers: true },
+  alch:    { w: 170, wh: 68, rh: 44, sign: 'flask' },
+  store:   { w: 190, wh: 70, rh: 46, sign: 'sack' },
+  armoury: { w: 190, wh: 72, rh: 46, sign: 'shield' },
+  jewel:   { w: 160, wh: 64, rh: 42, sign: 'gem', flowers: true },
+};
+const YARD_W = { garden: 230, lawn: 430, smith: 300, wood: 310 };       // widths of the yards south of the road
+
 function buildVillage() {
   const B = BIOMES[zone % BIOMES.length], st = VIL_STYLE[B.key] || VIL_STYLE.forest;
   const seed = (Math.random() * 1e9) | 0, r = mulberry(seed);
+  const E = r() < 0.5 ? 1 : -1;                          // the gate is on the east (1) or west (-1) side; you arrive from the other
   const v = {
-    B, st, seed, name: st.name, t: 0, fade: 1, leaveT: 0, solids: [], statics: [], buildings: [], b: {}, npcs: [], animals: [], hens: [],
-    fx: [], plants: [], lamps: [], keep: [], stock: { potion: 2 + Math.floor(Math.random() * 4) },
+    B, st, seed, E, name: st.name, t: 0, fade: 1, leaveT: 0, solids: [], statics: [], buildings: [], b: {}, npcs: [], animals: [], hens: [],
+    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 2 + Math.floor(Math.random() * 4) },
     near: null, talk: null, shop: null, kidMode: 'ball', kidT: 25, tag: { it: 0, imm: 0 }, kickCd: 0, chaseT: 0, chaser: null, lastKicker: null,
     stats: { stuck: 0, snaps: 0 }, smokeT: 0, soundT: 0, doneLeave: false,
   };
+  const shuffle = a => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(r() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   const rect = (x0, y0, x1, y1) => v.solids.push({ x0, y0, x1, y1 });
   const circle = (x, y, rr) => v.solids.push({ x, y, r: rr });
   const add = (y, d) => v.statics.push({ y, d });
   const prop = (kind, x, y, extra = {}) => { const p = { x, y, ...extra }; add(extra.sy ?? y, () => VPROP[kind](p, curNight > 0.45)); return p; };
   const keep = (x0, y0, x1, y1) => v.keep.push([x0, y0, x1, y1]);
+  const patch = (x, y, rx, ry, col, a, dots) => v.patches.push({ x, y, rx, ry, col, a, dots });
+  const CX = VIL_W / 2;
 
   // ---- buildings: doors face south ----
   const mkB = (id, x, y, w, wh, rh, extra = {}) => {
@@ -130,91 +147,117 @@ function buildVillage() {
     add(y, () => drawBuilding(b, curNight > 0.45, curNight > 0.45));
     return b;
   };
-  const inn = mkB('inn', 420, 345, 240, 78, 50, { sign: 'inn', flowers: true });
-  const alch = mkB('alch', 800, 325, 170, 68, 44, { sign: 'flask' });
-  const store = mkB('store', 1180, 345, 190, 70, 46, { sign: 'sack' });
-  const hA = mkB('houseA', 250, 835, 150, 62, 40, { flowers: true });
-  const hB = mkB('houseB', 560, 835, 150, 62, 40);
-  const smith = mkB('smith', 900, 835, 210, 70, 44, { sign: 'anvil' });
-  const hC = mkB('houseC', 1380, 700, 130, 60, 38, { flowers: true });
-  for (const b of v.buildings) {                           // keep trees off the doors and their paths
-    if (b.y < VIL_ROAD) keep(b.x - b.w / 2 - 30, b.y - 140, b.x + b.w / 2 + 30, VIL_ROAD + 50);
-    else keep(b.x - b.w / 2 - 30, b.y - 140, b.x + b.w / 2 + 30, VIL_LANE + 40);
-  }
+  // north row: five shops in a random order
+  const order = shuffle(Object.keys(SHOP_ROW));
+  const sumW = order.reduce((a, k) => a + SHOP_ROW[k].w, 0), gapN = (VIL_W - 260 - sumW) / (order.length - 1);
+  let cursor = 130;
+  for (const id of order) { const s = SHOP_ROW[id]; mkB(id, cursor + s.w / 2, 336 + Math.floor(r() * 24), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers }); cursor += s.w + gapN; }
+  v.shopOrder = order;
+  const { alch, store, armoury, jewel } = v.b;
 
-  // ---- shop counters ----
+  // ---- shop counters and a bit of clutter at the left corner of every shop ----
   const counter = (b, w, kind, awn) => {
     const p = { x: b.x, y: b.y + 58, w, kind, awn };
     add(p.y, () => VPROP.counter(p)); rect(p.x - w / 2, p.y - 14, p.x + w / 2, p.y + 4);
   };
-  counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b');
-
-  // ---- plaza: well, benches, notice board ----
-  const plaza = { x: 800, y: VIL_ROAD, rx: 215, ry: 105 };
-  v.plaza = plaza;
-  prop('well', plaza.x, plaza.y); circle(plaza.x, plaza.y - 4, 27);
-  const benchA = prop('bench', 930, 600); rect(930 - 29, 600 - 24, 930 + 29, 600 - 4);
-  const benchB = prop('bench', 670, 500); rect(670 - 29, 500 - 24, 670 + 29, 500 - 4);
-  const board = prop('board', 1030, 612); rect(1030 - 28, 612 - 14, 1030 + 28, 612);
-  v.board = board; v.benchA = benchA; v.benchB = benchB;
-
-  // ---- clutter in front of the shops ----
+  counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b'); counter(armoury, 120, 'armour', '#2f6aa8'); counter(jewel, 100, 'jewel', '#2f8a6a');
   const barrel = (x, y, o = {}) => { prop('barrel', x, y, o); circle(x, y - 4, 11); };
   const crates = (x, y) => { prop('crates', x, y); rect(x - 20, y - 14, x + 19, y + 1); };
-  barrel(702, 392); crates(916, 392); crates(1262, 402); barrel(1278, 424); barrel(300, 392); barrel(318, 398);
-  prop('hay', 1090, 410); circle(1090, 405, 20);
-
-  // ---- lamp posts ----
-  for (const [x, y] of [[180, 520], [330, 522], [530, 520], [700, 586], [900, 586], [1080, 522], [1270, 522], [1470, 522], [1500, 596], [800, 456], [360, 580]]) {
-    prop('lamp', x, y); circle(x, y - 3, 5); v.lamps.push({ x: x + 9, y: y - 46 });
+  for (const id of order) {
+    const b = v.b[id], lx = b.x - b.w / 2 - 22, k = Math.floor(r() * 3);
+    if (k === 0) { barrel(lx, b.y + 50); barrel(lx + 18, b.y + 58); }
+    else if (k === 1) crates(lx - 2, b.y + 56);
+    else { prop('hay', lx, b.y + 66); circle(lx, b.y + 61, 20); }
   }
 
-  // ---- the gate on the east road ----
-  const gate = { x: 1548, y: VIL_ROAD + 8 };
+  // ---- plaza: well, benches, notice board (their sides are rolled) ----
+  const plaza = { x: CX, y: 505, rx: 215, ry: 80 };
+  v.plaza = plaza;
+  prop('well', plaza.x, plaza.y); circle(plaza.x, plaza.y - 4, 27);
+  const sA = r() < 0.5 ? 1 : -1;
+  const doors = v.buildings.filter(b => b.y < VIL_ROAD).map(b => b.door.x);
+  const clearOfDoors = x => { for (let i = 0; i < 8; i++) { const d = doors.find(dx => Math.abs(dx - x) < 56); if (!d) break; x += (x >= d ? 1 : -1) * (58 - Math.abs(x - d)); } return x; };
+  const bax = clearOfDoors(plaza.x + sA * 140), bbx = clearOfDoors(plaza.x - sA * 140), brx = clearOfDoors(plaza.x + sA * 250);
+  const benchA = prop('bench', bax, 484); rect(bax - 29, 484 - 24, bax + 29, 484 - 4);
+  const benchB = prop('bench', bbx, 484); rect(bbx - 29, 484 - 24, bbx + 29, 484 - 4);
+  const board = prop('board', brx, 505); rect(brx - 28, 505 - 14, brx + 28, 505);
+  v.board = board; v.benchA = benchA; v.benchB = benchB;
+  keep(board.x - 50, 440, board.x + 50, 560);
+
+  // ---- the gate on one end of the road, a welcome sign at the other ----
+  const gate = { x: E > 0 ? VIL_W - 52 : 52, y: VIL_ROAD + 8 };
   v.gate = gate;
   prop('gate', gate.x, gate.y); rect(gate.x - 52, gate.y - 12, gate.x - 34, gate.y + 2); rect(gate.x + 34, gate.y - 12, gate.x + 52, gate.y + 2);
-  prop('welcome', 150, 502, { text: st.name });
-  circle(150, 500, 5);
+  const wx = E > 0 ? 150 : VIL_W - 150;
+  prop('welcome', wx, 502, { text: st.name }); circle(wx, 500, 5);
+  v.arrive = { x: E > 0 ? 112 : VIL_W - 112, y: VIL_ROAD + 4 };
 
-  // ---- garden (fenced, one opening on the east side) ----
-  const G = { x0: 160, y0: 585, x1: 350, y1: 700, gapY0: 626, gapY1: 656 };
-  v.garden = G;
-  prop('fence', G.x0, G.y0 + 5, { len: G.x1 - G.x0 }); rect(G.x0, G.y0 - 4, G.x1, G.y0 + 6);
-  prop('fence', G.x0, G.y1 + 5, { len: G.x1 - G.x0 }); rect(G.x0, G.y1 - 2, G.x1, G.y1 + 8);
-  prop('fenceV', G.x0, G.y0 + 20, { len: G.y1 - G.y0 - 20, sy: (G.y0 + G.y1) / 2 }); rect(G.x0 - 5, G.y0, G.x0 + 5, G.y1 + 6);
-  prop('fenceV', G.x1, G.y0 + 20, { len: G.gapY0 - G.y0 - 20, sy: G.y0 + 30 }); rect(G.x1 - 5, G.y0, G.x1 + 5, G.gapY0);
-  prop('fenceV', G.x1, G.gapY1 + 22, { len: G.y1 - G.gapY1 - 22, sy: G.y1 - 6 }); rect(G.x1 - 5, G.gapY1, G.x1 + 5, G.y1 + 6);
-  keep(G.x0 - 25, G.y0 - 30, G.x1 + 60, G.y1 + 30);
-  for (let row = 0; row < 2; row++) for (let i = 0; i < 6; i++) {
-    const p = { x: 190 + i * 26, y: row ? 672 : 612, kind: (i + row * 2 + (v.seed % 3)) % 4, g: 0.35 + r() * 0.5, wet: 0, ph: r() * 6.28, c: i };
-    v.plants.push(p); add(p.y, () => drawPlant(p));
+  // ---- the yards south of the road, in a random order ----
+  const YARDS = {
+    garden(ox) {                                         // Old Pim's garden, his house and a clothesline
+      mkB('houseA', ox + 115, 835, 150, 62, 40, { flowers: true });
+      const G = { x0: ox + 20, y0: 585, x1: ox + 210, y1: 700, gapY0: 621, gapY1: 661, gapAt: ox + 115 < plaza.x ? 'E' : 'W' };
+      v.garden = G;
+      prop('fence', G.x0, G.y0 + 5, { len: G.x1 - G.x0 }); rect(G.x0, G.y0 - 4, G.x1, G.y0 + 6);
+      prop('fence', G.x0, G.y1 + 5, { len: G.x1 - G.x0 }); rect(G.x0, G.y1 - 2, G.x1, G.y1 + 8);
+      const wallX = G.gapAt === 'E' ? G.x0 : G.x1, gapX = G.gapAt === 'E' ? G.x1 : G.x0;          // one side is closed, the other has the opening
+      prop('fenceV', wallX, G.y0 + 20, { len: G.y1 - G.y0 - 20, sy: (G.y0 + G.y1) / 2 }); rect(wallX - 5, G.y0, wallX + 5, G.y1 + 6);
+      prop('fenceV', gapX, G.y0 + 20, { len: G.gapY0 - G.y0 - 20, sy: G.y0 + 30 }); rect(gapX - 5, G.y0, gapX + 5, G.gapY0);
+      prop('fenceV', gapX, G.gapY1 + 22, { len: G.y1 - G.gapY1 - 22, sy: G.y1 - 6 }); rect(gapX - 5, G.gapY1, gapX + 5, G.y1 + 6);
+      keep(G.x0 - 60, G.y0 - 30, G.x1 + 60, G.y1 + 30);
+      for (let row = 0; row < 2; row++) for (let i = 0; i < 6; i++) {
+        const p = { x: G.x0 + 30 + i * 26, y: G.y0 + (row ? 87 : 27), kind: (i + row * 2 + (v.seed % 3)) % 4, g: 0.35 + r() * 0.5, wet: 0, ph: r() * 6.28, c: i };
+        v.plants.push(p); add(p.y, () => drawPlant(p));
+      }
+      prop('line', ox + 10, 765, { len: 200 }); circle(ox + 10, 763, 4); circle(ox + 210, 763, 4);
+      keep(ox - 15, 700, ox + 230, 790);
+    },
+    lawn(ox) {                                           // the kids' lawn, a house and the chicken yard
+      mkB('houseB', ox + 180, 835, 150, 62, 40);
+      v.lawn = { x0: ox + 25, y0: 618, x1: ox + 285, y1: 745 };
+      keep(ox, 590, ox + 320, 775);
+      prop('coop', ox + 342, 800); rect(ox + 318, 774, ox + 366, 800);
+      v.yard = { x0: ox + 275, y0: 836, x1: ox + 405, y1: 892 };
+      keep(ox + 250, 770, ox + 430, 900);
+      patch(ox + 155, 682, 190, 90, B.grass[1], 0.55);
+      patch(ox + 348, 862, 95, 50, '#c8a85a', 0.55, { n: 90, rx: 80, ry: 40, cols: ['#d8bc68', '#b89848'], w: 3, h: 1 });
+    },
+    smith(ox) {                                          // Brann's forge: smithy, forge, anvil, quench barrel and a weapon rack
+      mkB('smith', ox + 110, 835, 210, 70, 44, { sign: 'anvil' });
+      v.forge = prop('forge', ox + 252, 836); rect(ox + 224, 802, ox + 280, 838);
+      v.anvil = prop('anvil', ox + 178, 892, { hot: 0 }); circle(ox + 178, 888, 12);
+      prop('barrel', ox + 82, 888, { water: true }); circle(ox + 82, 884, 11);
+      v.rack = prop('rack', ox + 22, 884); rect(ox + 2, 868, ox + 44, 886);
+      keep(ox - 10, 800, ox + 300, 925);
+      patch(ox + 178, 884, 100, 46, '#1e1a18', 0.6);
+    },
+    wood(ox) {                                           // Rurik's woodcutter yard and house
+      mkB('houseC', ox + 190, 700, 130, 60, 38, { flowers: true });
+      v.stump = prop('stump', ox + 100, 792, { split: 0 }); circle(ox + 100, 788, 13);
+      v.logs = prop('logs', ox + 38, 852, { n: 6 }); rect(ox + 10, 838, ox + 66, 854);
+      v.stack = prop('stack', ox + 258, 850, { n: 4 }); rect(ox + 224, 812, ox + 294, 852);
+      keep(ox, 740, ox + 305, 915);
+      patch(ox + 135, 820, 165, 90, '#c9a972', 0.5, { n: 120, rx: 140, ry: 76, cols: ['#e6cf9c', '#b99863'], w: 3, h: 1.5 });
+    },
+  };
+  const yorder = shuffle(Object.keys(YARDS));
+  const sumY = yorder.reduce((a, k) => a + YARD_W[k], 0), gapS = (VIL_W - 300 - sumY) / (yorder.length - 1);
+  cursor = 150; v.yardOrder = yorder;
+  for (const k of yorder) { YARDS[k](cursor); cursor += YARD_W[k] + gapS; }
+  for (const b of v.buildings) {                         // keep trees off the doors and their paths
+    if (b.y < VIL_ROAD) keep(b.x - b.w / 2 - 30, b.y - 140, b.x + b.w / 2 + 30, VIL_ROAD + 50);
+    else keep(b.x - b.w / 2 - 30, b.y - 140, b.x + b.w / 2 + 30, VIL_LANE + 40);
   }
-  prop('line', 135, 765, { len: 200 }); circle(135, 763, 4); circle(335, 763, 4);
-  keep(120, 700, 360, 790);
 
-  // ---- kids' lawn, chicken yard ----
-  v.lawn = { x0: 405, y0: 618, x1: 665, y1: 745 };
-  keep(380, 590, 700, 775);
-  const coop = prop('coop', 722, 800); rect(722 - 24, 800 - 26, 722 + 24, 800);
-  v.yard = { x0: 655, y0: 836, x1: 785, y1: 892 };
-  keep(630, 770, 810, 900);
-
-  // ---- smithy yard ----
-  const forge = prop('forge', 1042, 836); rect(1014, 802, 1070, 838);
-  const anvil = prop('anvil', 968, 892, { hot: 0 }); circle(968, 888, 12);
-  const quench = prop('barrel', 872, 888, { water: true }); circle(872, 884, 11);
-  v.anvil = anvil; keep(840, 800, 1090, 925);
-
-  // ---- woodcutter's yard ----
-  const stump = prop('stump', 1290, 792, { split: 0 }); circle(1290, 788, 13);
-  const logs = prop('logs', 1228, 852, { n: 6 }); rect(1200, 838, 1256, 854);
-  const stack = prop('stack', 1448, 850, { n: 4 }); rect(1414, 812, 1484, 852);
-  v.stump = stump; v.logs = logs; v.stack = stack; keep(1190, 740, 1495, 915);
+  // ---- lamp posts along the road and round the plaza ----
+  const lampAt = (x, y) => { prop('lamp', x, y); circle(x, y - 3, 5); v.lamps.push({ x: x + 9, y: y - 46 }); };
+  for (let x = 190; x < VIL_W - 150; x += 170) if (Math.abs(x - plaza.x) > plaza.rx + 20 && Math.abs(x - gate.x) > 150) lampAt(x + Math.floor(r() * 30), 520);
+  lampAt(plaza.x - 120, 570); lampAt(plaza.x + 120, 570);
 
   // ---- roads and plazas stay clear of trees ----
-  keep(0, VIL_ROAD - 55, VIL_W, VIL_ROAD + 55); keep(95, VIL_ROAD, 145, VIL_LANE + 25); keep(1470, VIL_ROAD, 1525, VIL_LANE + 25);
-  keep(95, VIL_LANE - 28, 1525, VIL_LANE + 28); keep(plaza.x - plaza.rx - 20, plaza.y - plaza.ry - 20, plaza.x + plaza.rx + 20, plaza.y + plaza.ry + 20);
-  keep(1000, 560, 1080, 660); keep(1495, 470, VIL_W, 640);
+  keep(0, VIL_ROAD - 55, VIL_W, VIL_ROAD + 55); keep(95, VIL_ROAD, 145, VIL_LANE + 25); keep(VIL_W - 145, VIL_ROAD, VIL_W - 95, VIL_LANE + 25);
+  keep(95, VIL_LANE - 28, VIL_W - 95, VIL_LANE + 28); keep(plaza.x - plaza.rx - 20, plaza.y - plaza.ry - 20, plaza.x + plaza.rx + 20, plaza.y + plaza.ry + 20);
+  keep(E > 0 ? VIL_W - 105 : 0, 470, E > 0 ? VIL_W : 105, 640);
 
   // ---- trees and rocks: a ring around the village and a few inside ----
   const kinds = st.trees.filter(k => PROP_ART[k]);
@@ -224,9 +267,9 @@ function buildVillage() {
   };
   let guard = 0;
   v.trees = [];
-  while (v.trees.length < 70 && guard++ < 900) {
+  while (v.trees.length < 84 && guard++ < 1100) {
     const edge = r() < 0.7;
-    const x = edge ? (r() < 0.5 ? 20 + r() * 1560 : (r() < 0.5 ? 20 + r() * 90 : 1500 + r() * 90)) : 30 + r() * 1540;
+    const x = edge ? (r() < 0.5 ? 20 + r() * (VIL_W - 40) : (r() < 0.5 ? 20 + r() * 90 : VIL_W - 110 + r() * 90)) : 30 + r() * (VIL_W - 60);
     const y = edge ? (r() < 0.55 ? 100 + r() * 95 : (r() < 0.5 ? 935 + r() * 55 : 130 + r() * 840)) : 130 + r() * 840;
     if (!okSpot(x, y) || v.trees.some(t => Math.hypot(t.x - x, t.y - y) < 46)) continue;
     const p = { k: kinds[Math.floor(r() * kinds.length)], x, y, s: 0.85 + r() * 0.5, v: r(), ph: r() * 6.28 };
@@ -238,45 +281,43 @@ function buildVillage() {
   // ---- people ----
   makeNpcs(v);
   makeAnimals(v);
-  v.ball = { x: 530, y: 680, vx: 0, vy: 0, z: 0 };
-  const lawnCx = (v.lawn.x0 + v.lawn.x1) / 2, lawnCy = (v.lawn.y0 + v.lawn.y1) / 2;
-  v.lawnC = { x: lawnCx, y: lawnCy };
+  v.ball = { x: (v.lawn.x0 + v.lawn.x1) / 2, y: 680, vx: 0, vy: 0, z: 0 };
+  v.lawnC = { x: (v.lawn.x0 + v.lawn.x1) / 2, y: (v.lawn.y0 + v.lawn.y1) / 2 };
+  makeStock(v);
   return v;
 }
 
 function bakeVillageGround(v) {
-  const { B, st } = v, r = mulberry(v.seed ^ 0x9e3779b1);
-  const g = document.createElement('canvas'); g.width = VIL_W; g.height = VIL_H;
-  const c = g.getContext('2d');
+  const { B, st } = v, r = mulberry(v.seed ^ 0x9e3779b1), Z = VIL_ZOOM;
+  const g = document.createElement('canvas'); g.width = Math.round(VIL_W * Z); g.height = Math.round(VIL_H * Z);       // baked at the zoom it is shown at, so it stays sharp
+  const c = g.getContext('2d'); c.scale(Z, Z);
   c.fillStyle = B.ground; c.fillRect(0, 0, VIL_W, VIL_H);
-  for (let i = 0; i < 170; i++) {
+  for (let i = 0; i < 200; i++) {
     const x = r() * VIL_W, y = r() * VIL_H, rad = 40 + r() * 130;
     const grad = c.createRadialGradient(x, y, 0, x, y, rad), col = r() < 0.5 ? B.patch : B.patch2;
     grad.addColorStop(0, withAlpha(col, 0.67)); grad.addColorStop(1, withAlpha(col, 0));
     c.fillStyle = grad; c.beginPath(); c.ellipse(x, y, rad, rad * 0.6, 0, 0, Math.PI * 2); c.fill();
   }
   bakeGroundDetail(c, r, B);
-  for (let i = 0; i < 1800; i++) { c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)'; c.fillRect(r() * VIL_W, r() * VIL_H, 1 + r() * 2, 1 + r() * 1.4); }
+  for (let i = 0; i < 2000; i++) { c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)'; c.fillRect(r() * VIL_W, r() * VIL_H, 1 + r() * 2, 1 + r() * 1.4); }
   const dirt = mixHex(B.ground, st.dirt, 0.72), edgeCol = shadeHex(dirt, -0.22), cob = mixHex(B.ground, '#b8b2a2', 0.72);
   const stroke = (pts, w) => {
     c.lineCap = 'round'; c.lineJoin = 'round';
     c.strokeStyle = withAlpha(edgeCol, 0.5); c.lineWidth = w + 12; c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
     c.strokeStyle = dirt; c.lineWidth = w; c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
   };
-  const main = []; for (let x = -20; x <= VIL_W + 20; x += 40) main.push([x, VIL_ROAD + Math.sin(x / 170) * 8]);
+  const wig = x => Math.sin(x / 170) * 8;
+  const main = []; for (let x = -20; x <= VIL_W + 20; x += 40) main.push([x, VIL_ROAD + wig(x)]);
   stroke(main, 50);
-  stroke([[120, VIL_ROAD], [120, VIL_LANE]], 40); stroke([[1500, VIL_ROAD], [1500, VIL_LANE]], 40); stroke([[120, VIL_LANE], [1500, VIL_LANE]], 40);
+  stroke([[120, VIL_ROAD], [120, VIL_LANE]], 40); stroke([[VIL_W - 120, VIL_ROAD], [VIL_W - 120, VIL_LANE]], 40); stroke([[120, VIL_LANE], [VIL_W - 120, VIL_LANE]], 40);
   for (const b of v.buildings) stroke(b.y < VIL_ROAD ? [[b.door.x, b.door.y], [b.door.x, VIL_ROAD]] : [[b.door.x, b.door.y], [b.door.x, VIL_LANE]], 34);
-  stroke([[800, 380], [800, VIL_ROAD]], 40);
-  // speckle the dirt so it reads as packed earth
-  c.save();
-  for (let i = 0; i < 2600; i++) {
-    const x = r() * VIL_W, y = VIL_ROAD - 26 + r() * 52 + Math.sin(x / 170) * 8;
+  c.save();                                              // speckle the dirt so it reads as packed earth
+  for (let i = 0; i < 3000; i++) {
+    const x = r() * VIL_W, y = VIL_ROAD - 26 + r() * 52 + wig(x);
     c.fillStyle = r() < 0.5 ? withAlpha(edgeCol, 0.5) : withAlpha(shadeHex(dirt, 0.2), 0.45); c.fillRect(x, y, 1 + r() * 3, 1 + r() * 2);
   }
   c.restore();
-  // plaza cobbles
-  const P = v.plaza;
+  const P = v.plaza;                                     // plaza cobbles
   c.save(); c.beginPath(); c.ellipse(P.x, P.y, P.rx, P.ry, 0, 0, Math.PI * 2); c.clip();
   c.fillStyle = shadeHex(cob, -0.2); c.fillRect(P.x - P.rx, P.y - P.ry, P.rx * 2, P.ry * 2);
   for (let y = P.y - P.ry; y < P.y + P.ry; y += 13) for (let x = P.x - P.rx + ((Math.floor(y / 13) % 2) * 8); x < P.x + P.rx; x += 17) {
@@ -284,23 +325,21 @@ function bakeVillageGround(v) {
   }
   c.restore();
   c.strokeStyle = shadeHex(cob, -0.45); c.lineWidth = 3; c.beginPath(); c.ellipse(P.x, P.y, P.rx, P.ry, 0, 0, Math.PI * 2); c.stroke();
-  // garden beds
-  const G = v.garden;
+  const G = v.garden;                                    // garden beds
   c.fillStyle = mixHex(B.ground, '#4a3828', 0.7); c.fillRect(G.x0 + 6, G.y0 + 8, G.x1 - G.x0 - 12, G.y1 - G.y0 - 14);
-  for (const by of [598, 658]) { c.fillStyle = mixHex(B.ground, '#3a2a1c', 0.78); c.beginPath(); c.roundRect(G.x0 + 14, by, G.x1 - G.x0 - 28, 30, 5); c.fill(); c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 1; for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(G.x0 + 18, by + 5 + i * 5); c.lineTo(G.x1 - 18, by + 5 + i * 5); c.stroke(); } }
-  // patches: lawn, chicken yard, smithy cinders, wood chips
-  const patch = (x, y, rx, ry, col, a) => { const gr = c.createRadialGradient(x, y, 0, x, y, rx); gr.addColorStop(0, withAlpha(col, a)); gr.addColorStop(1, withAlpha(col, 0)); c.save(); c.translate(x, y); c.scale(1, ry / rx); c.translate(-x, -y); c.fillStyle = gr; c.beginPath(); c.arc(x, y, rx, 0, Math.PI * 2); c.fill(); c.restore(); };
-  patch(535, 682, 190, 90, B.grass[1], 0.55);
-  patch(728, 862, 95, 50, '#c8a85a', 0.55); patch(968, 884, 100, 46, '#1e1a18', 0.6); patch(1325, 820, 165, 90, '#c9a972', 0.5);
-  for (let i = 0; i < 90; i++) { const a = r() * 6.28, d = Math.sqrt(r()); c.fillStyle = r() < 0.5 ? '#d8bc68' : '#b89848'; c.fillRect(728 + Math.cos(a) * 80 * d, 862 + Math.sin(a) * 40 * d, 3, 1); }
-  for (let i = 0; i < 120; i++) { const a = r() * 6.28, d = Math.sqrt(r()); c.fillStyle = r() < 0.5 ? '#e6cf9c' : '#b99863'; c.fillRect(1325 + Math.cos(a) * 140 * d, 820 + Math.sin(a) * 76 * d, 3, 1.5); }
-  // soft shade under the tree line and at the edges
-  const top = c.createLinearGradient(0, 0, 0, 170); top.addColorStop(0, 'rgba(0,0,0,0.5)'); top.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = top; c.fillRect(0, 0, VIL_W, 170);
+  for (const by of [G.y0 + 13, G.y0 + 73]) { c.fillStyle = mixHex(B.ground, '#3a2a1c', 0.78); c.beginPath(); c.roundRect(G.x0 + 14, by, G.x1 - G.x0 - 28, 30, 5); c.fill(); c.strokeStyle = 'rgba(0,0,0,0.25)'; c.lineWidth = 1; for (let i = 0; i < 5; i++) { c.beginPath(); c.moveTo(G.x0 + 18, by + 5 + i * 5); c.lineTo(G.x1 - 18, by + 5 + i * 5); c.stroke(); } }
+  const soft = (x, y, rx, ry, col, a) => { const gr = c.createRadialGradient(x, y, 0, x, y, rx); gr.addColorStop(0, withAlpha(col, a)); gr.addColorStop(1, withAlpha(col, 0)); c.save(); c.translate(x, y); c.scale(1, ry / rx); c.translate(-x, -y); c.fillStyle = gr; c.beginPath(); c.arc(x, y, rx, 0, Math.PI * 2); c.fill(); c.restore(); };
+  for (const p of v.patches) {                           // lawn, chicken yard, smithy cinders, wood chips
+    soft(p.x, p.y, p.rx, p.ry, p.col, p.a);
+    if (p.dots) for (let i = 0; i < p.dots.n; i++) { const a = r() * 6.28, d = Math.sqrt(r()); c.fillStyle = p.dots.cols[r() < 0.5 ? 0 : 1]; c.fillRect(p.x + Math.cos(a) * p.dots.rx * d, p.y + Math.sin(a) * p.dots.ry * d, p.dots.w, p.dots.h); }
+  }
+  const top = c.createLinearGradient(0, 0, 0, 170); top.addColorStop(0, 'rgba(0,0,0,0.5)'); top.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = top; c.fillRect(0, 0, VIL_W, 170);   // soft shade at the edges
   const bot = c.createLinearGradient(0, VIL_H, 0, VIL_H - 120); bot.addColorStop(0, 'rgba(0,0,0,0.5)'); bot.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = bot; c.fillRect(0, VIL_H - 120, VIL_W, 120);
   const lft = c.createLinearGradient(0, 0, 90, 0); lft.addColorStop(0, 'rgba(0,0,0,0.4)'); lft.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = lft; c.fillRect(0, 0, 90, VIL_H);
   const rgt = c.createLinearGradient(VIL_W, 0, VIL_W - 90, 0); rgt.addColorStop(0, 'rgba(0,0,0,0.4)'); rgt.addColorStop(1, 'rgba(0,0,0,0)'); c.fillStyle = rgt; c.fillRect(VIL_W - 90, 0, 90, VIL_H);
   return g;
 }
+
 
 // ---------------------------------------------------------------- the people
 function makeNpcs(v) {
@@ -334,6 +373,19 @@ function makeNpcs(v) {
     chat: ['Fine goods, fair prices!', 'Mind the crates!', 'Lanterns! Get your lanterns!'],
     script: () => [{ t: [4, 8], face: -1 }, { go: [crateSpot[0] + 22, crateSpot[1]], carry: null }, { t: 0.3, enter: n => { n.carry = 'crate'; } }, { go: [toStand[0] - 10, toStand[1]] }, { t: 0.4, enter: n => { n.carry = null; } }, { t: [3, 6], face: 1 }],
   });
+  const armStand = [b.armoury.x - 34, b.armoury.y + 27], jewStand = [b.jewel.x - 28, b.jewel.y + 27];
+  mk('dagna', 'Dagna', 'Armourer', armStand[0], armStand[1], {
+    shop: 'armour', look: { body: '#4a6a8a', apron: '#5a4a40', hat: 'smithcap', hatColor: '#6a7a8a', hair: '#7a3a1a', cheek: true }, f: 1,
+    lines: ['Mail, plate and helms. Every piece tested on a very patient scarecrow.', 'A good helm has saved more heroes than any sword.', "Armour won't make you brave. It will make you hard to kill."],
+    chat: ['Polish, polish...', 'Finest steel on the road!', 'Try it on, try it on!'],
+    script: () => [{ t: [4, 8], face: -1 }, { do: 'wipe', t: [2, 3] }, { go: [armStand[0] + 58, armStand[1]] }, { t: [3, 6], face: 1 }, { go: armStand }],
+  });
+  mk('lysa', 'Lysa', 'Jeweller', jewStand[0], jewStand[1], {
+    shop: 'jewel', look: { dress: '#2f8a6a', hat: 'bun', glasses: true, hair: '#2a2a3a', cheek: true }, f: 1,
+    lines: ['Rings and charms. Small things, big luck.', 'Every stone has a story. Most of them are about money.', 'A good ring will find your weak spot and cover it.'],
+    chat: ['Sparkle, sparkle...', 'Lovely stones today!', 'Mind the glass!'],
+    script: () => [{ t: [4, 8], face: -1 }, { do: 'wipe', t: [2, 3] }, { go: [jewStand[0] + 50, jewStand[1]] }, { t: [3, 6], face: 1 }, { go: jewStand }],
+  });
   mk('hilda', 'Hilda', 'Innkeeper', b.inn.x - 70, b.inn.y + 30, {
     special: 'inn', look: { dress: '#b04a5a', apron: '#f0ead8', hat: 'kerchief', hatColor: '#e8d8a8', hair: '#7a4a2a', cheek: true },
     lines: ["Rest here and you'll walk out with your strength back, and your journey safely written down.", "No charge for heroes. You'll earn your keep soon enough.", 'The road beyond the gate? A beast waits there. {tier} champions have tried before you.', 'Mind the step. And the cat. I do not own a cat, but it is always there.'],
@@ -345,22 +397,23 @@ function makeNpcs(v) {
   const anvStand = [v.anvil.x - 22, v.anvil.y + 4], quenchStand = [v.anvil.x - 72, v.anvil.y + 4];
   mk('brann', 'Brann', 'Blacksmith', anvStand[0], anvStand[1], {
     shop: 'smith', nightHome: true, home: door('smith'), look: { body: '#7a4a2a', apron: '#4a3a30', hat: 'smithcap', hatColor: '#3a2a22', hair: '#4a2a18', beard: '#5a3a22' }, f: 1, speed: 48,
-    lines: ["I buy spare gear. I'll not make you rich, but I pay fair. I've no wares of my own, only coin for spare gear.", 'A good blade is half the fight. The other half is the arm.', 'Hm. Cannot talk long. Iron waits for no one.'],
+    lines: ["Blades to buy, iron to temper, spare gear to sell. Bring me what you've got and I'll make it better.", 'A good blade is half the fight. The other half is the arm.', 'Hm. Cannot talk long. Iron waits for no one.'],
     chat: ['Clang!', 'Hot iron waits for no one.', 'Hmph.'],
     script: () => [{ go: anvStand }, { do: 'hammer', t: [9, 15], face: 1, enter: () => { v.anvil.hot = 1; } }, { do: 'wipe', t: [2, 3] }, { go: quenchStand }, { do: 'dip', t: 2.6, face: -1, enter: n => { sfxNear(n, 'dip', 1); } }, { go: anvStand }],
   });
   // --- villagers with routines ---
   const wellSpot = [v.plaza.x - 32, v.plaza.y + 38];
-  mk('pim', 'Old Pim', 'Gardener', 392, 640, {
+  const G = v.garden, gx = G.gapAt === 'E' ? G.x1 + 26 : G.x0 - 26, lane = G.y0 + 57, roadSpot = [gx, VIL_ROAD + 14];
+  mk('pim', 'Old Pim', 'Gardener', gx + (G.gapAt === 'E' ? 16 : -16), lane - 2, {
     nightHome: true, home: door('houseA'), look: { body: '#6a8a3a', hat: 'straw', hatColor: '#c0392b', hair: '#d8d8d8', beard: '#e6e6e6', cheek: true }, speed: 46,
     lines: ['Cabbages for the winter and flowers for the soul!', "Water them every day and they'll reward you. Not unlike a good sword arm.", "{biome} soil is peculiar, but my carrots don't seem to mind."],
     chat: ['Grow, my beauties!', 'Thirsty, are we?', 'Hm hm hm...'],
     script: () => {
-      const s = [{ go: wellSpot }, { do: 'dip', t: 1.8, face: 1, enter: n => { sfxNear(n, 'dip', 1); n.carry = null; } }, { go: [376, 641] }];
-      const lane = 642, xs = [320, 268, 216, 190];
+      const s = [{ go: roadSpot }, { go: wellSpot }, { do: 'dip', t: 1.8, face: 1, enter: n => { sfxNear(n, 'dip', 1); n.carry = null; } }, { go: roadSpot }, { go: [gx, lane - 1] }];
+      const xs = [G.x0 + 160, G.x0 + 108, G.x0 + 56, G.x0 + 30]; if (G.gapAt === 'W') xs.reverse();
       for (const x of xs) s.push({ go: [x, lane] }, { do: 'water', t: 2.2, face: 1, tick: (n, vv, dt) => waterTick(n, vv, dt, 1), enter: n => sfxNear(n, 'pour', 1) },
         { do: 'water', t: 2.0, face: -1, tick: (n, vv, dt) => waterTick(n, vv, dt, -1) });
-      s.push({ go: [376, 641] }, { do: 'wipe', t: [2, 3] });
+      s.push({ go: [gx, lane - 1] }, { do: 'wipe', t: [2, 3] });
       return s;
     },
   });
@@ -376,7 +429,7 @@ function makeNpcs(v) {
       { do: 'wipe', t: [2, 4] }],
   });
   const lawn = v.lawn;
-  for (const [id, name, col, hat, sx, sy] of [['pip', 'Pip', '#e8c850', '#d9534f', 470, 660], ['nell', 'Nell', '#e07aa0', '#5b8def', 560, 700], ['tam', 'Tam', '#6aa8d8', '#7fd08a', 620, 650]]) {
+  for (const [id, name, col, hat, sx, sy] of [['pip', 'Pip', '#e8c850', '#d9534f', lawn.x0 + 65, lawn.y0 + 42], ['nell', 'Nell', '#e07aa0', '#5b8def', lawn.x0 + 155, lawn.y0 + 82], ['tam', 'Tam', '#6aa8d8', '#7fd08a', lawn.x0 + 215, lawn.y0 + 32]]) {
     mk(id, name, 'Child', sx, sy, {
       kid: true, scale: 0.72, speed: 78, nightHome: true, home: door('houseB'), look: { body: col, hat: 'beanie', hatColor: hat, hair: '#5a3a1a', cheek: true }, happy: true,
       lines: id === 'pip' ? ["Wanna play? Tam kicks way too hard!", "I'm going to be a hero when I grow up. Like you!"] : id === 'nell' ? ['Tag! You are it! ...Oh. You look busy.', 'Do you really fight monsters? Are they scary?'] : ['I can kick it over the roof! Almost.', 'Mum says be home by dark.'],
@@ -387,14 +440,14 @@ function makeNpcs(v) {
     nightHome: true, home: door('houseA'), look: { dress: '#8a6aa8', hat: 'bun', glasses: true, skin: '#fff' }, f: -1, speed: 34,
     lines: ["I've seen heroes come and go, dear. You've kind eyes.", 'The road was safer in my day. Well... safer.', 'Take care out there. And come back for tea.'],
     chat: ['Knit one, purl two...', 'Lovely day for it.', 'Hm, hm.'],
-    script: () => [{ go: [v.benchA.x, v.benchA.y + 6] }, { do: 'knit', t: [18, 30], face: -1 }, { go: [v.board.x - 40, v.board.y + 8], speed: 30 }, { do: 'read', t: [4, 6], face: 1 },
+    script: () => [{ go: [v.benchA.x, v.benchA.y + 6] }, { do: 'knit', t: [18, 30], face: -1 }, { go: [v.board.x - 40 * Math.sign(v.board.x - v.benchA.x), v.board.y + 8], speed: 30 }, { do: 'read', t: [4, 6], face: 1 },
       { go: [wellSpot[0] + 10, wellSpot[1] + 6], speed: 30 }, { t: [3, 5], face: 1 }, { go: [v.benchA.x, v.benchA.y + 6], speed: 30 }],
   });
-  mk('voss', 'Sgt. Voss', 'Gate Guard', v.gate.x - 98, v.gate.y - 28, {
-    special: 'guard', look: { body: '#4a5a7a', hat: 'helmet', hatColor: '#c0392b', beard: '#6a5a4a', spear: true }, f: -1, speed: 36,
+  mk('voss', 'Sgt. Voss', 'Gate Guard', v.gate.x - 98 * v.E, v.gate.y - 28, {
+    special: 'guard', look: { body: '#4a5a7a', hat: 'helmet', hatColor: '#c0392b', beard: '#6a5a4a', spear: true }, f: -v.E, speed: 36,
     lines: ['Beyond this gate the road runs to a beast. Are you ready to face it?'],
     chat: ['Move along, citizens.', 'All quiet.', 'Halt. ...Oh, it is you.'],
-    script: () => [{ do: 'lean', t: [9, 15], face: -1 }, { go: [v.gate.x - 98, v.gate.y + 26] }, { t: [4, 6], face: -1 }, { go: [v.gate.x - 98, v.gate.y - 28] }],
+    script: () => [{ do: 'lean', t: [9, 15], face: -v.E }, { go: [v.gate.x - 98 * v.E, v.gate.y + 26] }, { t: [4, 6], face: -v.E }, { go: [v.gate.x - 98 * v.E, v.gate.y - 28] }],
   });
   // the notice board is a talk target too
   v.sleepAt = { x: b.inn.x + 118, y: b.inn.y + 40 };
@@ -403,12 +456,14 @@ function makeNpcs(v) {
 function prop2(v, kind, x, y, extra) { const p = { x, y, ...extra }; v.statics.push({ y, d: () => VPROP[kind](p, curNight > 0.45) }); return p; }
 
 function makeAnimals(v) {
-  const dog = { x: v.plaza.x + 60, y: v.plaza.y + 80, f: 1, walkT: 0, moving: false, pose: 'stand', pt: 0, mode: 'trot', wp: null, t: 2, ph: Math.random() * 6, happy: false, alpha: 1, r: 8, fT: 0, cool: 6, kind: 'dog' };
+  const dog = { x: v.plaza.x + 60, y: VIL_ROAD + 40, f: 1, walkT: 0, moving: false, pose: 'stand', pt: 0, mode: 'trot', wp: null, t: 2, ph: Math.random() * 6, happy: false, alpha: 1, r: 8, fT: 0, cool: 6, kind: 'dog' };
   v.animals.push(dog); v.dog = dog;
-  v.dogRoadWp = [538, 470];
-  v.dogWps = [[800, 626], [720, 470], [1000, 470], [1110, 590], [520, 540], [300, 530], [1300, 520], [560, 690], [560, 770], [950, 640], [1220, 700], [800, 470], [420, 440], [1180, 440], [900, 880]];
+  v.dogRoadWp = [v.sleepAt.x, VIL_ROAD - 8];
+  v.dogWps = [];                                           // places for the dog to trot to: anywhere free between the shops and the lane
+  const rr = mulberry(v.seed ^ 0x77);
+  for (let i = 0; i < 600 && v.dogWps.length < 18; i++) { const x = 120 + rr() * (VIL_W - 240), y = 420 + rr() * (VIL_LANE - 420); if (!vilOverlaps(v, x, y, 16)) v.dogWps.push([x, y]); }
   for (let i = 0; i < 4; i++) {
-    const h = { x: 675 + Math.random() * 110, y: 840 + Math.random() * 45, f: Math.random() < 0.5 ? 1 : -1, walkT: 0, moving: false, pose: 'peck', pt: Math.random() * 3, t: Math.random() * 2, wp: null, alpha: 1, r: 4, col: i === 3 ? '#c8864a' : '#f2eee4', kind: 'hen', ph: Math.random() * 6 };
+    const h = { x: v.yard.x0 + 10 + Math.random() * (v.yard.x1 - v.yard.x0 - 20), y: v.yard.y0 + 4 + Math.random() * (v.yard.y1 - v.yard.y0 - 8), f: Math.random() < 0.5 ? 1 : -1, walkT: 0, moving: false, pose: 'peck', pt: Math.random() * 3, t: Math.random() * 2, wp: null, alpha: 1, r: 4, col: i === 3 ? '#c8864a' : '#f2eee4', kind: 'hen', ph: Math.random() * 6 };
     v.hens.push(h);
   }
 }
@@ -457,22 +512,64 @@ function walkTo(n, tx, ty, dt, v, spd) {
   if (n.stuckT > 1.6) {                                   // never stay wedged
     v.stats.stuck++; n.stuckT = 0; n.moving = false;
     if (n.kind === 'dog') return true;                    // the dog just gives up on a spot it can't reach
-    v.stats.snaps++; n.x = tx; n.y = ty; return true;
+    v.stats.snaps++; (v.stats.who = v.stats.who || []).push(`${n.id || n.kind}@${Math.round(n.x)},${Math.round(n.y)}->${Math.round(tx)},${Math.round(ty)}`); n.x = tx; n.y = ty; return true;
   }
   return false;
 }
 
-// Doors of the south-row houses face away from the road, so people walk round the side of the house.
+// Going home: walk to the door (the path finder takes them round the walls); coming out, the children head for the lawn.
 function homeRoute(n, v, dir) {
-  const b = v.b[n.home.id], door = [n.home.x, n.home.y];
-  if (b.id !== 'houseA' && b.id !== 'houseB') return dir === 'in' ? [{ go: door, speed: n.speed * 1.15 }] : [];
-  const left = b.x - b.w / 2 - 40, right = b.x + b.w / 2 + 40, sp = n.speed * 1.15;
-  if (dir === 'in') {
-    const sx = b.id === 'houseA' ? right : (Math.abs(n.x - left) < Math.abs(n.x - right) ? left : right);
-    return [{ go: [sx, n.y], speed: sp }, { go: [sx, b.y + 34], speed: sp }, { go: door, speed: sp }];
+  if (dir === 'in') return [{ go: [n.home.x, n.home.y], speed: n.speed * 1.15 }];
+  return n.kid ? [{ go: [v.lawnC.x, v.lawnC.y] }] : [];
+}
+
+// ---------------------------------------------------------------- finding the way round walls
+// The village is laid out differently every time, so people can't rely on fixed waypoints. A coarse grid of what a person can
+// stand on is built once per village; a step that can't be walked in a straight line gets an A* route, pulled tight.
+function vilGrid(v) {
+  const C = 8, W = Math.ceil(VIL_W / C), H = Math.ceil(VIL_H / C), bl = new Uint8Array(W * H);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) bl[y * W + x] = vilOverlaps(v, x * C + C / 2, y * C + C / 2, 9) ? 1 : 0;
+  return { C, W, H, bl };
+}
+function findPath(v, sx, sy, tx, ty, r) {
+  const g = v.grid || (v.grid = vilGrid(v)), { C, W, H, bl } = g;
+  const gx = x => Math.max(0, Math.min(W - 1, Math.floor(x / C))), gy = y => Math.max(0, Math.min(H - 1, Math.floor(y / C)));
+  const nearestFree = (x, y) => {
+    const X0 = gx(x), Y0 = gy(y); if (!bl[Y0 * W + X0]) return Y0 * W + X0;
+    for (let rad = 1; rad < 10; rad++) for (let dy = -rad; dy <= rad; dy++) for (let dx = -rad; dx <= rad; dx++) {
+      const X = X0 + dx, Y = Y0 + dy; if (X >= 0 && Y >= 0 && X < W && Y < H && !bl[Y * W + X]) return Y * W + X;
+    }
+    return -1;
+  };
+  const s0 = nearestFree(sx, sy), t0 = nearestFree(tx, ty); if (s0 < 0 || t0 < 0) return null;
+  const gS = new Float32Array(W * H).fill(Infinity), f = new Float32Array(W * H), from = new Int32Array(W * H).fill(-1), closed = new Uint8Array(W * H);
+  const tX = t0 % W, tY = (t0 / W) | 0, hh = c => Math.hypot((c % W) - tX, ((c / W) | 0) - tY);
+  const open = [s0]; gS[s0] = 0; f[s0] = hh(s0);
+  while (open.length) {
+    let bi = 0; for (let i = 1; i < open.length; i++) if (f[open[i]] < f[open[bi]]) bi = i;
+    const c = open[bi]; open[bi] = open[open.length - 1]; open.pop();
+    if (c === t0) break; if (closed[c]) continue; closed[c] = 1;
+    const x = c % W, y = (c / W) | 0;
+    for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+      if (!dx && !dy) continue;
+      const X = x + dx, Y = y + dy; if (X < 0 || Y < 0 || X >= W || Y >= H) continue;
+      const nc = Y * W + X; if (bl[nc] || closed[nc]) continue;
+      if (dx && dy && (bl[y * W + X] || bl[Y * W + x])) continue;                      // no cutting corners
+      const ng = gS[c] + (dx && dy ? 1.414 : 1);
+      if (ng < gS[nc]) { gS[nc] = ng; from[nc] = c; f[nc] = ng + hh(nc); open.push(nc); }
+    }
   }
-  const sx = b.id === 'houseA' ? right : left;
-  return [{ go: [sx, b.y + 34] }, { go: [sx, b.id === 'houseA' ? 700 : 700] }];
+  if (t0 !== s0 && from[t0] < 0) return null;
+  const cells = []; for (let c = t0; c >= 0; c = from[c]) { cells.push(c); if (c === s0) break; }
+  const pts = cells.reverse().map(c => [(c % W) * C + C / 2, ((c / W) | 0) * C + C / 2]);
+  const out = []; let ax = sx, ay = sy, i = 0;                                          // pull the string tight: skip points you can see past
+  while (i < pts.length) { let j = pts.length - 1; while (j > i && !lineClear(v, ax, ay, pts[j][0], pts[j][1], r)) j--; out.push(pts[j]); ax = pts[j][0]; ay = pts[j][1]; i = j + 1; }
+  out.push([tx, ty]);
+  return out;
+}
+function planPath(v, n, go) {
+  if (lineClear(v, n.x, n.y, go[0], go[1], n.r)) return [[go[0], go[1]]];
+  return findPath(v, n.x, n.y, go[0], go[1], n.r) || [[go[0], go[1]]];
 }
 function startStep(n, s, v) {
   n.cur = s; n.pt = 0; n._ph = 0;
@@ -492,7 +589,9 @@ function runScript(n, dt, v) {
   const s = n.cur;
   if (s.go) {
     n.pose = s.pose || (n.carry ? 'carry' : 'stand');
-    if (walkTo(n, s.go[0], s.go[1], dt, v, s.speed || n.speed)) { n.moving = false; n.cur = null; }
+    if (!s.path) s.path = planPath(v, n, s.go);
+    const wp = s.path[0];
+    if (walkTo(n, wp[0], wp[1], dt, v, s.speed || n.speed)) { s.path.shift(); if (!s.path.length) { n.moving = false; n.cur = null; } }
     else if (n.pose === 'sweep' && n.moving && Math.random() < dt * 4) vfx(v, { x: n.x + n.f * 22, y: n.y - 1, vx: n.f * 12, vy: -12, grav: 0, life: 0.7, size: 2.2, color: 'rgba(200,190,160,0.5)' });
     return;
   }
@@ -728,12 +827,13 @@ function updateVillage(dt) {
   let best = null, bd = 1e9;
   const consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y); if (d < r && d < bd) { bd = d; best = { kind, ref, x, y, label, tag }; } };
   for (const n of v.npcs) if (!n.inside && n.alpha > 0.5 && !n.goHome) consider('npc', n, n.x, n.y, n.shop ? 72 : 64, n.name, n.role);
-  if (hero.x > v.gate.x - 110 && Math.abs(hero.y - v.gate.y) < 80) consider('gate', null, v.gate.x - 24, v.gate.y - 40, 999, 'The road', 'Leave the village');
+  if (Math.abs(hero.x - v.gate.x) < 110 && Math.abs(hero.y - v.gate.y) < 80) consider('gate', null, v.gate.x - 24 * v.E, v.gate.y - 40, 999, 'The road', 'Leave the village');
   consider('board', null, v.board.x, v.board.y - 40, 70, 'Notice board', 'Read');
   if (!best) consider('dog', v.dog, v.dog.x, v.dog.y - 14, 46, 'Biscuit', 'Pet');     // the dog never steals the prompt from a person
   v.near = best;
   // camera
-  const tx = clampN(hero.x - VW / 2, 0, VIL_W - VW), ty = clampN(hero.y - VH / 2 - 20, 0, VIL_H - VH), k = 1 - Math.exp(-dt * 7);
+  const vw = VW / VIL_ZOOM, vh = VH / VIL_ZOOM;
+  const tx = clampN(hero.x - vw / 2, 0, VIL_W - vw), ty = clampN(hero.y - vh / 2 - 12, 0, VIL_H - vh), k = 1 - Math.exp(-dt * 7);
   cam.x += (tx - cam.x) * k; cam.y += (ty - cam.y) * k; cam.shake = 0;
   for (const p of popups) { p.t -= dt; if (p.pop !== undefined) p.pop += dt; if (!p.big && !p.screen) p.y -= 30 * dt; }
   popups = popups.filter(p => p.t > 0);
@@ -750,9 +850,10 @@ function enterVillage() {
   vil = buildVillage();
   vil.ret = { x: hero.x, y: hero.y };
   curNight = night01();
-  hero.x = 112; hero.y = VIL_ROAD + 4; hero.facing = 1;
+  hero.x = vil.arrive.x; hero.y = vil.arrive.y; hero.facing = vil.E;
   hero.scarf.forEach(p => { p.x = hero.x; p.y = hero.y - 50; });
-  cam.x = 0; cam.y = clampN(hero.y - VH / 2 - 20, 0, VIL_H - VH);
+  const vw = VW / VIL_ZOOM, vh = VH / VIL_ZOOM;
+  cam.x = clampN(hero.x - vw / 2, 0, VIL_W - vw); cam.y = clampN(hero.y - vh / 2 - 12, 0, VIL_H - vh);
   state = 'village';
   saveGame(true);                                           // the village is the save point of the set
   popups.push({ text: `— ${vil.name} —`, x: VW / 2, y: 190, t: 3.2, big: true, screen: true, color: '#fff' });
@@ -797,7 +898,9 @@ function openTalk(text, override) {
     const n = t.ref; name = n.name; role = n.role; body = body || talkText(n);
     if (n.shop === 'alch') btns.push(['shop', 'Browse potions']);
     if (n.shop === 'store') btns.push(['shop', 'Browse wares']);
-    if (n.shop === 'smith') btns.push(['shop', 'Sell gear']);
+    if (n.shop === 'armour') btns.push(['shop', 'Browse armour']);
+    if (n.shop === 'jewel') btns.push(['shop', 'Browse jewellery']);
+    if (n.shop === 'smith') btns.push(['shop:smithBuy', 'Buy weapons'], ['shop:smithUp', 'Upgrade gear'], ['shop:smithSell', 'Sell gear']);
     if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], ['respec', `Reset stat points (${respecCost()} gold)`]);
     if (n.special === 'guard') btns.push(['go', 'Head out to face the boss']);
     btns.push(['bye', 'Goodbye']);
@@ -823,6 +926,7 @@ document.getElementById('talk').addEventListener('click', e => {
   if (k === 'bye') { if (t && t.kind === 'npc') t.ref.talking = false; v.talk = null; showMenu(null); }
   else if (k === 'go') { v.talk = null; v.leaveT = 0.9; showMenu(null); }
   else if (k === 'shop') { v.shop = t.ref.shop; showMenu('shop'); }
+  else if (k.startsWith('shop:')) { v.shop = k.slice(5); showMenu('shop'); }
   else if (k === 'rest') {
     hero.hp = hero.maxHp; hero.stamina = maxStamina(); sfx('potion'); saveGame(false);
     openTalk('Sleep well, hero. You wake rested and fully healed, and your journey is safely written down.');
@@ -831,19 +935,21 @@ document.getElementById('talk').addEventListener('click', e => {
     const n = spentPoints(), cost = respecCost();
     if (n <= 0) openTalk("You haven't spent any stat points yet, dear. Nothing to take back.");
     else if (hero.gold < cost) openTalk(`I can take back your ${n} spent point${n === 1 ? '' : 's'} so you can choose again, but it costs ${cost} gold, and you only have ${hero.gold}.`);
-    else openTalk(`I can take back your ${n} spent point${n === 1 ? '' : 's'} so you can choose again. That is ${cost} gold. Your stats go back to zero until you spend the points again (press L). Shall I?`,
+    else openTalk(`I can take back your ${n} spent point${n === 1 ? '' : 's'} so you can choose again. That is ${cost} gold. Your stats go back to zero until you spend the points again (press M). Shall I?`,
       [['respecYes', `Yes, reset (${cost} gold)`], ['bye', 'No, keep my stats']]);
   }
   else if (k === 'respecYes') {
     const n = spentPoints();
-    if (respecStats()) { sfx('unlock'); popups.push({ text: `${n} stat point${n === 1 ? '' : 's'} returned: press L to spend them`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#fd4' }); openTalk('Done. Your points are yours to spend again. Press L when you are ready.'); }
+    if (respecStats()) { sfx('unlock'); popups.push({ text: `${n} stat point${n === 1 ? '' : 's'} returned: press M to spend them`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#fd4' }); openTalk('Done. Your points are yours to spend again. Press M when you are ready.'); }
     else openTalk('Hm, something is off. Come back when you have the gold.');
   }
 });
 
 function renderShop() {
   const v = vil; if (!v || !v.shop) return;
-  if (v.shop === 'smith') { renderSellShop(); return; }
+  if (v.shop === 'smith' || v.shop === 'smithSell') { renderSellShop(); return; }
+  if (v.shop === 'smithBuy' || v.shop === 'armour' || v.shop === 'jewel') { renderGearShop(v.shop); return; }
+  if (v.shop === 'smithUp') { renderUpgradeShop(); return; }
   const alch = v.shop === 'alch';
   document.getElementById('shopTitle').textContent = alch ? "MIRA'S POTIONS" : "TOBIN'S GENERAL STORE";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
@@ -865,6 +971,57 @@ function renderShop() {
   }
   document.getElementById('shopBody').innerHTML = html;
 }
+// ---------------------------------------------------------------- gear for sale: Brann's weapons, Dagna's armour, Lysa's jewellery
+// Stock is rolled when you arrive (a little better the deeper you are) and is gone once bought; the next village has new stock.
+const gearPrice = it => Math.max(18, Math.round(it.value * 3.4));
+function makeStock(v) {
+  const depth = depthOf() + 0.4, level = hero.level + 2;
+  const roll = slot => {
+    let it = rollItem({ slot, tier: depth, level });
+    if (it.rarity < 1 || it.rarity > 5) it = rollItem({ slot, rarity: Math.max(1, Math.min(5, it.rarity)), level });     // shops never sell Broken, Mythical or Secret pieces
+    return { item: it, price: gearPrice(it) };
+  };
+  v.stock.smith = ['weapon', 'weapon', 'weapon', 'weapon'].map(roll);
+  v.stock.armour = ['armor', 'armor', 'helmet', 'helmet'].map(roll);
+  v.stock.jewel = ['ring', 'ring', 'necklace', 'necklace'].map(roll);
+}
+const gearScore = it => Object.entries(it.stats).reduce((a, [k, x]) => a + x / GEAR_STATS[k].max, 0);
+const statLine = it => Object.entries(it.stats).map(([k, x]) => `${GEAR_STATS[k].name} ${GEAR_STATS[k].fmt(x)}`).join(' · ');
+const slotOf = it => it.slot === 'ring' ? 'ring1' : it.slot;
+function renderGearShop(kind) {
+  const v = vil, stockKey = kind === 'smithBuy' ? 'smith' : kind, list = v.stock[stockKey] || [];
+  document.getElementById('shopTitle').textContent = { smithBuy: "BRANN'S FORGE: WEAPONS", armour: "DAGNA'S ARMOURY", jewel: "LYSA'S JEWELLERY" }[kind];
+  document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
+  let html = '', n = 0;
+  list.forEach((e, i) => {
+    if (!e) return;
+    const it = e.item, R = RARITIES[it.rarity], worn = hero.equip[slotOf(it)];
+    const lock = it.slot === 'weapon' && it.req > hero.level, bagFull = hero.inv.length >= INV_MAX, can = hero.gold >= e.price && !bagFull;
+    const better = gearScore(it) > (worn ? gearScore(worn) : 0) + 1e-9;
+    const base = it.slot === 'weapon' ? SWORDS.find(x => x.id === it.base) : null;
+    html += `<div class="item"><div class="ic" style="border-color:${R.color}">${slotSvg(it.slot, R.color)}</div><div class="im"><b style="color:${R.color}">${escapeHtml(it.name)}</b>
+      <small>${R.name} ${SLOT_LABEL[it.slot].toLowerCase()}${base ? ` · base damage ${base.dmg}${lock ? ` · <span style="color:#f88">needs level ${it.req}</span>` : ''}` : ''}${better ? ' · <span style="color:#7fd08a">better than yours</span>' : ''}<br>${escapeHtml(statLine(it))}${it.unique ? '' : ''}</small></div>
+      <div class="pr"><span class="price">${e.price.toLocaleString()} g</span></div><button data-buy="buy:${stockKey}:${i}" ${can ? '' : 'disabled'}><kbd>${++n}</kbd>${bagFull ? 'Bag full' : 'Buy'}</button></div>`;
+  });
+  if (!n) html = '<div class="hint" style="text-align:center">Everything is sold. New stock arrives with the next village.</div>';
+  document.getElementById('shopBody').innerHTML = html;
+}
+// Brann improves gear: each level adds 10% to every stat on the piece
+function renderUpgradeShop() {
+  document.getElementById('shopTitle').textContent = "BRANN'S FORGE: UPGRADE GEAR";
+  document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
+  const rows = [...GEAR_SLOTS.map(k => hero.equip[k]).filter(Boolean).map(it => ({ it, eq: true })), ...hero.inv.map(it => ({ it, eq: false }))].filter(r => Object.keys(r.it.stats).length);
+  let html = '', n = 0;
+  for (const { it, eq } of rows) {
+    const R = RARITIES[it.rarity], up = it.up | 0, max = upgradeMax(it), done = up >= max, cost = upgradeCost(it), can = !done && hero.gold >= cost;
+    html += `<div class="item"><div class="ic" style="border-color:${R.color}">${slotSvg(it.slot, R.color)}</div><div class="im"><b style="color:${R.color}">${escapeHtml(it.name)}</b>
+      <small>${eq ? 'Worn · ' : ''}Level ${up} of ${max}${done ? ' · fully upgraded' : ' · every stat +10%'}<br>${escapeHtml(statLine(it))}</small></div>
+      <div class="pr"><span class="price">${done ? '—' : cost.toLocaleString() + ' g'}</span></div><button data-buy="up:${escapeHtml(it.id)}" ${can ? '' : 'disabled'}><kbd>${++n}</kbd>${done ? 'Max' : 'Upgrade'}</button></div>`;
+  }
+  if (!rows.length) html = '<div class="hint" style="text-align:center">You have no gear with stats to improve yet. Gear drops from monsters, and bosses always drop some.</div>';
+  document.getElementById('shopBody').innerHTML = html;
+}
+
 // the blacksmith buys spare gear (equipped pieces are never offered)
 function renderSellShop() {
   document.getElementById('shopTitle').textContent = "BRANN'S FORGE: SELL GEAR";
@@ -893,6 +1050,22 @@ document.getElementById('shop').addEventListener('click', e => {
     say(`Sold ${sold.length === 1 ? sold[0].name : sold.length + ' pieces'} for ${gold} gold`, '#f5c451'); sfx('coin'); saveGame(true, true); renderShop();
     return;
   }
+  if (id.startsWith('buy:')) {
+    const [, key, idx] = id.split(':'), list = vil.stock[key], e = list && list[+idx];
+    if (!e || hero.gold < e.price || hero.inv.length >= INV_MAX) { sfx('tired'); return; }
+    hero.gold -= e.price; hero.inv.push(e.item); list[+idx] = null;
+    say(`Bought ${e.item.name}`, RARITIES[e.item.rarity].color); hero.goldPulse = 0.6; sfx('coin'); saveGame(true, true); renderShop();
+    return;
+  }
+  if (id.startsWith('up:')) {
+    const it = GEAR_SLOTS.map(k => hero.equip[k]).concat(hero.inv).find(i => i && i.id === id.slice(3));
+    const cost = it ? upgradeCost(it) : 0;
+    if (!it || !canUpgrade(it) || hero.gold < cost) { sfx('tired'); return; }
+    hero.gold -= cost; upgradeItem(it);
+    if (GEAR_SLOTS.some(k => hero.equip[k] === it)) recalcGear();
+    say(`${it.name}: upgraded`, RARITIES[it.rarity].color); hero.goldPulse = 0.6; sfx('unlock'); Sound.sfxAt('hammer', 1); saveGame(true, true); renderShop();
+    return;
+  }
   if (id === 'potion') {
     const price = potionCost();
     if (hero.gold < price || (vil.stock.potion | 0) <= 0 || (hero.potions | 0) >= POTION_MAX) { sfx('tired'); return; }
@@ -910,12 +1083,13 @@ function drawVillage() {
   const v = vil; if (!v) return;
   const night = night01(); curNight = night;
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH);
-  ctx.save(); ctx.translate(-Math.round(cam.x), -Math.round(cam.y));
-  const cx = Math.round(cam.x), cy = Math.round(cam.y);
-  ctx.drawImage(v.ground, cx, cy, VW, VH, cx, cy, VW, VH);
+  const Z = VIL_ZOOM, vw = VW / Z, vh = VH / Z;
+  const cx = Math.round(cam.x * Z) / Z, cy = Math.round(cam.y * Z) / Z;           // whole screen pixels, so the ground never shimmers
+  ctx.save(); ctx.scale(Z, Z); ctx.translate(-cx, -cy);
+  ctx.drawImage(v.ground, cx * Z, cy * Z, VW, VH, cx, cy, vw, vh);
   const things = [];
-  const vis = (x, y, m) => x > cam.x - m && x < cam.x + VW + m && y > cam.y - m && y < cam.y + VH + m * 1.5;
-  for (const s of v.statics) if (s.y > cam.y - 40 && s.y < cam.y + VH + 240) things.push(s);
+  const vis = (x, y, m) => x > cam.x - m && x < cam.x + vw + m && y > cam.y - m && y < cam.y + vh + m * 1.5;
+  for (const s of v.statics) if (s.y > cam.y - 40 && s.y < cam.y + vh + 240) things.push(s);
   for (const n of v.npcs) if (!n.inside && n.alpha > 0.02 && vis(n.x, n.y, 100)) things.push({ y: n.y, d: () => drawVillager(n) });
   for (const a of v.animals) if (vis(a.x, a.y, 80)) things.push({ y: a.y, d: () => drawDog(a) });
   for (const h of v.hens) if (vis(h.x, h.y, 80)) things.push({ y: h.y, d: () => drawHen(h) });
@@ -950,12 +1124,12 @@ function drawVillage() {
   if (night > 0.04) {
     ctx.save(); ctx.globalCompositeOperation = 'lighter';
     const pool = (x, y, rad, rgb, a) => {
-      const sx = x - cx, sy = y - cy; if (sx < -rad || sx > VW + rad || sy < -rad || sy > VH + rad) return;
+      const sx = (x - cx) * Z, sy = (y - cy) * Z; rad *= Z; if (sx < -rad || sx > VW + rad || sy < -rad || sy > VH + rad) return;
       const g = ctx.createRadialGradient(sx, sy, 2, sx, sy, rad); g.addColorStop(0, `rgba(${rgb},${a * night})`); g.addColorStop(1, `rgba(${rgb},0)`); ctx.fillStyle = g; ctx.fillRect(sx - rad, sy - rad, rad * 2, rad * 2);
     };
     for (const l of v.lamps) pool(l.x, l.y, 115, '255,205,120', 0.30 + Math.sin(tAnim * 3 + l.x) * 0.02);
     for (const b of v.buildings) { for (const dx of winOffsets(b.w)) pool(b.x + dx, b.y - b.wh * 0.62, 52, '255,200,110', 0.26); pool(b.door.x, b.y - 12, 46, '255,190,100', 0.2); }
-    pool(1042, 818, 105, '255,150,60', 0.42 + Math.sin(tAnim * 9) * 0.04);
+    pool(v.forge.x, v.forge.y - 18, 105, '255,150,60', 0.42 + Math.sin(tAnim * 9) * 0.04);
     pool(hero.x, hero.y - 30, 70 + (hero.lamp | 0) * 14, '255,225,170', 0.16);
     ctx.restore();
   }
@@ -983,7 +1157,7 @@ function drawVillageHUD(v) {
   ctx.fillStyle = '#fff3c0'; ctx.beginPath(); ctx.arc(-1.8, -1.8, 1.8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
   ctx.fillStyle = '#f5c451'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.textAlign = 'left'; ctx.fillText(hero.gold.toLocaleString(), 42, 99);
   drawPotionHud(22, 117);
-  if (hero.points > 0 && Math.floor(tAnim * 2) % 2) { ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.fillText(`${hero.points} stat points — press L`, 22, 146); }
+  if (hero.points > 0 && Math.floor(tAnim * 2) % 2) { ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.fillText(`${hero.points} stat points — press M`, 22, 146); }
   // clock chip
   const night = isNight(), x = VW - 164, y = 10;
   ctx.fillStyle = 'rgba(10,10,16,0.62)'; ctx.strokeStyle = 'rgba(120,120,160,0.28)'; ctx.beginPath(); ctx.roundRect(x, y, 150, 40, 9); ctx.fill(); ctx.stroke();

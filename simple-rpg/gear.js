@@ -163,6 +163,24 @@ function unequipToBag(key) {
   recalcGear();
   return 'ok';
 }
+// ---------------------------------------------------------------- upgrading (the blacksmith)
+// Every level adds 10% to each stat the piece has (at least +1 on whole-number stats). Better grades can be upgraded further.
+const UP_PCT = 0.10;
+const upgradeMax = it => 3 + (it.rarity >= 3 ? 1 : 0) + (it.rarity >= 5 ? 1 : 0);
+const upgradeCost = it => Math.round((24 + it.value * 0.9) * (1 + 0.6 * (it.up | 0)));
+const canUpgrade = it => !!it && (it.up | 0) < upgradeMax(it) && Object.keys(it.stats).length > 0;
+function upgradeItem(it) {
+  if (!canUpgrade(it)) return false;
+  for (const k in it.stats) {
+    const S = GEAR_STATS[k], raised = it.stats[k] * (1 + UP_PCT);
+    const v = S.int ? Math.max(Math.round(it.stats[k]) + 1, Math.round(raised)) : Math.round(raised * 1000) / 1000;
+    it.stats[k] = Math.min(S.max * 1.7, v);
+  }
+  it.up = (it.up | 0) + 1;
+  it.name = it.name.replace(/ \+\d+$/, '') + ` +${it.up}`;
+  it.value = Math.round(it.value * 1.25 + 4);
+  return true;
+}
 function discardFromBag(id) { const i = bagFind(id); if (i < 0) return false; hero.inv.splice(i, 1); return true; }
 
 // ---------------------------------------------------------------- caps (level stats + gear, never beyond the ceiling)
@@ -180,9 +198,10 @@ function sanitizeItem(raw) {
     if (slot === 'weapon') { const sw = SWORDS.find(s => s.id === raw.base); if (!sw) return null; item.base = sw.id; item.req = sw.lvl; }
     for (const k in GEAR_STATS) {
       const v = raw.stats && Number(raw.stats[k]);
-      if (Number.isFinite(v) && v > 0) item.stats[k] = Math.min(GEAR_STATS[k].max * 1.05, v);
+      if (Number.isFinite(v) && v > 0) item.stats[k] = Math.min(GEAR_STATS[k].max * 1.7, v);
     }
     if (raw.unique && UNIQUES[raw.unique]) item.unique = raw.unique;
+    if (Number(raw.up) > 0) item.up = Math.max(0, Math.min(upgradeMax(item), Math.floor(Number(raw.up))));
     item.value = Math.max(1, Math.min(99999, Math.round(Number(raw.value) || RARITIES[rarity].price)));
     return item;
   } catch { return null; }
@@ -227,7 +246,7 @@ function dropGear(item, x, y) {
 // called when the hero walks over a gear drop; returns true if it was picked up
 function pickUpGear(d) {
   if (!addToBag(d.item)) {
-    if (!(d.warnT > 0)) { popups.push({ text: 'Backpack full (press I)', x: d.x, y: d.y - 34, t: 1.2, color: '#f88' }); d.warnT = 1.5; sfx('tired'); }
+    if (!(d.warnT > 0)) { popups.push({ text: 'Backpack full (press M)', x: d.x, y: d.y - 34, t: 1.2, color: '#f88' }); d.warnT = 1.5; sfx('tired'); }
     return false;
   }
   const R = RARITIES[d.item.rarity];
@@ -236,7 +255,7 @@ function pickUpGear(d) {
   return true;
 }
 
-// ---------------------------------------------------------------- the inventory screen (I)
+// ---------------------------------------------------------------- the inventory tab of the character menu (M)
 let invSel = null;                                              // { src: 'bag' | 'eq', id }
 const slotSvg = (slot, c) => {
   const p = {

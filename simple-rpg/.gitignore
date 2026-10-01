@@ -4,7 +4,9 @@ _*.py
 node_modules/
 dist/
 *.lnk
-Stick RPG/
+launcher/
 build/_out/
 /saves/
 /data/
+Stick RPG/
+.idea/

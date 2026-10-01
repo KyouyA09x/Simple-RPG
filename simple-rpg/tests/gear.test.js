@@ -93,7 +93,7 @@ evil.gearHp = 1e9;
 localStorage.setItem('stickrpg_slot1', JSON.stringify(evil));
 ok(loadSlot(1) === true, 'garbage gear does not stop loading');
 ok(hero.equip.weapon && hero.sword && hero.equip.ring1 === null, 'always holds a weapon; wrong-slot item dropped');
-ok(hero.inv.length === 1 && hero.inv[0].stats.dr <= GEAR_STATS.dr.max * 1.05 && !hero.inv[0].unique && !('bogus' in hero.inv[0].stats) && !('hp' in hero.inv[0].stats), 'bad items removed, values clamped');
+ok(hero.inv.length === 1 && hero.inv[0].stats.dr <= GEAR_STATS.dr.max * 1.7 && !hero.inv[0].unique && !('bogus' in hero.inv[0].stats) && !('hp' in hero.inv[0].stats), 'bad items removed, values clamped');
 ok(hero.maxHp > 0 && hero.maxHp < 100000, 'max HP sane after hostile gearHp');
 renderInventory(); ok(!document.getElementById('invDetail').innerHTML.includes('<img'), 'item names are escaped in the UI');
 { const d = document.createElement('div'); d.innerHTML = ''; }
@@ -168,9 +168,14 @@ window.confirm = () => true;
 clk(`#invGrid [data-bag="${target.id}"]`);
 clk('#invDetail [data-inv-act=discard]');
 ok(!hero.inv.some(i => i.id === target.id), 'discard by clicking');
-showMenu(null); showMenu('menu'); ok(!!document.querySelector('#menu [data-act=inv]'), 'pause menu has Inventory'); showMenu(null);
+showMenu(null); showMenu('menu'); ok(!document.querySelector('#menu [data-act=inv]') && !document.querySelector('#menu [data-act=level]'), 'pause menu no longer holds Inventory or Character'); showMenu(null);
 // the I key
-hero.dead = false; window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyI' })); ok(openMenu === 'inv', 'I opens the inventory'); window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyI' })); ok(openMenu === null, 'I closes it');
+// the M key: one menu with two tabs (Character and Inventory); L and I no longer open anything
+hero.dead = false; const key = c => window.dispatchEvent(new KeyboardEvent('keydown', { code: c }));
+key('KeyL'); ok(openMenu === null, 'L does nothing now'); key('KeyI'); ok(openMenu === null, 'I does nothing now');
+lastCharTab = 'level'; key('KeyM'); ok(openMenu === 'level', 'M opens the menu on the Character tab first'); key('KeyM'); ok(openMenu === null, 'M closes it');
+showMenu('inv'); key('KeyM'); ok(openMenu === null, 'M closes from the Inventory tab'); key('KeyM'); ok(openMenu === 'inv', 'M reopens on the tab you used last');
+clk('#inv [data-act=level]'); ok(openMenu === 'level', 'Character tab button'); clk('#level [data-act=inv]'); ok(openMenu === 'inv', 'Inventory tab button'); showMenu(null);
 
 // ---- 15. the blacksmith buys gear (equipped pieces are never offered)
 enemies = []; spawnQueue = []; wave = 9; hero.gold = 0; state = 'play'; vil = null; enterVillage(); vil.fade = 0;
@@ -184,6 +189,41 @@ clk('#shopBody [data-buy^="sell:"]');
 ok(hero.inv.length === 0 && hero.gold === 314 && hero.equip.weapon.id === eqBefore, 'sell one piece; the equipped weapon is untouched');
 window.dispatchEvent(new KeyboardEvent('keydown', { code: 'Digit1' }));            // number keys on an empty list do nothing
 showMenu(null); vil.leaveT = 0; leaveVillage();
+
+// ---- 15a. the full village: gear shops and upgrades
+enemies = []; spawnQueue = []; wave = 9; state = 'play'; vil = null; hero.inv = []; hero.gold = 0; enterVillage(); vil.fade = 0;
+for (const id of ['brann', 'dagna', 'lysa']) ok(vil.npcs.some(n => n.id === id), id + ' lives in every village');
+{ const brann = vil.npcs.find(n => n.id === 'brann'); vil.talk = { kind: 'npc', ref: brann }; openTalk();
+  ok([...document.querySelectorAll('#talkBtns button')].map(b => b.dataset.talk).join() === 'shop:smithBuy,shop:smithUp,shop:smithSell,bye', 'Brann: buy weapons, upgrade gear, sell gear');
+  clk('#talkBtns [data-talk="shop:smithBuy"]'); ok(openMenu === 'shop' && vil.shop === 'smithBuy', 'Buy weapons opens his weapon stock'); showMenu(null); }
+for (const [shop, slots] of [['smithBuy', ['weapon']], ['armour', ['armor', 'helmet']], ['jewel', ['ring', 'necklace']]]) {
+  vil.shop = shop; hero.gold = 0; showMenu('shop');
+  const rows = document.querySelectorAll('#shopBody [data-buy]');
+  ok(rows.length === 4 && [...rows].every(b => b.disabled), shop + ': four pieces for sale, none affordable with 0 gold');
+  const key = shop === 'smithBuy' ? 'smith' : shop;
+  ok(vil.stock[key].every(e => slots.includes(e.item.slot)), shop + ': sells the right kinds of gear');
+  hero.gold = 100000; showMenu('shop'); const before = hero.inv.length, e0 = vil.stock[key][0];
+  clk('#shopBody [data-buy]');
+  ok(hero.inv.length === before + 1 && hero.inv.includes(e0.item) && hero.gold === 100000 - e0.price && vil.stock[key][0] === null, shop + ': buying moves the piece to the backpack and takes the gold');
+  ok(document.querySelectorAll('#shopBody [data-buy]').length === 3, shop + ': a sold piece leaves the shelf');
+  hero.inv = []; for (let i = 0; i < INV_MAX; i++) hero.inv.push(rollItem({ slot: 'helmet', rarity: 1 })); showMenu('shop');
+  ok([...document.querySelectorAll('#shopBody [data-buy]')].every(b => b.disabled), shop + ': a full backpack cannot buy'); hero.inv = [];
+}
+// upgrades
+{ hero.inv = []; hero.gold = 100000; const armor = rollItem({ slot: 'armor', rarity: 3 }); armor.stats = { dr: 0.08, hp: 40 }; hero.inv.push(armor); equipFromBag(armor.id);
+  const worn = hero.equip.armor, dr0 = worn.stats.dr, hp0 = worn.stats.hp, maxHp0 = hero.maxHp, cost = upgradeCost(worn);
+  vil.shop = 'smithUp'; showMenu('shop');
+  ok(!!document.querySelector('#shopBody [data-buy="up:' + worn.id + '"]'), 'upgrade list shows the worn armour');
+  clk('#shopBody [data-buy="up:' + worn.id + '"]');
+  ok(worn.up === 1 && worn.stats.dr > dr0 * 1.09 && worn.stats.hp >= hp0 + 1 && / \+1$/.test(worn.name), 'upgrade raises every stat by about 10% and marks the name');
+  ok(hero.gold === 100000 - cost && hero.maxHp === maxHp0 + (worn.stats.hp - hp0) && near(hero.gear.dr, worn.stats.dr), 'upgrade costs gold and a worn piece updates max HP and totals at once');
+  while (canUpgrade(worn)) upgradeItem(worn);
+  ok(worn.up === upgradeMax(worn) && worn.up === 4 && !upgradeItem(worn), 'upgrades stop at the maximum for the grade (Rare: 4)');
+  showMenu('shop'); ok(document.querySelector('#shopBody [data-buy="up:' + worn.id + '"]').disabled, 'a maxed piece shows a disabled button');
+  const copy = sanitizeItem(JSON.parse(JSON.stringify(worn))); ok(copy.up === 4 && near(copy.stats.dr, worn.stats.dr), 'upgrade level and stats survive a save');
+  const hostile = sanitizeItem({ ...JSON.parse(JSON.stringify(worn)), up: 99, stats: { dr: 50 } }); ok(hostile.up === 4 && hostile.stats.dr <= GEAR_STATS.dr.max * 1.7, 'a hostile upgrade level or stat is clamped');
+  ok(!canUpgrade(starterWeapon()), 'a starter weapon with no stats has nothing to upgrade'); }
+showMenu(null); vil.leaveT = 0; leaveVillage(); hero.gold = 0; hero.inv = [];
 
 // ---- 15b. dev menu gear buttons
 hero.inv = []; showMenu('dev');

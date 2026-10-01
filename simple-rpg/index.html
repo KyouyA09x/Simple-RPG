@@ -58,6 +58,10 @@
   .hint { font-size: 12px; color: var(--ink-dim); margin-top: 10px; text-align: left; line-height: 1.6; }
   .hint em { color: var(--gold); font-style: normal; }
 
+  /* ---- character / inventory menu (M) ---- */
+  .tabs { display: flex; gap: 8px; justify-content: center; margin: -6px 0 14px; }
+  .panel .tabs button { display: inline-block; width: auto; min-width: 150px; margin: 0; }
+  .panel .tabs button.on { background: #34344a; border-color: #6a6a9a; color: #fff; }
   /* ---- level menu ---- */
   .lvhead { display: flex; justify-content: space-between; align-items: center; gap: 12px;
     background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 14px; font-size: 14px; }
@@ -188,8 +192,6 @@
     <div class="panel">
       <h2>PAUSED</h2>
       <button data-act="resume">Resume</button>
-      <button data-act="level">Level Up (L)</button>
-      <button data-act="inv">Inventory (I)</button>
       <button data-act="settings">Settings</button>
       <button data-act="quit">Quit to Title</button>
       <button data-act="quitApp" class="app-only">Quit to Desktop</button>
@@ -279,30 +281,32 @@
   <div class="overlay" id="inv">
     <div class="panel inv-panel">
       <h2>INVENTORY</h2>
+      <div class="tabs"><button data-act="level" class="">Character</button><button data-act="inv" class="on">Inventory</button></div>
       <div class="lvhead"><span id="invCount"></span><span>Gold: <span class="pts" id="invGold"></span></span></div>
       <div class="invcols">
         <div><h3>Equipped</h3><div id="invEquip" class="equipgrid"></div></div>
         <div><h3>Backpack</h3><div id="invGrid" class="invgrid"></div><h3>Gear totals</h3><div class="summary" id="invTotals"></div></div>
         <div><h3>Details</h3><div id="invDetail" class="invdetail"></div></div>
       </div>
-      <button data-act="close">Close (I / Esc)</button>
+      <button data-act="close">Close (M / Esc)</button>
     </div>
   </div>
 
   <div class="overlay" id="level">
     <div class="panel wide">
       <h2>CHARACTER</h2>
+      <div class="tabs"><button data-act="level" class="on">Character</button><button data-act="inv" class="">Inventory</button></div>
       <div class="lvhead"><span>Level <b id="lvNum"></b></span><span>Unspent points: <span class="pts" id="lvPts"></span></span></div>
       <div class="lvcols">
         <div><h3>Stats</h3><div id="lvStats"></div></div>
         <div><h3>Summary</h3><div class="summary" id="lvSummary"></div></div>
       </div>
-      <div class="hint">Weapons and gear are in the <b>Inventory</b> (press <b>I</b>).</div>
-      <button data-act="close">Close (L / Esc)</button>
+      <div class="hint">Weapons and gear are in the <b>Inventory</b> tab. Spend points on the left.</div>
+      <button data-act="close">Close (M / Esc)</button>
     </div>
   </div>
 </div>
-<div id="help">WASD / Arrows: move · Space: attack · Shift: flip (invincible) · Q: potion · I: inventory · E: talk (village) · L: level menu · Esc / P: menu · hold Esc: exit fullscreen · F: fullscreen · `: dev menu</div>
+<div id="help">WASD / Arrows: move · Space: attack · Shift: flip (invincible) · Q: potion · M: character &amp; inventory · E: talk (village) · Esc / P: menu · hold Esc: exit fullscreen · F: fullscreen · `: dev menu</div>
 <script src="sfx.js"></script>
 <script src="postfx.js"></script>
 <script src="sky.js"></script>
@@ -314,6 +318,7 @@
 <script src="gear.js"></script>
 <script src="villagers.js"></script>
 <script src="village.js"></script>
+<script src="camp.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

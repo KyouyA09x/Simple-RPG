@@ -412,6 +412,8 @@ function drawSign(b, sx, sy) {
     case 'inn': ctx.fillStyle = '#e8e0c4'; ctx.fillRect(cx - 6, cy - 6, 10, 12); ctx.strokeRect(cx - 6, cy - 6, 10, 12); ctx.fillStyle = '#e0a030'; ctx.fillRect(cx - 6, cy - 6, 10, 4); ctx.beginPath(); ctx.arc(cx + 8, cy, 3.5, -1.5, 1.5); ctx.stroke(); break;
     case 'flask': ctx.fillStyle = '#7a4fd0'; ctx.beginPath(); ctx.moveTo(cx - 2, cy - 8); ctx.lineTo(cx + 2, cy - 8); ctx.lineTo(cx + 2, cy - 2); ctx.lineTo(cx + 7, cy + 7); ctx.lineTo(cx - 7, cy + 7); ctx.lineTo(cx - 2, cy - 2); ctx.closePath(); ctx.fill(); ctx.stroke(); break;
     case 'sack': ctx.fillStyle = '#b89a62'; ctx.beginPath(); ctx.ellipse(cx, cy + 2, 8, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#f5c451'; ctx.beginPath(); ctx.arc(cx, cy + 2, 3, 0, Math.PI * 2); ctx.fill(); break;
+    case 'shield': ctx.fillStyle = '#5b7fb5'; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy - 7); ctx.lineTo(cx + 7, cy + 1); ctx.quadraticCurveTo(cx + 7, cy + 7, cx, cy + 9); ctx.quadraticCurveTo(cx - 7, cy + 7, cx - 7, cy + 1); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#e8d8a8'; ctx.fillRect(cx - 1, cy - 5, 2, 11); ctx.fillRect(cx - 4, cy - 1, 8, 2); break;
+    case 'gem': ctx.fillStyle = '#4fd0b0'; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx - 3, cy - 7); ctx.lineTo(cx + 3, cy - 7); ctx.lineTo(cx + 7, cy - 2); ctx.lineTo(cx, cy + 8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx + 7, cy - 2); ctx.stroke(); break;
     case 'anvil': ctx.fillStyle = '#555'; ctx.fillRect(cx - 8, cy - 4, 16, 5); ctx.fillRect(cx - 3, cy + 1, 6, 5); ctx.fillRect(cx - 7, cy + 6, 14, 2); break;
   }
   ctx.restore();
@@ -488,6 +490,12 @@ const VPROP = {
     for (let i = 0; i < n; i++) { const r = Math.floor(i / 6), c = i % 6; ctx.fillStyle = (r + c) % 2 ? '#b98a52' : '#a87a44'; ctx.fillRect(p.x - 30 + c * 10, p.y - 8 - r * 8, 9.5, 7.5); ell(p.x - 30 + c * 10 + 1.5, p.y - 4 - r * 8, 1.6, 3, '#d9b27a'); }
     ctx.fillStyle = '#6e4a2a'; ctx.fillRect(p.x - 36, p.y - 44, 72, 4);
   },
+  rack: p => {                                               // weapon rack outside the smithy
+    ell(p.x, p.y + 3, 28, 5, 'rgba(0,0,0,0.25)');
+    ctx.fillStyle = '#5a4126'; ctx.fillRect(p.x - 22, p.y - 36, 4, 38); ctx.fillRect(p.x + 18, p.y - 36, 4, 38); ctx.fillRect(p.x - 24, p.y - 28, 48, 4); ctx.fillRect(p.x - 24, p.y - 12, 48, 4);
+    const cols = ['#d4d8e0', '#b8864b', '#9ac4e8'];
+    for (let i = 0; i < 3; i++) { const sx = p.x - 11 + i * 11; ctx.strokeStyle = cols[i]; ctx.lineWidth = 2.6; line(sx, p.y - 52 + i * 2, sx, p.y - 17); ctx.strokeStyle = '#6a4a2a'; ctx.lineWidth = 4; line(sx - 4, p.y - 18, sx + 4, p.y - 18); }
+  },
   anvil: p => {
     ell(p.x, p.y + 3, 18, 5, 'rgba(0,0,0,0.25)');
     ctx.fillStyle = '#6e4a2a'; ctx.fillRect(p.x - 9, p.y - 12, 18, 13);
@@ -525,6 +533,21 @@ const VPROP = {
         const bx = x - w / 2 + 14 + i * ((w - 28) / 4); ctx.fillStyle = cols[i];
         ctx.beginPath(); ctx.moveTo(bx - 2, y - 24); ctx.lineTo(bx + 2, y - 24); ctx.lineTo(bx + 2, y - 20); ctx.lineTo(bx + 5, y - 15); ctx.lineTo(bx - 5, y - 15); ctx.lineTo(bx - 2, y - 20); ctx.closePath(); ctx.fill();
         ctx.fillStyle = '#c9a86a'; ctx.fillRect(bx - 2, y - 26, 4, 2.5);
+      }
+    } else if (p.kind === 'armour') {
+      ctx.fillStyle = '#9aa3ad'; ctx.strokeStyle = '#4a4e56'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(x - w / 2 + 18, y - 18, 9, Math.PI, 0); ctx.lineTo(x - w / 2 + 27, y - 14); ctx.lineTo(x - w / 2 + 9, y - 14); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#3a3e46'; ctx.fillRect(x - w / 2 + 14, y - 20, 8, 3);
+      ctx.fillStyle = '#c0392b'; ctx.beginPath(); ctx.moveTo(x - 8, y - 32); ctx.lineTo(x + 12, y - 32); ctx.lineTo(x + 12, y - 22); ctx.quadraticCurveTo(x + 12, y - 14, x + 2, y - 11); ctx.quadraticCurveTo(x - 8, y - 14, x - 8, y - 22); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e8d8a8'; ctx.fillRect(x + 1, y - 29, 2, 15); ctx.fillRect(x - 4, y - 24, 12, 2);
+      ctx.fillStyle = '#8a929c'; ctx.beginPath(); ctx.moveTo(x + w / 2 - 30, y - 30); ctx.lineTo(x + w / 2 - 14, y - 30); ctx.lineTo(x + w / 2 - 12, y - 14); ctx.lineTo(x + w / 2 - 32, y - 14); ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (p.kind === 'jewel') {
+      const cols = ['#4fd0b0', '#e85a8a', '#f5c451', '#6a8aff'];
+      for (let i = 0; i < 4; i++) {
+        const bx = x - w / 2 + 14 + i * ((w - 28) / 3);
+        ctx.fillStyle = '#2a2040'; ctx.fillRect(bx - 8, y - 17, 16, 5);
+        ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.moveTo(bx - 5, y - 21); ctx.lineTo(bx - 2, y - 26); ctx.lineTo(bx + 2, y - 26); ctx.lineTo(bx + 5, y - 21); ctx.lineTo(bx, y - 17); ctx.closePath(); ctx.fill();
+        ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(bx - 2, y - 25); ctx.lineTo(bx, y - 21); ctx.stroke();
       }
     } else {
       ctx.fillStyle = '#c8a24a'; ctx.beginPath(); ctx.ellipse(x - w / 2 + 16, y - 19, 9, 6, 0, Math.PI, 0); ctx.fill();
