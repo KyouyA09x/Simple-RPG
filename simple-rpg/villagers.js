@@ -61,10 +61,12 @@ function villagerPose(n, sh, f, s) {
       R.tool = { k: 'paper' }; break;
     }
     case 'wipe': {
-      R.bh = { x: sh.x - f * 2 * s, y: sh.y - 14 * s + Math.sin(pt * 8) * 2 * s }; R.fh = { x: sh.x + f * 5 * s, y: sh.y + 16 * s }; break;
+      R.fh = { x: sh.x + f * (13 + Math.sin(pt * 7) * 7) * s, y: sh.y + 12 * s + Math.cos(pt * 7) * 2 * s };           // polishing a surface in front of them
+      R.bh = { x: sh.x - f * 3 * s, y: sh.y + 17 * s }; R.lean = 0.07; break;
     }
     case 'wave': {
-      R.fh = { x: sh.x + f * 9 * s, y: sh.y - (13 + Math.sin(pt * 9) * 3) * s }; R.bh = { x: sh.x - f * 3 * s, y: sh.y + 17 * s }; break;
+      R.fh = { x: sh.x + f * (21 + Math.sin(pt * 9) * 3) * s, y: sh.y - 21 * s + Math.cos(pt * 9) * 2 * s };            // a hand held up beside the head, waggling
+      R.bh = { x: sh.x - f * 3 * s, y: sh.y + 17 * s }; break;
     }
     case 'cheer': {
       R.hop = Math.abs(Math.sin(pt * 7)) * 8 * s;
@@ -98,7 +100,7 @@ function drawTool(t, hand, f, s) {
     case 'axe': case 'hammer': {
       const len = (t.k === 'axe' ? 26 : 17) * s, dx = f * Math.cos(t.a), dy = Math.sin(t.a), ex = hx + dx * len, ey = hy + dy * len;
       ctx.strokeStyle = '#7a5230'; ctx.lineWidth = 3 * s; line(hx - dx * 4, hy - dy * 4, ex, ey);
-      const nx = -dy, ny = dx;
+      const nx = -dy * f, ny = dx * f;
       if (t.k === 'axe') fillPoly([[ex + nx * 3, ey + ny * 3], [ex + nx * 9 + dx * 3, ey + ny * 9 + dy * 3], [ex + dx * 7 + nx * 2, ey + dy * 7 + ny * 2], [ex - nx * 3, ey - ny * 3]], '#b9bec6', '#555', 1);
       else fillPoly([[ex + nx * 6 - dx * 3, ey + ny * 6 - dy * 3], [ex + nx * 6 + dx * 4, ey + ny * 6 + dy * 4], [ex - nx * 6 + dx * 4, ey - ny * 6 + dy * 4], [ex - nx * 6 - dx * 3, ey - ny * 6 - dy * 3]], '#8a8f98', '#333', 1);
       break;
@@ -220,8 +222,8 @@ function drawVillager(n) {
   ctx.fillStyle = L.skin || '#fff'; ctx.strokeStyle = ink; ctx.lineWidth = 2.6 * (s < 0.9 ? 0.9 : 1);
   ctx.beginPath(); ctx.arc(head.x, head.y, hr, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   if (L.beard) {                                               // a crescent round the chin, the mouth stays visible above it
-    ctx.fillStyle = L.beard; ctx.beginPath(); ctx.arc(head.x, head.y, hr, 0.55, Math.PI - 0.55);
-    ctx.quadraticCurveTo(head.x, head.y + hr * 0.22, head.x + Math.cos(0.55) * hr, head.y + Math.sin(0.55) * hr); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = L.beard; ctx.beginPath(); ctx.arc(head.x, head.y, hr, 0.85, Math.PI - 0.85);
+    ctx.quadraticCurveTo(head.x, head.y + hr * 0.62, head.x + Math.cos(0.85) * hr, head.y + Math.sin(0.85) * hr); ctx.closePath(); ctx.fill();
   }
   if (L.hair && L.hat !== 'helmet' && L.hat !== 'cap' && L.hat !== 'smithcap' && L.hat !== 'beanie') { ctx.fillStyle = L.hair; ctx.beginPath(); ctx.arc(head.x - f * 1 * s, head.y - 1 * s, hr * 1.02, Math.PI * 1.1, Math.PI * 1.9); ctx.closePath(); ctx.fill(); }
   // face
@@ -287,46 +289,84 @@ function drawHat(kind, col, head, hr, f, s) {
   ctx.restore();
 }
 
-// speech bubble above a head
+// speech bubble above a head: wraps to up to three lines and stays inside the part of the village you can see
 function drawBubble(x, y, text, a = 1) {
   ctx.save(); ctx.globalAlpha = a; ctx.font = '12px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
-  const w = Math.min(240, ctx.measureText(text).width + 16), h = 22;
+  const maxW = 190, lines = []; let cur = '';
+  for (const word of String(text).split(' ')) { const t = cur ? cur + ' ' + word : word; if (cur && ctx.measureText(t).width > maxW) { lines.push(cur); cur = word; } else cur = t; }
+  if (cur) lines.push(cur);
+  if (lines.length > 3) { lines.length = 3; lines[2] = lines[2].replace(/\s*\S*$/, '') + '…'; }
+  const w = Math.max(...lines.map(l => ctx.measureText(l).width)) + 18, lh = 15, h = lines.length * lh + 9;
+  let bx = x, by = y;
+  if (typeof state !== 'undefined' && state === 'village') {
+    const vw = VW / VIL_ZOOM;
+    bx = Math.max(cam.x + w / 2 + 6, Math.min(cam.x + vw - w / 2 - 6, x)); by = Math.max(cam.y + h + 10, y);
+  }
   ctx.fillStyle = 'rgba(255,252,240,0.96)'; ctx.strokeStyle = 'rgba(40,36,30,0.75)'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.roundRect(x - w / 2, y - h, w, h, 8); ctx.fill(); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(x - 5, y - 1); ctx.lineTo(x, y + 6); ctx.lineTo(x + 5, y - 1); ctx.fillStyle = 'rgba(255,252,240,0.96)'; ctx.fill();
-  ctx.fillStyle = '#2a2620'; ctx.fillText(text.length > 40 ? text.slice(0, 39) + '…' : text, x, y - 7);
+  ctx.beginPath(); ctx.roundRect(bx - w / 2, by - h, w, h, 8); ctx.fill(); ctx.stroke();
+  const tx = Math.max(bx - w / 2 + 12, Math.min(bx + w / 2 - 12, x));
+  ctx.beginPath(); ctx.moveTo(tx - 5, by - 1); ctx.lineTo(Math.max(bx - w / 2 + 4, Math.min(bx + w / 2 - 4, x)), by + 6); ctx.lineTo(tx + 5, by - 1); ctx.fillStyle = 'rgba(255,252,240,0.96)'; ctx.fill();
+  ctx.fillStyle = '#2a2620';
+  lines.forEach((l, i) => ctx.fillText(l, bx, by - h + 15 + i * lh - 3));
   ctx.restore();
 }
 
-// ---------------------------------------------------------------- animals
 function drawDog(d) {
-  const f = d.f, x = d.x, y = d.y, moving = d.moving, t = d.walkT;
+  const f = d.f, x = d.x, y = d.y, moving = d.moving, t = d.walkT, T = tAnim;
   ctx.save(); ctx.globalAlpha = d.alpha ?? 1;
-  drawShadow(x, y, 13);
-  const fur = '#a8733f', dark = '#6e4524';
+  drawShadow(x, y, d.pose === 'sleep' ? 15 : 13);
+  const fur = '#a8733f', dark = '#6e4524', belly = '#d7b078';
+  ctx.lineCap = 'round';
+  // ---- asleep: curled up, breathing, a twitching ear, little z's drifting up
   if (d.pose === 'sleep') {
-    ell(x, y - 6, 15, 7, fur); ell(x + f * 11, y - 5, 6, 5, dark); ell(x - f * 12, y - 4, 5, 3, fur);
-    ctx.fillStyle = '#c9a'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
-    ctx.globalAlpha *= 0.5 + 0.5 * Math.sin(tAnim * 2); ctx.fillStyle = '#9ab'; ctx.fillText('z', x + f * 14, y - 18 - Math.sin(tAnim * 2) * 3);
+    const br = Math.sin(T * 1.7 + d.ph) * 0.9;
+    ell(x, y - 6 - br * 0.4, 15, 7 + br * 0.5, fur);                                 // body
+    ell(x - f * 2, y - 3, 11, 3, belly);
+    ell(x + f * 11, y - 5 + br * 0.2, 6, 5, fur);                                   // head resting on the paws
+    ell(x + f * 14, y - 3, 3.4, 2.4, dark);                                         // muzzle
+    ctx.strokeStyle = '#1a1a1a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(x + f * 9, y - 7); ctx.lineTo(x + f * 11.5, y - 6.4); ctx.stroke();   // closed eye
+    ell(x + f * 8, y - 10 + (Math.sin(T * 0.6) > 0.96 ? -1.5 : 0), 2.6, 4, dark);   // ear
+    ell(x - f * 9, y - 8, 5, 3, dark);                                              // curled tail over the back legs
+    ctx.fillStyle = '#bcd'; ctx.font = 'bold 10px sans-serif'; ctx.textAlign = 'center';
+    for (let i = 0; i < 3; i++) { const p = ((T * 0.45 + i / 3) % 1); ctx.globalAlpha = (d.alpha ?? 1) * Math.sin(p * Math.PI) * 0.8; ctx.font = `bold ${8 + i * 2}px sans-serif`; ctx.fillText('z', x + f * (14 + p * 8), y - 14 - p * 20); }
     ctx.restore(); return;
   }
-  const sit = d.pose === 'sit';
-  const bob = moving ? Math.abs(Math.sin(t)) * 1.5 : 0;
-  ctx.strokeStyle = dark; ctx.lineWidth = 3; ctx.lineCap = 'round';
-  if (!sit) for (let i = 0; i < 4; i++) {
-    const ph = t + (i % 2 ? Math.PI : 0) + (i > 1 ? 0.6 : 0), lx = x + (i > 1 ? -f * 9 : f * 8) + (i % 2 ? 2 : -1);
-    const lift = moving ? Math.max(0, -Math.sin(ph)) * 4 : 0, sw = moving ? Math.cos(ph) * 4 : 0;
-    line(lx, y - 8 - bob, lx + sw * f, y - lift);
+  const sit = d.pose === 'sit', sniff = d.pose === 'sniff';
+  const gait = moving ? 1 : 0, bob = gait ? Math.abs(Math.sin(t)) * 1.6 : 0;
+  const breath = Math.sin(T * 2.2 + d.ph) * 0.5;
+  const happy = d.happy;
+  ctx.strokeStyle = dark; ctx.lineWidth = 3;
+  // ---- legs: diagonal pairs swing together; far legs drawn darker and first
+  if (!sit) {
+    const legs = [[f * 8, 0, 1], [f * 8, 1, 0], [-f * 9, 1, 1], [-f * 9, 0, 0]];
+    legs.forEach(([ox, pair, far], i) => {
+      const ph = t + (pair ? Math.PI : 0), lx = x + ox + (far ? -1.5 : 1.5);
+      const lift = gait ? Math.max(0, -Math.sin(ph)) * 4.5 : 0, sw = gait ? Math.cos(ph) * 4.5 * f : 0;
+      ctx.strokeStyle = far ? '#55361b' : dark;
+      ctx.beginPath(); ctx.moveTo(lx, y - 9 - bob); ctx.lineTo(lx + sw * 0.5, y - 4.5 - lift * 0.6); ctx.lineTo(lx + sw, y - lift); ctx.stroke();
+    });
+  } else {
+    ctx.strokeStyle = dark; line(x + f * 6, y - 11, x + f * 6, y);                    // front legs straight down
+    ell(x - f * 5, y - 4, 8, 4.5, dark);                                               // haunch on the ground
   }
-  if (sit) { ell(x - f * 6, y - 8, 9, 7, fur); line(x + f * 5, y - 10, x + f * 5, y); } else ell(x, y - 12 - bob, 13, 6.5, fur);
-  const hx = x + f * (sit ? 8 : 14), hy = y - (sit ? 20 : 17) - bob;
-  ell(hx, hy, 6.5, 5.5, fur);
-  ell(hx + f * 5, hy + 1.5, 3.5, 2.6, dark);
-  ctx.fillStyle = '#1a1a1a'; ctx.beginPath(); ctx.arc(hx + f * 7.5, hy + 0.5, 1.1, 0, Math.PI * 2); ctx.fill(); ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.5, 1.2, 0, Math.PI * 2); ctx.fill();
-  fillPoly([[hx - f * 2, hy - 4], [hx - f * 5, hy - 10 + Math.sin(t * 2) * 0.6], [hx - f * 0.5, hy - 5]], dark);
-  const wag = Math.sin(tAnim * (d.happy ? 18 : 5) + d.ph) * (d.happy ? 6 : 2.5);
-  ctx.strokeStyle = fur; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(x - f * (sit ? 14 : 12), y - (sit ? 6 : 14) - bob); ctx.quadraticCurveTo(x - f * 19, y - 20 + wag * 0.4, x - f * 21, y - 22 + wag); ctx.stroke();
-  if (d.pose === 'sniff') { ctx.strokeStyle = 'rgba(0,0,0,0)'; }
+  // ---- body
+  if (sit) { ctx.save(); ctx.translate(x - f * 3, y - 14); ctx.rotate(-f * 0.55); ell(0, 0, 11, 6.5 + breath * 0.3, fur); ell(f * 1, 3, 7, 3, belly); ctx.restore(); }
+  else { ell(x, y - 12 - bob, 13, 6.5 + breath * 0.25, fur); ell(x + f, y - 9 - bob, 9, 3, belly); }
+  // ---- head: sniffing drops it to the ground and jitters the nose, trotting bobs it, happy tilts it up
+  const sniffDip = sniff ? (0.6 + 0.4 * Math.sin(T * 1.3)) : 0;
+  const hx = x + f * (sit ? 8 : 14 + sniffDip * 3), hy = y - (sit ? 23 : 17) - bob + sniffDip * 10 - (happy && !sit ? 1.5 : 0) + (gait ? Math.sin(t * 2) * 0.7 : 0);
+  ell(hx, hy, 6.5, 5.6, fur);
+  ell(hx + f * 5, hy + 1.5 + (sniff ? Math.sin(T * 22) * 0.5 : 0), 3.6, 2.7, dark);          // snout
+  ctx.fillStyle = '#111'; ctx.beginPath(); ctx.arc(hx + f * 8, hy + 0.7, 1.2, 0, Math.PI * 2); ctx.fill();   // nose
+  ctx.beginPath(); ctx.arc(hx + f * 2, hy - 1.6, 1.25, 0, Math.PI * 2); ctx.fill();                      // eye
+  if (happy) { ctx.fillStyle = '#e8607a'; ctx.beginPath(); ctx.ellipse(hx + f * 6, hy + 4.4 + Math.abs(Math.sin(T * 9)) * 1.2, 1.6, 2.4, 0, 0, Math.PI * 2); ctx.fill(); }   // tongue
+  // floppy ear: swings with the walk and flaps when happy
+  const ear = (gait ? Math.sin(t * 2 - 0.8) * 2.2 : 0) + (happy ? Math.sin(T * 14) * 1.6 : 0);
+  fillPoly([[hx - f * 2, hy - 4], [hx - f * 6 - ear * f * 0.3, hy - 8 + Math.abs(ear) * 0.5], [hx - f * 5.5, hy + 1.5], [hx - f * 0.5, hy - 3]], dark);
+  // ---- tail: slow sway at rest, fast wag when happy, lifted while trotting
+  const wag = Math.sin(T * (happy ? 20 : gait ? 8 : 4) + d.ph) * (happy ? 7 : 3);
+  const tx = x - f * (sit ? 12 : 12), ty = y - (sit ? 6 : 14) - bob;
+  ctx.strokeStyle = fur; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(tx, ty); ctx.quadraticCurveTo(tx - f * 7, ty - (gait ? 8 : 5) + wag * 0.4, tx - f * 9, ty - (gait ? 11 : 8) + wag); ctx.stroke();
   ctx.restore();
 }
 
@@ -445,6 +485,27 @@ const VPROP = {
     ctx.fillStyle = '#8a5a30'; ctx.fillRect(p.x - 5, p.y - 26 + Math.sin(tAnim * 1.6) * 1.5, 10, 8);
     fillPoly([[p.x - 32, p.y - 54], [p.x, p.y - 74], [p.x + 32, p.y - 54]], '#a4483a', '#4a2018', 1.4);
   },
+  shrine: (p, night) => {                                      // the Shrine of Return: two pillars, a lintel and a slowly turning light
+    const t = tAnim, bob = Math.sin(t * 1.8) * 3, L = night ? 1 : 0.55;
+    ell(p.x, p.y + 4, 46, 9, 'rgba(0,0,0,0.26)');
+    ctx.fillStyle = '#7d7f8c'; ctx.beginPath(); ctx.roundRect(p.x - 38, p.y - 8, 76, 10, 3); ctx.fill();
+    ctx.fillStyle = '#9496a4'; ctx.beginPath(); ctx.roundRect(p.x - 31, p.y - 15, 62, 8, 3); ctx.fill();
+    for (const sx of [-24, 24]) {
+      ctx.fillStyle = '#a9abb8'; ctx.fillRect(p.x + sx - 6, p.y - 70, 12, 56);
+      ctx.fillStyle = '#8c8e9c'; ctx.fillRect(p.x + sx + 1, p.y - 70, 5, 56);
+      ctx.fillStyle = '#c4c6d2'; ctx.fillRect(p.x + sx - 8, p.y - 74, 16, 5); ctx.fillRect(p.x + sx - 8, p.y - 18, 16, 4);
+      ctx.fillStyle = withAlpha('#c9b8ff', 0.4 + 0.4 * Math.sin(t * 2 + sx)); ctx.fillRect(p.x + sx - 1.5, p.y - 60, 3, 4); ctx.fillRect(p.x + sx - 1.5, p.y - 46, 3, 4); ctx.fillRect(p.x + sx - 1.5, p.y - 32, 3, 4);
+    }
+    ctx.fillStyle = '#b2b4c0'; ctx.beginPath(); ctx.roundRect(p.x - 36, p.y - 84, 72, 11, 3); ctx.fill();
+    ctx.fillStyle = '#8c8e9c'; ctx.fillRect(p.x - 36, p.y - 76, 72, 3);
+    const gx = p.x, gy = p.y - 46 + bob;
+    if (gfx && gfx.glow) { const g = ctx.createRadialGradient(gx, gy, 1, gx, gy, 30); g.addColorStop(0, withAlpha('#d8caff', 0.55 * L + 0.2)); g.addColorStop(1, withAlpha('#c9b8ff', 0)); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(gx, gy, 30, 0, TAU); ctx.fill(); }
+    ctx.save(); ctx.translate(gx, gy); ctx.rotate(t * 0.9);
+    ctx.fillStyle = '#e6dcff'; ctx.strokeStyle = '#8a72d8'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(0, -11); ctx.lineTo(7, 0); ctx.lineTo(0, 11); ctx.lineTo(-7, 0); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.restore();
+    ctx.fillStyle = '#d9d4f0'; ctx.fillRect(gx - 1, gy - 3, 2, 6);
+  },
   board: p => {
     ell(p.x, p.y + 3, 30, 5, 'rgba(0,0,0,0.22)');
     ctx.fillStyle = '#5a4126'; ctx.fillRect(p.x - 24, p.y - 40, 4, 40); ctx.fillRect(p.x + 20, p.y - 40, 4, 40);
@@ -472,6 +533,15 @@ const VPROP = {
     ell(p.x, p.y + 3, 18, 5, 'rgba(0,0,0,0.25)');
     ctx.fillStyle = '#6e4a2a'; ctx.fillRect(p.x - 13, p.y - 16, 26, 17); ell(p.x, p.y, 13, 4.5, '#6e4a2a');
     ell(p.x, p.y - 16, 13, 5, '#c89a62'); ctx.strokeStyle = '#8a6438'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(p.x, p.y - 16, 8, 3, 0, 0, Math.PI * 2); ctx.stroke(); ctx.beginPath(); ctx.ellipse(p.x, p.y - 16, 3.5, 1.4, 0, 0, Math.PI * 2); ctx.stroke();
+    if (p.log === 1) {                                         // a log on end, ready to split; it jumps at every blow and cracks a little more each time
+      const j = (p.kick || 0), lx = p.x + Math.sin(j * 9) * j * 1.6, top = p.y - 16 - 26;
+      ctx.fillStyle = '#8a5a30'; ctx.fillRect(lx - 9, top, 18, 26); ctx.strokeStyle = '#4a2c16'; ctx.lineWidth = 1.2; ctx.strokeRect(lx - 9, top, 18, 26);
+      ctx.strokeStyle = '#5a3a1e'; ctx.lineWidth = 1; for (let i = 0; i < 3; i++) line(lx - 5 + i * 5, top + 3, lx - 5 + i * 5, top + 23);
+      ell(lx, top, 9, 3.4, '#d9b27a'); ctx.strokeStyle = '#8a6438'; ctx.beginPath(); ctx.ellipse(lx, top, 5.5, 2, 0, 0, Math.PI * 2); ctx.stroke();
+      const cr = (p.hits | 0) / 5; if (cr > 0) { ctx.strokeStyle = '#2a1a0e'; ctx.lineWidth = 1.4; line(lx, top - 2, lx + (j ? 1 : 0), top - 2 + 4 + cr * 24); }       // the crack runs down with the grain
+    } else if (p.log === 2) {                                  // split: two halves fall to either side
+      for (const sd of [-1, 1]) { ctx.save(); ctx.translate(p.x + sd * 19, p.y - 4); ctx.rotate(sd * 1.25); ctx.fillStyle = '#b98a52'; ctx.strokeStyle = '#4a2c16'; ctx.lineWidth = 1.2; ctx.fillRect(-4.5, -13, 9, 26); ctx.strokeRect(-4.5, -13, 9, 26); ctx.fillStyle = '#d9b27a'; ctx.fillRect(-4.5, -13, 9, 3); ctx.restore(); }
+    }
     if (p.split) for (let i = 0; i < Math.min(4, p.split); i++) { ctx.fillStyle = '#b98a52'; ctx.fillRect(p.x + 18 + (i % 2) * 9, p.y - 4 - Math.floor(i / 2) * 6, 11, 5); }
   },
   logs: p => {
@@ -596,9 +666,12 @@ const VPROP = {
   welcome: (p) => {
     ell(p.x, p.y + 3, 26, 5, 'rgba(0,0,0,0.22)');
     ctx.fillStyle = '#5a4126'; ctx.fillRect(p.x - 3, p.y - 46, 6, 48);
+    let px = 11; ctx.font = `bold ${px}px Georgia, serif`;
+    const sw = Math.max(100, Math.min(190, ctx.measureText(p.text).width + 26));          // the board is as wide as the village's name needs
+    while (px > 7 && ctx.measureText(p.text).width > sw - 14) { px--; ctx.font = `bold ${px}px Georgia, serif`; }
     ctx.fillStyle = '#c9a86a'; ctx.strokeStyle = '#3a2a1a'; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.roundRect(p.x - 50, p.y - 66, 100, 24, 4); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#3a2a1a'; ctx.font = 'bold 11px Georgia, serif'; ctx.textAlign = 'center'; ctx.fillText(p.text, p.x, p.y - 50);
+    ctx.beginPath(); ctx.roundRect(p.x - sw / 2, p.y - 66, sw, 24, 4); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#3a2a1a'; ctx.textAlign = 'center'; ctx.fillText(p.text, p.x, p.y - 50);
   },
   line: p => {                                               // clothesline with cloths swaying in the wind
     ctx.strokeStyle = '#5a4126'; ctx.lineWidth = 3; line(p.x, p.y, p.x, p.y - 46); line(p.x + p.len, p.y, p.x + p.len, p.y - 46);

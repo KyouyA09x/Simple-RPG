@@ -3,10 +3,14 @@
 // Level stats are not touched here: gear adds on top of them, under hard caps.
 // Game code reads gear through hero.gear (a plain sum, rebuilt by recalcGear() whenever equipment changes).
 
-const INV_MAX = 24;
+let INV_MAX = 24;                                                                   // rebirth adds slots (see rebirth.js)
 const GEAR_SLOTS = ['weapon', 'armor', 'helmet', 'ring1', 'ring2', 'necklace'];     // equipment positions
 const ITEM_SLOTS = ['weapon', 'armor', 'helmet', 'ring', 'necklace'];               // what an item can be (a ring fits ring1 or ring2)
-const SLOT_LABEL = { weapon: 'Weapon', armor: 'Armor', helmet: 'Helmet', ring1: 'Ring 1', ring2: 'Ring 2', ring: 'Ring', necklace: 'Necklace' };
+const SLOT_LABEL = { weapon: 'Weapon', armor: 'Armor', helmet: 'Helmet', ring1: 'Ring 1', ring2: 'Ring 2', ring3: 'Ring 3', weapon2: 'Weapon 2', ring: 'Ring', necklace: 'Necklace' };
+// two slots that only exist after rebirth milestones: a third ring (rebirth 5) and a spare weapon to swap to (rebirth 10)
+const EXTRA_SLOTS = ['ring3', 'weapon2'];
+const slotOpen = k => k === 'ring3' ? rebirths() >= 5 : k === 'weapon2' ? rebirths() >= 10 : true;
+const activeSlots = () => [...GEAR_SLOTS, ...EXTRA_SLOTS].filter(slotOpen);
 
 // grade, colour, how many stat lines it rolls, and where in a stat's range (0..1 of its maximum) the roll lands
 const RARITIES = [
@@ -15,19 +19,22 @@ const RARITIES = [
   { name: 'Uncommon',  color: '#5fd07a', lines: 2, band: [0.15, 0.23], price: 24 },
   { name: 'Rare',      color: '#5b9bff', lines: 2, band: [0.23, 0.34], price: 55 },
   { name: 'Polished',  color: '#c36bff', lines: 3, band: [0.34, 0.46], price: 120 },
-  { name: 'Legendary', color: '#ffa73a', lines: 4, band: [0.46, 0.63], price: 280 },
-  { name: 'Mythical',  color: '#ff4f7a', lines: 4, band: [0.63, 0.86], price: 650 },
+  { name: 'Legendary', color: '#ffa73a', lines: 4, band: [0.42, 0.54], price: 280 },
+  { name: 'Mythical',  color: '#ff4f7a', lines: 4, band: [0.54, 0.68], price: 650 },
   { name: 'Secret',    color: '#3ff2e0', lines: 5, band: [0.86, 1.0],  price: 1600 },
 ];
-const RARITY_BASE_W = [28, 40, 20, 8, 3, 0.8, 0.2, 0];          // Secret is never rolled normally (boss pieces only, see rollRarity)
-const SECRET_BOSS_CHANCE = 0.005;                               // per boss piece; luck-free on purpose (anti-farming)
+const RARITY_BASE_W = [18, 32, 27, 14, 7, 0.44, 0.11, 0];          // Secret is never rolled normally (boss pieces only, see rollRarity)
+// how fast better grades pile up with depth: slow, and it stops growing after six bosses, so Legendary and Mythical stay rare (about 2% and 0.7% at wave 50)
+const RARITY_DEPTH_GROWTH = 1.12, RARITY_DEPTH_CAP = 6;
+const SECRET_BOSS_CHANCE = 0.005;                               // per boss piece; rebirth luck barely touches it on purpose (anti-farming)
+const GEAR_DROP_CHANCE = 0.045, BOSS_EXTRA_PIECE = [0.25, 0.05];   // per kill; and the chance of a 2nd and a 3rd piece from a boss (bosses drop extra pieces on top of the normal drop)
 
 // every stat a piece can carry: its maximum (what a top-of-the-range Secret roll gives) and how to show it
 const pctText = v => `${(v * 100).toFixed(1).replace(/\.0$/, '')}%`;
 const GEAR_STATS = {
   dmg:     { name: 'Damage',            max: 90,   int: true, fmt: v => `+${Math.round(v)}` },
   hp:      { name: 'Max HP',            max: 500,  int: true, fmt: v => `+${Math.round(v)}` },
-  dr:      { name: 'Damage reduction',  max: 0.35, fmt: v => `+${pctText(v)}` },
+  dr:      { name: 'Damage reduction',  max: 0.20, fmt: v => `+${pctText(v)}` },
   crit:    { name: 'Crit chance',       max: 0.30, fmt: v => `+${pctText(v)}` },
   critDmg: { name: 'Crit damage',       max: 2.5,  fmt: v => `+${v.toFixed(2)}×` },
   speed:   { name: 'Move speed',        max: 0.20, fmt: v => `+${pctText(v)}` },
@@ -36,7 +43,7 @@ const GEAR_STATS = {
   gold:    { name: 'Gold find',         max: 0.50, fmt: v => `+${pctText(v)}` },
 };
 // absolute ceilings, level stats + gear together. Shown in the UI as "38% (cap 60%)".
-const GEAR_CAPS = { dr: 0.60, crit: 0.75, critDmg: 6, speed: 0.35 };
+const GEAR_CAPS = { dr: 0.40, crit: 0.55, critDmg: 4, speed: 0.35 };
 
 // which stats a slot rolls first, and which it can add after that
 const SLOT_ROLLS = {
@@ -69,15 +76,16 @@ const newItemId = () => Date.now().toString(36) + Math.random().toString(36).sli
 function makeName(item, sword) {
   if (item.rarity === 7) return SECRET_NAMES[item.slot];
   const base = item.slot === 'weapon' ? sword.name : BASE_NAMES[item.slot][Math.min(7, Math.floor(item.rarity * 0.8 + Math.random() * 2.2))];
-  const pre = gearRand(PREFIX[item.rarity]), post = EPITHET[item.rarity] ? ' ' + gearRand(EPITHET[item.rarity]) : '';
+  const pre = gearRand(PREFIX[item.rarity]), post = item.theme ? ' ' + item.theme : EPITHET[item.rarity] ? ' ' + gearRand(EPITHET[item.rarity]) : '';
   return `${pre ? pre + ' ' : ''}${base}${post}`;
 }
 
 // ---------------------------------------------------------------- rolling
 // t is "how deep" you are: bosses defeated plus how far into the current set. Deeper = better grades, not just more drops.
 function rollRarity(t = 0, bossPiece = false) {
-  if (bossPiece && Math.random() < SECRET_BOSS_CHANCE) return 7;
-  const w = RARITY_BASE_W.map((b, i) => b * Math.pow(1.5, t * (i - 2) / 2));
+  if (bossPiece && Math.random() < SECRET_BOSS_CHANCE * (1 + 0.25 * (dropLuck() - 1))) return 7;      // Secret gets only a quarter of the rebirth luck
+  const lk = rarityLuck();
+  const w = RARITY_BASE_W.map((b, i) => b * Math.pow(RARITY_DEPTH_GROWTH, Math.min(t, RARITY_DEPTH_CAP) * (i - 2) / 2) * (i >= 3 && i < 7 ? 1 + lk * (i - 2) : 1));
   let x = Math.random() * w.reduce((a, b) => a + b, 0);
   for (let i = 0; i < w.length; i++) if ((x -= w[i]) <= 0) return i;
   return 1;
@@ -100,6 +108,11 @@ function rollItem(o = {}) {
     sword = gearRand(pool); item.base = sword.id; item.req = sword.lvl;
   }
   const R = SLOT_ROLLS[slot], keys = [...R.pri], pool = R.pool.filter(k => !keys.includes(k));
+  if (o.theme) {                                                   // pieces dropped by a boss lean toward what that boss is about
+    item.theme = o.theme.epithet;
+    const pk = o.theme.pref.find(k => pool.includes(k));
+    if (pk && keys.length < RARITIES[rarity].lines) { keys.push(pk); pool.splice(pool.indexOf(pk), 1); }
+  }
   while (keys.length < RARITIES[rarity].lines && pool.length) keys.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   for (const k of keys.slice(0, Math.max(1, RARITIES[rarity].lines))) item.stats[k] = rollStat(k, rarity);
   if (rarity === 7) item.unique = gearRand(Object.keys(UNIQUES));
@@ -115,14 +128,14 @@ function starterWeapon(swordId = 'wood') {
 // ---------------------------------------------------------------- the hero's gear
 const zeroGear = () => ({ dmg: 0, hp: 0, dr: 0, crit: 0, critDmg: 0, speed: 0, cdr: 0, stamina: 0, gold: 0, unique: [] });
 function initGear() {
-  hero.inv = []; hero.equip = { weapon: starterWeapon('wood'), armor: null, helmet: null, ring1: null, ring2: null, necklace: null };
+  hero.inv = []; hero.equip = { weapon: starterWeapon('wood'), armor: null, helmet: null, ring1: null, ring2: null, necklace: null, ring3: null, weapon2: null };
   hero.gearHp = 0; hero.gear = zeroGear();
   recalcGear();
 }
 // rebuild hero.gear and everything that depends on it (the weapon in hand and max HP)
 function recalcGear() {
   const g = zeroGear();
-  for (const k of GEAR_SLOTS) {
+  for (const k of GEAR_SLOTS.concat(slotOpen('ring3') ? ['ring3'] : [])) {                   // the spare weapon adds nothing until you swap to it
     const it = hero.equip[k]; if (!it) continue;
     for (const s in it.stats) if (s in g) g[s] += it.stats[s];
     if (it.unique && !g.unique.includes(it.unique)) g.unique.push(it.unique);
@@ -133,6 +146,7 @@ function recalcGear() {
   const delta = Math.round(g.hp) - (hero.gearHp | 0);                  // max HP from gear is tracked separately so equipping never double-counts
   if (delta) { hero.maxHp = Math.max(1, hero.maxHp + delta); hero.gearHp = Math.round(g.hp); if (delta > 0) hero.hp += delta; }
   hero.hp = Math.min(hero.hp, hero.maxHp);
+  syncRebirthHp();
   hero.stamina = Math.min(hero.stamina, maxStamina());
 }
 const gearHas = name => !!(hero && hero.gear && hero.gear.unique.includes(name));
@@ -145,13 +159,24 @@ function addToBag(item) { if (hero.inv.length >= INV_MAX) return false; hero.inv
 // slotKey: for rings 'ring1' / 'ring2'; otherwise the item's own slot
 function equipFromBag(id, slotKey) {
   const i = bagFind(id); if (i < 0) return 'missing';
-  const item = hero.inv[i], key = item.slot === 'ring' ? (slotKey === 'ring2' ? 'ring2' : 'ring1') : item.slot;
-  if (!GEAR_SLOTS.includes(key)) return 'bad slot';
-  if (!canEquipWeapon(item)) return `Needs level ${item.req}`;
+  const item = hero.inv[i];
+  let key = item.slot === 'ring' ? (slotKey === 'ring2' ? 'ring2' : slotKey === 'ring3' ? 'ring3' : 'ring1') : item.slot;
+  if (item.slot === 'weapon' && slotKey === 'weapon2') key = 'weapon2';
+  if (!activeSlots().includes(key)) return 'bad slot';
+  if (key !== 'weapon2' && !canEquipWeapon(item)) return `Needs level ${item.req}`;
   const old = hero.equip[key];
   hero.inv.splice(i, 1);
   if (old) hero.inv.splice(i, 0, old);                                  // the old piece takes the freed spot
   hero.equip[key] = item;
+  recalcGear(); sfx('equip');
+  return 'ok';
+}
+// rebirth 10: swap the weapon in your hand with the spare one
+function swapWeapons() {
+  if (!slotOpen('weapon2')) return 'locked';
+  const b = hero.equip.weapon2; if (!b) return 'empty';
+  if (!canEquipWeapon(b)) return `Needs level ${b.req}`;
+  hero.equip.weapon2 = hero.equip.weapon; hero.equip.weapon = b;
   recalcGear();
   return 'ok';
 }
@@ -211,12 +236,12 @@ function serializeGear() {
 }
 // d: a save. Old saves (before gear) get a Common weapon for every sword they had unlocked.
 function loadGear(d) {
-  hero.inv = []; hero.equip = { weapon: null, armor: null, helmet: null, ring1: null, ring2: null, necklace: null };
+  hero.inv = []; hero.equip = { weapon: null, armor: null, helmet: null, ring1: null, ring2: null, necklace: null, ring3: null, weapon2: null };
   hero.gearHp = Math.max(0, Math.min(5000, d.gearHp | 0)); hero.gear = zeroGear();
   if (d.equip && typeof d.equip === 'object') {
-    for (const k of GEAR_SLOTS) {
+    for (const k of activeSlots()) {
       const it = sanitizeItem(d.equip[k]);
-      if (it && (it.slot === k || (it.slot === 'ring' && (k === 'ring1' || k === 'ring2')))) hero.equip[k] = it;
+      if (it && (it.slot === k || (it.slot === 'ring' && k.startsWith('ring')) || (it.slot === 'weapon' && k === 'weapon2'))) hero.equip[k] = it;
     }
     if (Array.isArray(d.inv)) for (const raw of d.inv.slice(0, INV_MAX)) { const it = sanitizeItem(raw); if (it) hero.inv.push(it); }
   } else {
@@ -229,14 +254,17 @@ function loadGear(d) {
 }
 
 // ---------------------------------------------------------------- drops
-// normal 6% per kill (scaled by difficulty), bosses always drop 1-3 pieces and roll one tier deeper
+// normal 2.5% per kill (scaled by difficulty and rebirth luck), bosses always drop 1-3 pieces and roll one tier deeper
 function depthOf() { return tierOf(wave) + (setPos(wave) - 1) / 20; }
 function gearDropsFor(m) {
   const out = [];
   if (m.type === 'boss') {
-    const n = 1 + (Math.random() < 0.5 ? 1 : 0) + (Math.random() < 0.2 ? 1 : 0);
-    for (let i = 0; i < n; i++) out.push(rollItem({ tier: depthOf() + 1, boss: true, level: hero.level }));
-  } else if (Math.random() < 0.06 * D().drop * ((m.size ?? 1) < 1 ? 0.5 : 1)) out.push(rollItem({ tier: depthOf(), level: hero.level }));
+    const luck = dropLuck(), n = 1 + (Math.random() < BOSS_EXTRA_PIECE[0] * luck ? 1 : 0) + (Math.random() < BOSS_EXTRA_PIECE[1] * luck ? 1 : 0);
+    const theme = (BOSSES[m.kind] || BOSSES.minotaur).theme;
+    for (let i = 0; i < n; i++) out.push(rollItem({ tier: depthOf() + 1, boss: true, level: hero.level, theme }));
+  } else if (m.elite) {                                            // elites: one piece in four, from a little deeper than usual
+    if (Math.random() < ELITE_GEAR_CHANCE * dropLuck()) out.push(rollItem({ tier: depthOf() + 0.5, level: hero.level }));
+  } else if (Math.random() < GEAR_DROP_CHANCE * dropLuck() * D().drop * ((m.size ?? 1) < 1 ? 0.5 : 1)) out.push(rollItem({ tier: depthOf(), level: hero.level }));
   return out;
 }
 function dropGear(item, x, y) {
@@ -246,16 +274,17 @@ function dropGear(item, x, y) {
 // called when the hero walks over a gear drop; returns true if it was picked up
 function pickUpGear(d) {
   if (!addToBag(d.item)) {
-    if (!(d.warnT > 0)) { popups.push({ text: 'Backpack full (press M)', x: d.x, y: d.y - 34, t: 1.2, color: '#f88' }); d.warnT = 1.5; sfx('tired'); }
+    if (!(d.warnT > 0)) { popups.push({ text: 'Backpack full (press Tab)', x: d.x, y: d.y - 34, t: 1.2, color: '#f88' }); d.warnT = 1.5; sfx('tired'); }
     return false;
   }
   const R = RARITIES[d.item.rarity];
   popups.push({ text: d.item.name, x: d.x, y: d.y - 34, t: 2, color: R.color });
-  sfx(d.item.rarity >= 5 ? 'levelup' : 'pickup');
+  sfx(d.item.rarity >= 6 ? 'sparkle' : d.item.rarity >= 5 ? 'levelup' : 'pickup'); if (d.item.rarity >= 6) setTimeout(() => sfx('levelup'), 200);
   return true;
 }
 
-// ---------------------------------------------------------------- the inventory tab of the character menu (M)
+// ---------------------------------------------------------------- the inventory window (Tab)
+let invCmp = null, invPick = false;                              // the piece you chose to compare with, and whether the next click picks it
 let invSel = null;                                              // { src: 'bag' | 'eq', id }
 const slotSvg = (slot, c) => {
   const p = {
@@ -270,7 +299,7 @@ const slotSvg = (slot, c) => {
 function itemById(sel) {
   if (!sel) return null;
   if (sel.src === 'bag') return hero.inv.find(i => i.id === sel.id) || null;
-  return GEAR_SLOTS.map(k => hero.equip[k]).find(i => i && i.id === sel.id) || null;
+  return activeSlots().map(k => hero.equip[k]).find(i => i && i.id === sel.id) || null;
 }
 function statRows(item, versus) {
   const rows = [];
@@ -292,12 +321,14 @@ function renderInventory() {
   if (!hero) return;
   const el = id => document.getElementById(id);
   const selItem = itemById(invSel); if (!selItem) invSel = null;
+  const cmpItem = invCmp ? itemById(invCmp) : null; if (!cmpItem) invCmp = null;
+  if (!selItem) invPick = false;
   el('invCount').textContent = `${hero.inv.length} / ${INV_MAX} slots`;
   el('invGold').textContent = hero.gold.toLocaleString();
   // equipment slots
-  el('invEquip').innerHTML = GEAR_SLOTS.map(k => {
-    const it = hero.equip[k], R = it && RARITIES[it.rarity], sel = invSel && invSel.src === 'eq' && it && invSel.id === it.id;
-    return `<div class="eqslot ${sel ? 'sel' : ''}" ${it ? `data-eq="${k}"` : ''} style="${it ? `border-color:${R.color}` : ''}">
+  el('invEquip').innerHTML = activeSlots().map(k => {
+    const it = hero.equip[k], R = it && RARITIES[it.rarity], sel = invSel && invSel.src === 'eq' && it && invSel.id === it.id, cm = invCmp && invCmp.src === 'eq' && it && invCmp.id === it.id;
+    return `<div class="eqslot ${sel ? 'sel' : ''} ${cm ? 'cmp' : ''}" ${it ? `data-eq="${k}"` : ''} style="${it ? `border-color:${R.color}` : ''}">
       <div class="ico">${slotSvg(k.replace(/\d/, ''), it ? R.color : '#4a4a5c')}</div>
       <div class="eqtxt"><small>${SLOT_LABEL[k]}</small>${it ? `<b style="color:${R.color}">${escapeHtml(it.name)}</b>` : '<em>empty</em>'}</div></div>`;
   }).join('');
@@ -306,8 +337,8 @@ function renderInventory() {
   for (let i = 0; i < INV_MAX; i++) {
     const it = hero.inv[i];
     if (!it) { grid += '<div class="cell empty"></div>'; continue; }
-    const R = RARITIES[it.rarity], sel = invSel && invSel.src === 'bag' && invSel.id === it.id;
-    grid += `<div class="cell ${sel ? 'sel' : ''}" data-bag="${escapeHtml(it.id)}" style="border-color:${R.color};background:${withAlpha(R.color, 0.12)}" title="${escapeHtml(it.name)}">${slotSvg(it.slot, R.color)}</div>`;
+    const R = RARITIES[it.rarity], sel = invSel && invSel.src === 'bag' && invSel.id === it.id, cm = invCmp && invCmp.src === 'bag' && invCmp.id === it.id;
+    grid += `<div class="cell ${sel ? 'sel' : ''} ${cm ? 'cmp' : ''} ${invPick ? 'pick' : ''}" data-bag="${escapeHtml(it.id)}" style="border-color:${R.color};background:${withAlpha(R.color, 0.12)}" title="${escapeHtml(it.name)}">${slotSvg(it.slot, R.color)}</div>`;
   }
   el('invGrid').innerHTML = grid;
   // totals from gear, with the caps
@@ -328,34 +359,40 @@ function renderInventory() {
   const d = el('invDetail');
   if (!selItem) { d.innerHTML = '<div class="hint" style="margin:0">Select a piece to see what it does, compare it with what you wear, and equip it.<br><br>Gear drops from monsters (bosses always drop some). Sell spare pieces to the blacksmith in the village.</div>'; return; }
   const R = RARITIES[selItem.rarity], eq = invSel.src === 'bag';
-  const key = selItem.slot === 'ring' ? 'ring1' : selItem.slot, versus = eq ? hero.equip[key] : null;
+  const key = selItem.slot === 'ring' ? 'ring1' : selItem.slot, versus = cmpItem && cmpItem.id !== selItem.id ? cmpItem : (eq ? hero.equip[key] : null);
   const lock = eq && !canEquipWeapon(selItem);
   const btns = [];
-  if (eq && selItem.slot === 'ring') btns.push(`<button data-inv-act="equip1" ${lock ? 'disabled' : ''}>Equip as ring 1</button><button data-inv-act="equip2">Equip as ring 2</button>`);
-  else if (eq) btns.push(`<button data-inv-act="equip" ${lock ? 'disabled' : ''}>${lock ? `Needs level ${selItem.req}` : 'Equip'}</button>`);
-  else if (selItem.slot !== 'weapon') btns.push('<button data-inv-act="unequip">Unequip</button>');
+  const eqKey = eq ? null : activeSlots().find(k => hero.equip[k] && hero.equip[k].id === selItem.id);
+  if (eq && selItem.slot === 'ring') btns.push(`<button data-inv-act="equip1" ${lock ? 'disabled' : ''}>Equip as ring 1</button><button data-inv-act="equip2">Equip as ring 2</button>` + (slotOpen('ring3') ? '<button data-inv-act="equip3">Equip as ring 3</button>' : ''));
+  else if (eq) btns.push(`<button data-inv-act="equip" ${lock ? 'disabled' : ''}>${lock ? `Needs level ${selItem.req}` : 'Equip'}</button>` + (selItem.slot === 'weapon' && slotOpen('weapon2') ? '<button data-inv-act="equip4">Keep as spare weapon (X swaps)</button>' : ''));
+  else if (eqKey && eqKey !== 'weapon') btns.push('<button data-inv-act="unequip">Unequip</button>');
+  const cmpBar = '<div class="cmpbar">' + (invPick ? '<button data-inv-act="cmp" class="on">Click a piece to compare with… (cancel)</button>' : cmpItem ? '<button data-inv-act="cmppick">Compare with another…</button><button data-inv-act="cmp">Stop comparing</button>' : '<button data-inv-act="cmppick">Compare with…</button>') + '</div>';
   if (eq) btns.push(`<button data-inv-act="discard" class="danger">Discard (sells for ${selItem.value} g in the village)</button>`);
   d.innerHTML = `<div class="dname" style="color:${R.color}">${escapeHtml(selItem.name)}</div>
     <div class="dsub">${R.name} ${SLOT_LABEL[selItem.slot].toLowerCase()}${selItem.slot === 'weapon' ? ` · level ${selItem.req}` : ''}</div>
+    ${cmpBar}
     ${selItem.slot === 'weapon' ? weaponLine(selItem) : ''}
-    ${statRows(selItem, eq ? (versus || { stats: {} }) : null)}
+    ${statRows(selItem, (eq || cmpItem) ? (versus || { stats: {} }) : null)}
     ${selItem.unique ? `<div class="uniq"><b>${UNIQUES[selItem.unique].name}</b>: ${UNIQUES[selItem.unique].text}</div>` : ''}
-    ${eq && versus ? `<div class="hint" style="margin:6px 0 0">Compared with your ${escapeHtml(versus.name)}</div>` : ''}
+    ${versus ? `<div class="hint cmpnote" style="margin:6px 0 0">${cmpItem && cmpItem.id === versus.id ? 'Compared with' : 'Compared with your'} <b style="color:${RARITIES[versus.rarity].color}">${escapeHtml(versus.name)}</b> (${RARITIES[versus.rarity].name})</div>` : ''}
     <div class="dbtns">${btns.join('')}</div>`;
 }
 function invMsg(text) { popups.push({ text, x: VW / 2, y: 120, t: 1.8, screen: true, small: true, color: '#fb8' }); }
 document.getElementById('inv').addEventListener('click', e => {
   const bag = e.target.closest('[data-bag]'), eqs = e.target.closest('[data-eq]'), act = e.target.closest('[data-inv-act]');
-  if (bag) { invSel = { src: 'bag', id: bag.dataset.bag }; sfx('click'); renderInventory(); return; }
-  if (eqs) { const it = hero.equip[eqs.dataset.eq]; if (it) { invSel = { src: 'eq', id: it.id }; sfx('click'); renderInventory(); } return; }
+  const choose = (src, id) => { if (invPick && invSel && invSel.id !== id) { invCmp = { src, id }; invPick = false; } else { invSel = { src, id }; invPick = false; } sfx('click'); renderInventory(); };
+  if (bag) { choose('bag', bag.dataset.bag); return; }
+  if (eqs) { const it = hero.equip[eqs.dataset.eq]; if (it) choose('eq', it.id); return; }
   if (!act || !invSel) return;
   const item = itemById(invSel); if (!item) return;
   const a = act.dataset.invAct;
-  if (a === 'equip' || a === 'equip1' || a === 'equip2') {
-    const r = equipFromBag(item.id, a === 'equip2' ? 'ring2' : 'ring1');
+  if (a === 'cmppick') { invPick = true; sfx('click'); renderInventory(); return; }
+  if (a === 'cmp') { invPick = false; invCmp = null; sfx('click'); renderInventory(); return; }
+  if (a === 'equip' || a === 'equip1' || a === 'equip2' || a === 'equip3' || a === 'equip4') {
+    const r = equipFromBag(item.id, { equip2: 'ring2', equip3: 'ring3', equip4: 'weapon2' }[a] || 'ring1');
     if (r === 'ok') { sfx('pickup'); invSel = { src: 'eq', id: item.id }; } else invMsg(r);
   } else if (a === 'unequip') {
-    const r = unequipToBag(GEAR_SLOTS.find(k => hero.equip[k] && hero.equip[k].id === item.id));
+    const r = unequipToBag(activeSlots().find(k => hero.equip[k] && hero.equip[k].id === item.id));
     if (r === 'ok') { sfx('click'); invSel = { src: 'bag', id: item.id }; } else invMsg(r);
   } else if (a === 'discard') {
     if (item.rarity >= 3 && !confirm(`Discard ${item.name}? You can sell it to the blacksmith instead.`)) return;

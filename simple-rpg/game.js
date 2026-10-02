@@ -1,6 +1,6 @@
 // Stick RPG: stickman hero in a scrolling world of biomes. Monster waves, a boss every 10 waves,
 // character and inventory menu (M), drops, save slots, difficulty, quality presets up to Ultra (WebGL post-FX),
-// resolution options, frame generation (fixed-step simulation + interpolated rendering).
+// resolution options and an FPS cap.
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d', { alpha: false });
 const wrap = document.getElementById('wrap');
@@ -9,7 +9,10 @@ const WW = 2400, WH = 1600;      // world size
 
 const FLIP_TIME = 0.4, FLIP_SPEED = 420, FLIP_COOLDOWN = 0.7;
 const FLIP_COST = 40, REGEN_DELAY = 0.7;
-const HP_REGEN_DELAY = 6, HP_REGEN_RATE = 0.012;   // out-of-combat health regen: 1.2% max HP per second   // no stamina regen for a moment after acting
+// Natural regeneration: 4 seconds after the last hit you recover 2% of max HP a second (4% while running), but only up to 70% of max HP:
+// the rest takes a potion, the inn or a level-up. Standing still is slower than running, which keeps you moving. Running also refills stamina faster.
+const HP_REGEN_DELAY = 4, HP_REGEN_RATE = 0.02, HP_REGEN_MOVE = 2, HP_REGEN_CAP = 0.7, STAMINA_REGEN_MOVE = 1.6;
+const regenCap = () => Math.min(1, HP_REGEN_CAP + (typeof gearHas === 'function' && gearHas('vigor') ? 0.15 : 0));
 const POINTS_PER_LEVEL = 3;
 const GOLD_BASE = 3, GOLD_PER_WAVE = 1.5, GOLD_BOSS_BASE = 60, GOLD_BOSS_PER_WAVE = 12;
 const SAVE_KEY = i => `stickrpg_slot${i}`, SLOTS = [1, 2, 3];
@@ -25,16 +28,18 @@ const SWORDS = [
   { id: 'holy', cost: 13,   name: 'Excalibur',    lvl: 17, dmg: 65, range: 70, time: 0.26, len: 34, color: '#fe6', burn: true, slow: true },
 ];
 
+// Level stats are a small personal edge: gear is where the build comes from (see GEAR_CAPS in gear.js). Their caps grow a little with every rebirth.
 const STATS = [
-  { k: 'hp',      name: 'Vitality',    short: 'VIT', desc: '+20 max HP, +0.5% damage reduction', capNote: 'reduction caps at 30%', softCap: 60 },
-  { k: 'str',     name: 'Strength',    short: 'STR', desc: '+5 sword damage' },
-  { k: 'sta',     name: 'Stamina',     short: 'STA', desc: '+10 max stamina, +regen, +0.4% move speed', capNote: 'speed caps at +20%', softCap: 50 },
-  { k: 'cd',      name: 'Cooldown',    short: 'CD',  desc: '-6% flip cooldown, -4% swing time', max: 10 },
-  { k: 'crit',    name: 'Crit Rate',   short: 'CRT', desc: '+1% crit chance', max: 40 },
-  { k: 'critDmg', name: 'Crit Damage', short: 'CDM', desc: '+8% crit damage', max: 25 },
+  { k: 'hp',      color: '#e2565a', name: 'Vitality',    short: 'VIT', desc: '+10 max HP, +0.15% damage reduction', capNote: 'more points allowed with every rebirth', maxFn: () => vitMax() },
+  { k: 'str',     color: '#ff9a4a', name: 'Strength',    short: 'STR', desc: '+2 sword damage', capNote: 'more points allowed with every rebirth', maxFn: () => strMax() },
+  { k: 'sta',     color: '#5fd07a', name: 'Stamina',     short: 'STA', desc: '+10 max stamina, +regen, +0.15% move speed', capNote: 'speed caps at +6%', softCap: 50 },
+  { k: 'cd',      color: '#6fb5ff', name: 'Cooldown',    short: 'CD',  desc: '-6% flip cooldown, -4% swing time', max: 10 },
+  { k: 'crit',    color: '#ffd24a', name: 'Critical',    short: 'CRT', desc: '+0.5% crit chance, +0.02× crit damage', capNote: 'at most 15% and 1.7× from levels', max: 10 },
 ];
-const BASE_SPEED = 180, BASE_CRIT = 0.10, BASE_CRIT_MULT = 2;
-const newStats = () => ({ hp: 0, str: 0, sta: 0, cd: 0, crit: 0, critDmg: 0 });
+const statMax = s => s.maxFn ? s.maxFn() : s.max;
+const VIT_HP = 10;
+const BASE_SPEED = 180, BASE_CRIT = 0.10, BASE_CRIT_MULT = 1.5;
+const newStats = () => ({ hp: 0, str: 0, sta: 0, cd: 0, crit: 0 });
 
 const DIFFS = {
   easy:      { name: 'Easy',      hp: 0.7, dmg: 0.6, spd: 0.9,  xp: 1.25, drop: 1.5, desc: 'Weaker monsters and more drops. A relaxed adventure.' },
@@ -50,7 +55,8 @@ const tierOf = zoneFor;                                    // bosses defeated so
 const setPos = w => w <= 0 ? 0 : ((w - 1) % WAVES_PER_SET) + 1;   // 1..10 within the current set; 10 is the boss
 
 // --- Enemy scaling: every boss defeated is a tier; monsters also grow a little with the hero's level ---
-const TIER_HP = 0.12, TIER_DMG = 0.10, TIER_SPD = 0.02, TIER_SPD_CAP = 0.10;
+const ARCHER_MAX_SPEED = 105, ARCHER_BACKOFF = 80;           // archers (skeletons) walk this fast at most, and back away slower still
+const TIER_HP = 0.16, TIER_DMG = 0.14, TIER_SPD = 0.02, TIER_SPD_CAP = 0.10;
 const LEVEL_HP = 0.025, LEVEL_DMG = 0.02, LEVEL_CAP = 0.6;
 function threat() {
   const t = tierOf(wave), lv = Math.max(0, (hero ? hero.level : 1) - 1);
@@ -74,14 +80,13 @@ const QUALITY = {
   high:   { rs: 1,   shadows: true,  trail: true,  particles: true,  grass: 1500, decor: true,  glow: true,  anim: false, ambient: false, shake: true,  post: false },
   ultra:  { rs: 1,   shadows: true,  trail: true,  particles: true,  grass: 3200, decor: true,  glow: true,  anim: true,  ambient: true,  shake: true,  post: true },
 };
-const settings = { quality: 'high', res: 'auto', renderScale: '100', sharpness: 60, fps: 0, frameGen: 'off', showFps: false, musicVol: 50, sfxVol: 80, ambVol: 60, comfort: false };
+const settings = { quality: 'high', res: 'auto', renderScale: '100', sharpness: 60, fps: 0, showFps: false, musicVol: 50, sfxVol: 80, ambVol: 60, comfort: false };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('rpgSettings')) || {}); } catch {}
 if (!QUALITY[settings.quality]) settings.quality = 'high';
 if (!['100', '85', '75', '67', '50'].includes(String(settings.renderScale))) settings.renderScale = '100';
 settings.renderScale = String(settings.renderScale);
 settings.sharpness = Math.max(0, Math.min(100, Number(settings.sharpness) || 0));
-if (settings.frameGen === 'smooth') settings.frameGen = 'off';
-if (settings.frameGen === 'perf') settings.frameGen = '2';
+delete settings.frameGen;                          // frame generation was removed: the simulation costs about 5% of a frame, so it saved nothing
 let gfx, postActive = false, fxActive = false;     // postActive: the WebGL pass shows the picture; fxActive: ...and also applies the Ultra effects
 let outRes = { w: 1280, h: 720 };                  // size the picture is shown at; the game renders at outRes x render scale
 const renderScale = () => (+settings.renderScale || 100) / 100;
@@ -116,9 +121,8 @@ function applySettings() {
     ((gfx.post || upscaling()) && !postActive ? ' — WebGL unavailable: post-FX and sharpening are off' : '') +
     `<br><b>Render resolution:</b> ${canvas.width} × ${canvas.height}` +
     (upscaling() ? ` → shown at ${outRes.w} × ${outRes.h} (${postActive ? 'bicubic upscale + sharpening on the GPU' : 'stretched by the browser'})` : '') +
-    `<br><b>Frame cap:</b> ${cappedFpsLabel()}` +
-    `<br><b>Frame generation:</b> ${genLabel()}`;
-  if (world) buildGrass();
+    `<br><b>Frame cap:</b> ${cappedFpsLabel()}`;
+  if (world && world.grassKey !== `${gfx.grass}|${gfx.anim}`) { buildGrass(); buildGround(); }
   try { localStorage.setItem('rpgSettings', JSON.stringify(settings)); } catch {}
 }
 
@@ -146,22 +150,6 @@ function updateFsButton() { document.getElementById('btnFs').textContent = docum
 
 const sfx = name => Sound.sfx(name);
 // what the chosen cap actually becomes on this monitor (a cap must divide the refresh rate)
-// frame generation: simulate at displayed/N and draw the in-between frames by interpolation
-function genFactor() {
-  const n = parseInt(settings.frameGen);
-  return Number.isFinite(n) && n >= 2 ? Math.min(5, n) : 1;
-}
-function simHz() {
-  const shown = settings.fps || Math.round(1000 / refreshMs);
-  return Math.max(15, Math.round(shown / genFactor()));
-}
-function genLabel() {
-  const g = genFactor();
-  if (g <= 1) return 'Off — the game simulates every frame it draws.';
-  const shown = settings.fps || Math.round(1000 / refreshMs);
-  return `${g}× — simulating ${simHz()} times a second and generating ${g - 1} of every ${g} frames ` +
-    `(${shown} FPS shown). Saves CPU; adds about ${(1000 / simHz()).toFixed(0)} ms of input delay.`;
-}
 function cappedFpsLabel() {
   const hz = Math.round(1000 / refreshMs);
   if (!settings.fps) return `unlimited — ${hz} FPS (every refresh of your ${hz} Hz screen)`;
@@ -191,18 +179,18 @@ const D = () => DIFFS[diffKey];
 
 function reset() {
   hero = {
-    name: 'Hero', level: 1, hp: 100, maxHp: 100, xp: 0, xpNext: 50,
+    name: 'Hero', level: 1, hp: 100, maxHp: 100, xp: 0, xpNext: xpNeed(1), rebirth: 0, rbHp: 0,
     stamina: 100, points: 0, stats: newStats(), sword: SWORDS[0], regenT: 0,
     x: WW / 2, y: WH / 2, speed: 180, facing: 1, walkT: 0, moving: false, stepT: 0,
     attackT: 0, attackDur: 0.3, hitSet: null,
     flipT: 0, flipCd: 0, flipDx: 1, flipDy: 0,
     hurtT: 0, dead: false, deadT: 0, auraT: 0, hpRegenT: 0, gold: 0, lostGold: 0, goldPulse: 0,
-    potions: 0, lamp: 0, lightBonus: 0, potionCd: 0,
+    potions: 2, cures: 0, potionSel: 'heal', lamp: 0, lightBonus: 0, potionCd: 0,
     scarf: Array.from({ length: 7 }, () => ({ x: WW / 2, y: WH / 2 - 50 })),
   };
-  initGear();
+  applyRebirthPerks(); initGear();
   enemies = []; corpses = []; popups = []; drops = []; projectiles = []; shockwaves = []; particles = [];
-  boss = null; vil = null; villageSkip = -1;
+  boss = null; vil = null; villageSkip = -1; clearHazards();
   wave = 0; waveTimer = 2; spawnQueue = []; spawnTimer = 0; lastZoneStep = 0;
   playTime = 0; lastSavedWave = -1; savedGold = 0; hitStop = 0; flash = 0;
   cam.x = hero.x - VW / 2; cam.y = hero.y - VH / 2; cam.shake = 0;
@@ -227,10 +215,10 @@ function restoreSavesFromDisk() {
 function wavesCleared() { return spawnQueue.length === 0 && enemies.length === 0 ? wave : wave - 1; }
 function saveGame(auto = false, quiet = false) {
   const data = {
-    v: 1, name: hero.name, diff: diffKey, level: hero.level, xp: hero.xp, xpNext: hero.xpNext,
+    v: 3, rebirth: rebirths(), rbHp: hero.rbHp | 0, name: hero.name, diff: diffKey, level: hero.level, xp: hero.xp, xpNext: hero.xpNext,
     points: hero.points, stats: { ...hero.stats }, maxHp: hero.maxHp, sword: hero.sword.id,
     wave: Math.max(0, wavesCleared()), playTime: Math.round(playTime), savedAt: Date.now(),
-    biome: zone, tod, dayCount, weather: weather.kind, gold: hero.gold, potions: hero.potions | 0, lamp: hero.lamp | 0, ...serializeGear(),
+    biome: zone, tod, dayCount, weather: weather.kind, gold: hero.gold, potions: hero.potions | 0, cures: hero.cures | 0, potionSel: hero.potionSel || 'heal', lamp: hero.lamp | 0, ...serializeGear(),
   };
   try {
     writeSlot(currentSlot, JSON.stringify(data));
@@ -249,13 +237,18 @@ function loadSlot(i) {
   if (!validSave(d)) return false;
   reset();
   Object.assign(hero, {
-    name: d.name.slice(0, 14), level: d.level, xp: d.xp | 0, xpNext: d.xpNext || 50, points: d.points | 0,
-    stats: { ...newStats(), ...d.stats }, maxHp: d.maxHp, hp: d.maxHp, sword: SWORDS.find(s => s.id === d.sword),
+    name: d.name.slice(0, 14), level: d.level, xp: d.xp | 0, xpNext: xpNeed(Math.max(1, d.level | 0)), points: d.points | 0,
+    stats: (() => { const st = { ...newStats(), ...d.stats }; st.crit = (st.crit | 0) + (st.critDmg | 0); delete st.critDmg; return st; })(), maxHp: d.maxHp, hp: d.maxHp, sword: SWORDS.find(s => s.id === d.sword),
+    rebirth: Math.max(0, Math.min(500, d.rebirth | 0)), rbHp: Math.max(0, Math.min(100000, d.rbHp | 0)),
   });
+  applyRebirthPerks();
+  { const was = d.v >= 3 ? VIT_HP : d.v >= 2 ? 12 : 20; if (was !== VIT_HP) hero.maxHp = Math.max(1, hero.maxHp - (was - VIT_HP) * (hero.stats.hp | 0)); }       // saves from before a rebalance: Vitality gave 20 HP a point, then 12, now 10
+  hero.hp = hero.maxHp;
+  for (const s of STATS) { const mx = statMax(s); if (mx && hero.stats[s.k] > mx) { hero.points += hero.stats[s.k] - mx; hero.stats[s.k] = mx; } }   // points over a (lowered) cap are given back
   hero.stamina = maxStamina();
   diffKey = d.diff; currentSlot = i; wave = d.wave; lastSavedWave = d.wave; playTime = d.playTime || 0;
   hero.gold = d.gold | 0; savedGold = hero.gold;
-  hero.potions = Math.max(0, Math.min(POTION_MAX, d.potions | 0)); hero.lamp = Math.max(0, Math.min(LAMPS.length - 1, d.lamp | 0)); applyLamp();
+  hero.potions = Math.max(0, Math.min(POTION_MAX, d.potions | 0)); hero.cures = Math.max(0, Math.min(POTION_MAX, d.cures | 0)); hero.potionSel = d.potionSel === 'cure' ? 'cure' : 'heal'; hero.lamp = Math.max(0, Math.min(LAMPS.length - 1, d.lamp | 0)); applyLamp();
   loadGear(d);
   lastZoneStep = zoneFor(d.wave + 1);
   if (Number.isFinite(d.tod)) tod = d.tod;
@@ -285,7 +278,7 @@ function startPlay() {
 const fmtTime = s => `${Math.floor(s / 3600)}h ${String(Math.floor(s / 60) % 60).padStart(2, '0')}m`;
 function slotHtml(i, d) {
   return d ? `<div><b>Slot ${i}: ${escapeHtml(d.name)}</b> — ${DIFFS[d.diff]?.name ?? '?'}
-    <small>Lv ${d.level} · ${d.wave} waves cleared · ${(d.gold | 0).toLocaleString()} gold · ${fmtTime(d.playTime || 0)} played · ${new Date(d.savedAt).toLocaleString()}</small></div>`
+    <small>${d.rebirth > 0 ? `Rebirth ${d.rebirth | 0} · ` : ''}Lv ${d.level} · ${d.wave} waves cleared · ${(d.gold | 0).toLocaleString()} gold · ${fmtTime(d.playTime || 0)} played · ${new Date(d.savedAt).toLocaleString()}</small></div>`
     : `<div><b>Slot ${i}</b><small>Empty</small></div>`;
 }
 function renderLoad() {
@@ -350,24 +343,25 @@ function latestSlot() {
 }
 
 // --- Menus ---
-const OVERLAYS = ['title', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'talk', 'shop', 'inv'];
-let paused = false, openMenu = null, settingsReturn = 'title', lastCharTab = 'level';
+const OVERLAYS = ['title', 'single', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'talk', 'shop', 'inv'];
+let paused = false, openMenu = null, settingsReturn = 'title';
 function showMenu(which) {
+  const paused0 = paused;
   openMenu = which;
-  if (which === 'level' || which === 'inv') lastCharTab = which;
   paused = (state === 'play' || state === 'village') && which !== null;
   for (const id of OVERLAYS) document.getElementById(id).classList.toggle('show', id === which);
   for (const k in keys) keys[k] = false;
   if (which === 'level') renderLevelMenu();
+  if ((which === 'level' || which === 'inv') && !paused0) sfx('menu');
   if (which === 'shop') renderShop();
   if (which === 'inv') renderInventory();
   if (which === 'dev') renderDev();
   if (which === 'menu') renderMenuInfo();
   if (which === 'load') renderLoad();
   if (which === 'newgame') { ngSlot = SLOTS.find(i => !readSlot(i)) ?? 1; renderNewGame(); }
-  if (which === 'title') document.getElementById('btnContinue').style.display = latestSlot() ? 'block' : 'none';
+  if (which === 'single') document.getElementById('btnContinue').style.display = latestSlot() ? 'block' : 'none';
   Sound.muffle(paused && which !== 'talk' && which !== 'shop');   // talking and shopping keep the music clear
-  if (which) document.querySelector(`#${which} button:not(:disabled), #${which} input`)?.focus({ preventScroll: true });
+  if (which && !['settings', 'level', 'inv', 'dev'].includes(which)) document.querySelector(`#${which} button:not(:disabled), #${which} input`)?.focus({ preventScroll: true });   // big windows start with nothing highlighted
   else canvas.focus();
 }
 document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click', () => {
@@ -376,11 +370,10 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
   if (a === 'resume' || a === 'close') showMenu(null);
   if (a === 'settings') { settingsReturn = openMenu; showMenu('settings'); }
   if (a === 'back') showMenu(settingsReturn);
-  if (a === 'level') showMenu('level');
-  if (a === 'inv') showMenu('inv');
   if (a === 'newgame') showMenu('newgame');
   if (a === 'load') showMenu('load');
   if (a === 'toTitle') showMenu('title');
+  if (a === 'single' || a === 'toSingle') showMenu('single');
   if (a === 'fullscreen') toggleFullscreen();
   if (a === 'continue') { const l = latestSlot(); if (l) loadSlot(l.i); }
   if (a === 'startNew') {
@@ -405,7 +398,7 @@ function renderMenuInfo() {
   const el = document.getElementById('menuInfo');
   if (!el || !hero) return;
   const w = Math.max(0, lastSavedWave), lostW = Math.max(0, wave - w), lostG = Math.max(0, hero.gold - savedGold);
-  el.innerHTML = `Saves happen at the village (wave 9 of each set) and at campfires (after each boss). <em>Last save: wave ${w}</em>` +
+  el.innerHTML = `Saves happen after every 5th wave, at the village (wave 9 of each set) and at campfires (after each boss). <em>Last save: wave ${w}</em>` +
     (lostW || lostG ? `<br>At risk if you die: ${lostW} wave${lostW === 1 ? '' : 's'}, ${lostG.toLocaleString()} gold` : '<br>Nothing at risk right now.');
 }
 function goTitle() {
@@ -419,16 +412,16 @@ function goTitle() {
 }
 
 function renderLevelMenu() {
-  document.getElementById('lvNum').textContent = hero.level;
+  document.getElementById('lvNum').textContent = hero.level >= levelCap() ? `${hero.level} (max)` : hero.level;
   document.getElementById('lvPts').textContent = hero.points;
   const pct = n => Math.round(n * 100) + '%';
   document.getElementById('lvStats').innerHTML = STATS.map(s => {
-    const v = hero.stats[s.k], cap = s.max || s.softCap, maxed = s.max && v >= s.max;
+    const mx = statMax(s), v = hero.stats[s.k], cap = mx || s.softCap, maxed = mx && v >= mx;
     const fill = cap ? Math.min(100, v / cap * 100) : Math.min(100, v * 2);
-    return `<div class="stat ${maxed ? 'maxed' : ''}">
+    return `<div class="stat ${maxed ? 'maxed' : ''}" style="--c:${s.color}">
       <div class="stat-main">
         <div class="stat-top"><span class="tag">${s.short}</span><b>${s.name}</b>
-          <span class="stat-val">${v}${s.max ? ` / ${s.max}` : ''}</span></div>
+          <span class="stat-val">${v}${mx ? ` / ${mx}` : ''}</span></div>
         <div class="meter"><i style="width:${fill}%"></i></div>
         <small>${s.desc}${s.capNote ? ` · <em>${s.capNote}</em>` : ''}</small>
       </div>
@@ -444,35 +437,42 @@ function renderLevelMenu() {
     ['Stamina', `${maxStamina()} · +${staminaRegen().toFixed(0)}/s`],
     ['Swing cost', `${hero.sword.cost} · flip ${FLIP_COST}`],
     ['Flip cooldown', `${flipCooldown().toFixed(2)}s`],
+    ...(rebirths() ? [['Rebirth', `${rebirths()} · level cap ${levelCap()}`], ['Dodge', pct(dodgeChance())], ['XP · gold', `×${rbXpMul().toFixed(2)} · ×${rbGoldMul().toFixed(2)}`]] : [['Level cap', `${levelCap()} (then rebirth at the shrine)`]]),
   ].map(([k, v]) => `<div class="sumrow"><span>${k}</span><b>${v}</b></div>`).join('');
 }
 document.getElementById('level').addEventListener('click', e => {
-  const st = e.target.dataset.stat;
-  if (st && hero.points > 0) {
+  const st = e.target.dataset.stat, def = STATS.find(x => x.k === st);
+  if (st && hero.points > 0 && !(def && statMax(def) && hero.stats[st] >= statMax(def))) {
     hero.points--; hero.stats[st]++;
-    if (st === 'hp') { hero.maxHp += 20; hero.hp += 20; }
+    if (st === 'hp') { hero.maxHp += VIT_HP; hero.hp += VIT_HP; syncRebirthHp(); }
     if (st === 'sta') hero.stamina = Math.min(maxStamina(), hero.stamina + 10);
-    sfx('click'); renderLevelMenu();
+    sfx('upgrade'); renderLevelMenu();
   }
 });
 
 // --- Input ---
 const keys = {};
 function advanceIntro() {
-  if (state === 'splash') { Sound.ctx(); state = 'intro'; introT = 0; introFlags = {}; Sound.music('title'); return true; }
+  if (state === 'splash') {
+    Sound.ctx(); state = 'intro'; Sound.music('title');
+    if (introSeen()) { introT = INTRO_SHORT_FROM; introFlags = { t0: INTRO_SHORT_FROM, toll: true, hollow: true, seen: true }; }   // seen it before: only the last part
+    else { introT = 0; introFlags = {}; }
+    return true;
+  }
   if (state === 'intro') { goTitle(); return true; }
   return false;
 }
-wrap.addEventListener('pointerdown', e => { if (e.target === canvas || e.target.id === 'gl') advanceIntro(); });
+wrap.addEventListener('pointerdown', e => { if (e.target === canvas || e.target.id === 'gl') { if (!advanceIntro() && rebirthFx) skipRebirthFx(); } });
 addEventListener('keydown', e => {
   Sound.ctx();   // browsers only allow audio after a user gesture
   const tag = e.target.tagName;
   if ((tag === 'INPUT' && e.target.type === 'text') && e.code !== 'Escape') return;
   if (advanceIntro()) return;
+  if (rebirthFx) { skipRebirthFx(); return; }                    // the rebirth scene: any key moves it along, nothing else happens meanwhile
   if (state === 'camp') { if (campT > 1.5 && campT < 6.2) campT = 6.2; return; }
   if (e.code === 'KeyF' && !e.repeat) { toggleFullscreen(); return; }
   if (state === 'title') {
-    if (e.code === 'Escape' && openMenu !== 'title') showMenu(openMenu === 'settings' ? settingsReturn : 'title');
+    if (e.code === 'Escape' && openMenu !== 'title') showMenu(openMenu === 'settings' ? settingsReturn : openMenu === 'newgame' || openMenu === 'load' ? 'single' : 'title');
     return;
   }
   if (e.code === 'Escape' || e.code === 'KeyP') {
@@ -483,8 +483,9 @@ addEventListener('keydown', e => {
     showMenu(openMenu === 'dev' ? null : 'dev');
     return;
   }
-  if (e.code === 'KeyM' && !e.repeat && !hero.dead && (openMenu === null || openMenu === 'level' || openMenu === 'inv')) {      // one menu with two tabs: Character and Inventory
-    showMenu(openMenu ? null : lastCharTab);
+  if ((e.code === 'KeyM' || e.code === 'Tab') && (openMenu === null || openMenu === 'level' || openMenu === 'inv')) {      // M: Character, Tab: Inventory (two separate windows)
+    e.preventDefault();
+    if (!e.repeat && !hero.dead) { const w = e.code === 'KeyM' ? 'level' : 'inv'; showMenu(openMenu === w ? null : w); }
     return;
   }
   if ((openMenu === 'talk' || openMenu === 'shop') && /^(Digit|Numpad)[0-9]$/.test(e.code)) {   // number keys pick dialogue / shop options
@@ -504,6 +505,12 @@ addEventListener('keydown', e => {
     return;
   }
   if (e.code === 'KeyQ') drinkPotion();
+  if (e.code === 'KeyR') switchPotion();
+  if (e.code === 'KeyX' && slotOpen('weapon2')) {                                  // rebirth 10: swap to the spare weapon
+    const r = swapWeapons();
+    popups.push({ text: r === 'ok' ? `Swapped to ${hero.equip.weapon.name}` : r === 'empty' ? 'No spare weapon (set one in the inventory)' : r, x: VW / 2, y: 120, t: 1.4, screen: true, small: true, color: r === 'ok' ? '#fd4' : '#fb8' });
+    if (r === 'ok') sfx('pickup');
+  }
   if (state === 'village') { if (e.code === 'KeyE') villageInteract(); return; }     // no fighting in the village
   if (e.code === 'Space') startAttack();
   if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') startFlip();
@@ -522,8 +529,8 @@ function setBiome(z, announce = true) {
   particles = [];
   world = { B, seed, ...buildWorldFeatures(B, seed) };
   setWeather(rollWeather(z), true);
-  buildGround();
   buildGrass();
+  buildGround();
   if (typeof spawnCritters === 'function') spawnCritters();
   if (announce) {
     popups.push({ text: `— ${B.name} —`, x: VW / 2, y: 190, t: 3, big: true, screen: true, color: '#fff' });
@@ -558,6 +565,7 @@ function buildGround() {
     c.fillStyle = grad; c.beginPath(); c.ellipse(l.x, l.y, l.rx * 1.3, l.ry * 1.3, 0, 0, Math.PI * 2); c.fill();
   }
   for (const w of water) bakeWater(c, w);
+  if (gfx.grass && !gfx.anim && world.grassC) bakeGrass(c);
   // darken the world edges so the boundary reads as the edge of the map
   const edge = (x0, y0, x1, y1) => {
     const grad = c.createLinearGradient(x0, y0, x1, y1);
@@ -576,18 +584,32 @@ function buildGrass() {
   const r = mulberry(world.seed + 99);
   world.grass = Array.from({ length: gfx.grass }, () => ({ x: r() * WW, y: r() * WH, s: 4 + r() * 6, c: r() < 0.5 ? 0 : 1, ph: r() * 6.28 }))
     .filter(g => !world.lava.some(l => ((g.x - l.x) / l.rx) ** 2 + ((g.y - l.y) / l.ry) ** 2 < 1.4) && !world.water.some(w => inEllipse(g.x, g.y, w, 6)));
+  world.grassC = [0, 1].map(c => world.grass.filter(g => g.c === c).sort((a, b) => a.x - b.x));
+  world.grassKey = `${gfx.grass}|${gfx.anim}`;
+}
+// High quality has no wind, so its grass never moves: it is painted once into the ground picture instead of being stroked every frame
+function bakeGrass(c) {
+  c.lineWidth = 1.3; c.lineCap = 'round';
+  for (let k = 0; k < 2; k++) {
+    c.strokeStyle = world.B.grass[k]; c.beginPath();
+    for (const g of world.grassC[k]) {
+      c.moveTo(g.x, g.y); c.quadraticCurveTo(g.x - 1, g.y - g.s * 0.6, g.x - 2, g.y - g.s);
+      c.moveTo(g.x, g.y); c.quadraticCurveTo(g.x + 1, g.y - g.s * 0.6, g.x + 2, g.y - g.s * 0.9);
+    }
+    c.stroke();
+  }
 }
 
 // --- Hero ---
 // Gear adds on top of the level stats (gearStat / capValue live in gear.js); the ceilings are in GEAR_CAPS.
-const swordDmg = () => hero.sword.dmg + hero.stats.str * 5 + Math.round(gearStat('dmg'));
+const swordDmg = () => Math.round((hero.sword.dmg + Math.min(strMax(), hero.stats.str) * 2 + Math.round(gearStat('dmg'))) * rbDmgMul());
 const maxStamina = () => 100 + hero.stats.sta * 10 + Math.round(gearStat('stamina'));
 const staminaRegen = () => Math.min(32, 14 + hero.stats.sta * 1.2);      // hard cap: stamina still matters late
 const flipCooldown = () => FLIP_COOLDOWN * (1 - hero.stats.cd * 0.06) * (1 - Math.min(0.5, gearStat('cdr')));
-const dmgReduction = () => capValue('dr', Math.min(0.30, hero.stats.hp * 0.005));        // Vitality is capped at 30%; with gear the ceiling is 60%
-const moveSpeed = () => BASE_SPEED * (1 + capValue('speed', Math.min(0.20, hero.stats.sta * 0.004)));
-const critChance = () => capValue('crit', Math.min(0.5, BASE_CRIT + hero.stats.crit * 0.01));
-const critMult = () => capValue('critDmg', Math.min(4, BASE_CRIT_MULT + hero.stats.critDmg * 0.08));
+const dmgReduction = () => capValue('dr', Math.min(drCap(), Math.min(vitMax(), hero.stats.hp) * 0.0015));        // Vitality gives at most 10% (and its points are capped well before that); with gear the ceiling is 60%
+const moveSpeed = () => BASE_SPEED * (1 + capValue('speed', Math.min(speedCap(), hero.stats.sta * 0.0015))) * (hero.chillT > 0 ? 0.65 : 1);      // a Frost nova chills you
+const critChance = () => capValue('crit', BASE_CRIT + Math.min(CRIT_POINTS_MAX, hero.stats.crit) * 0.005);
+const critMult = () => capValue('critDmg', BASE_CRIT_MULT + Math.min(CRIT_POINTS_MAX, hero.stats.crit) * 0.02);
 
 function startAttack() {
   if (hero.attackT > 0 || hero.flipT > 0) return;
@@ -620,22 +642,33 @@ function startFlip() {
   sfx('flip');
 }
 
-const invulnerable = () => hero.flipT > 0 || hero.hurtT > 0;
+const invulnerable = () => hero.flipT > 0 || hero.hurtT > 0 || hero.dodgeT > 0;
 
-function damageHero(dmg, sound = true) {
-  if (hero.dead || invulnerable() || dev.god) return;
+function killHero() {
+  hero.dead = true; hero.deadT = 0; clearPoison(); sfx('death'); Sound.music('gameover');
+  hero.lostGold = hero.gold; hero.gold = 0;       // carried gold is lost; the last save still has what was banked
+}
+// src: the monster that dealt it (its poison and life-steal apply when the hit lands). Returns the damage actually dealt.
+function damageHero(dmg, sound = true, src = null) {
+  if (hero.dead || invulnerable() || dev.god) return 0;
+  if (Math.random() < dodgeChance()) {                                   // rebirth's own stat: the hit misses, and you are safe for a moment so it cannot be rolled every frame
+    hero.dodgeT = 0.35; popups.push({ text: 'MISS', x: hero.x, y: hero.y - 76, t: 0.8, color: '#9fe3ff', pop: 0 }); sfx('whoosh');
+    return 0;
+  }
   dmg = Math.max(1, Math.round(dmg * (1 - dmgReduction())));
   hero.hp = Math.max(0, hero.hp - dmg);
+  if (src) {
+    if (src.poisons) addPoison(src);
+    if (src.vamp && src.hp > 0) { const heal = Math.round(dmg * src.vamp); src.hp = Math.min(src.maxHp, src.hp + heal); popups.push({ text: `+${heal}`, x: src.x, y: src.y - 90, t: 0.6, color: '#c77dff', small: true }); }
+  }
   hero.hurtT = 0.8;
   hero.hpRegenT = HP_REGEN_DELAY;
   shake(5);
   popups.push({ text: `-${dmg}`, x: hero.x, y: hero.y - 70, t: 0.8, color: '#f55', pop: 0 });
   burst(hero.x, hero.y - 35, '#c22', 10, 160, 2.5, 300);
   if (sound) sfx('hurt');
-  if (hero.hp === 0) {
-    hero.dead = true; hero.deadT = 0; sfx('death'); Sound.music('gameover');
-    hero.lostGold = hero.gold; hero.gold = 0;       // carried gold is lost; the last save still has what was banked
-  }
+  if (hero.hp === 0) killHero();
+  return dmg;
 }
 
 // --- Effects ---
@@ -675,8 +708,8 @@ const TYPES = {
   goblin:   { hp: 30, speed: 110, r: 12, dmg: 8,  xp: 12, from: 1, color: '#3d8b3d', gold: 1 },
   minotaur: { hp: 60, speed: 60,  r: 18, dmg: 10, xp: 22, from: 1, color: '#6b3e26', gold: 1.4 },
   slime:    { hp: 45, speed: 0,   r: 16, dmg: 8,  xp: 15, from: 2, color: '#5b5', gold: 1 },
-  archer:   { hp: 35, speed: 70,  r: 12, dmg: 12, xp: 20, from: 3, color: '#ddd', gold: 1.2 },
-  ogre:     { hp: 160, speed: 40, r: 24, dmg: 20, xp: 45, from: 6, color: '#6a7a3a', gold: 2.2 },
+  archer:   { hp: 35, speed: 70,  r: 12, dmg: 10, xp: 20, from: 3, color: '#ddd', gold: 1.2 },
+  ogre:     { hp: 140, speed: 40, r: 24, dmg: 18, xp: 45, from: 7, color: '#6a7a3a', gold: 2.2 },
 };
 
 function edgePos() {
@@ -689,29 +722,35 @@ function edgePos() {
 function spawnEnemy(type, pos = edgePos(), extra = {}) {
   const T = TYPES[type], d = D(), th = threat();
   const hp = Math.round(T.hp * (1 + wave * 0.15) * d.hp * th.hp);
-  enemies.push({
+  const m = {
     type, x: pos.x, y: pos.y, hp, maxHp: hp, r: T.r, dmg: Math.round((T.dmg + Math.floor(wave / 2)) * d.dmg * th.dmg), xp: Math.round((T.xp + wave * 3) * d.xp),
     speed: (T.speed * (0.85 + Math.random() * 0.3) + wave * 2) * d.spd * th.spd,
     facing: 1, walkT: Math.random() * 6, state: 'walk', stateT: Math.random(), spawnT: 0.5,
     chargeDx: 0, chargeDy: 0, knockX: 0, knockY: 0, flashT: 0, burnT: 0, slowT: 0, hopZ: 0, size: 1,
     ...extra,
-  });
-  burst(pos.x, pos.y, '#000', 6, 60, 3, -30);
+  };
+  enemies.push(m);
+  if (!extra.noVariant) rollVariant(m, extra.variant);
+  burst(pos.x, pos.y, m.elite ? '#ffd24a' : '#000', m.elite ? 14 : 6, 60, 3, -30);
+  return m;
+}
+function spawnElite() {
+  const pool = Object.keys(TYPES).filter(t => wave >= TYPES[t].from);
+  const m = spawnEnemy(pool[Math.floor(Math.random() * pool.length)], edgePos(), { variant: 'elite' });
+  popups.push({ text: `Elite: ${m.name}`, x: VW / 2, y: 170, t: 1.8, screen: true, small: true, color: '#ffd24a' });
+  sfx('roar');
+  return m;
 }
 
-function spawnBoss() {
-  const d = D(), th = threat(), hp = Math.round((700 + wave * 120) * d.hp * th.hp);
-  const pos = edgePos();
-  boss = {
-    type: 'boss', name: Math.max(1, Math.round(wave / WAVES_PER_SET)) % 2 === 0 ? 'Minotaur Emperor' : 'Minotaur King',
-    x: pos.x, y: pos.y, hp, maxHp: hp, r: 34, dmg: Math.round((20 + wave) * d.dmg * th.dmg), xp: Math.round((150 + wave * 20) * d.xp),
-    speed: (70 + wave) * d.spd * th.spd, facing: 1, walkT: 0, state: 'walk', stateT: 1.5, charges: 0, summoned: false, spawnT: 0.8,
-    chargeDx: 0, chargeDy: 0, knockX: 0, knockY: 0, flashT: 0, burnT: 0, slowT: 0,
-  };
+function spawnBoss(kindOverride) {
+  const d = D(), th = threat(), pos = edgePos();
+  const kind = kindOverride || BOSS_BY_BIOME[BIOMES[zone % BIOMES.length].key] || 'minotaur';       // every biome has its own boss
+  boss = spawnBossOfKind(kind, pos, d, th);
   enemies.push(boss);
   sfx('roar'); shake(10); flashScreen(0.25);
   Sound.music('boss');
   popups.push({ text: `⚠ ${boss.name} ⚠`, x: VW / 2, y: 150, t: 2.5, big: true, screen: true, color: '#f66' });
+  popups.push({ text: boss.def.intro, x: VW / 2, y: 182, t: 2.5, screen: true, small: true, color: '#fcc' });
 }
 
 // Waves are counted within their set of ten, so a longer gap between bosses doesn't mean ever-larger crowds:
@@ -723,6 +762,9 @@ function buildWave() {
   if (pos === 9) n = Math.round(n * 1.3);
   const list = Array.from({ length: n }, () => pool[Math.floor(Math.random() * pool.length)]);
   if (pos === 5) for (let i = 0; i < 3 + tierOf(wave); i++) list.push('goblin');
+  const t = tierOf(wave);                                         // elites turn up in ordinary waves once a boss has fallen, more often the further you get
+  const elites = t < 1 ? 0 : (Math.random() < Math.min(0.6, 0.2 + 0.1 * t) ? 1 : 0) + (pos === 9 ? 1 : 0) + (t >= 3 && Math.random() < 0.3 ? 1 : 0);
+  for (let i = 0; i < elites; i++) list.splice(Math.floor(Math.random() * (list.length + 1)), 0, 'elite');
   return list;
 }
 
@@ -731,19 +773,22 @@ function updateWaves(dt) {
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
       const t = spawnQueue.shift();
-      t === 'boss' ? spawnBoss() : spawnEnemy(t);
+      t === 'boss' ? spawnBoss() : t === 'elite' ? spawnElite() : spawnEnemy(t);
       sfx('spawn');
       spawnTimer = 0.3 + Math.random() * 1.3;
     }
   } else if (enemies.length === 0 && !hero.dead) {
     waveTimer -= dt;
     if (waveTimer <= 0) {
+      if (wave > 0 && setPos(wave) === 5 && lastSavedWave < wave) {                                       // a checkpoint after every 5th wave (the village and the campfire cover the rest)
+        saveGame(true, true); popups.push({ text: `Checkpoint: wave ${wave} saved`, x: VW / 2, y: 150, t: 2.2, screen: true, small: true, color: '#9f9' });
+      }
       if ((wave + 1) % WAVES_PER_SET === 0 && villageSkip !== wave + 1) { enterVillage(); return; }   // a village before every boss
       wave++;
       if (zoneFor(wave) !== lastZoneStep) { lastZoneStep = zoneFor(wave); startCamp(randomBiome()); }
       else if (Sound.current === 'boss') Sound.music(BIOMES[zone % BIOMES.length].music);
       if (wave % WAVES_PER_SET === 0) {
-        spawnQueue = ['boss', ...Array(Math.floor(wave / 5)).fill('goblin')];
+        spawnQueue = [...Array(2 + Math.floor(tierOf(wave) / 2)).fill('elite'), 'boss', ...Array(Math.floor(wave / 5)).fill('goblin')];     // elites first, then the boss
         popups.push({ text: `Wave ${wave}: BOSS WAVE!`, x: VW / 2, y: 110, t: 2, big: true, screen: true, color: '#f66' });
       } else {
         spawnQueue = buildWave();
@@ -758,6 +803,9 @@ function updateWaves(dt) {
 }
 
 function updateBoss(m, dt, dx, dy, dist, spd) {
+  if (m.kind && m.kind !== 'minotaur') updateKitBoss(m, dt, dx, dy, dist, spd); else updateMinotaurBoss(m, dt, dx, dy, dist, spd);
+}
+function updateMinotaurBoss(m, dt, dx, dy, dist, spd) {
   if (!m.summoned && m.hp < m.maxHp / 2) {         // phase 2: call minions + enrage
     m.summoned = true; m.speed *= 1.3;
     for (let i = 0; i < 3; i++) spawnEnemy(i ? 'goblin' : 'minotaur');
@@ -808,7 +856,8 @@ function updateEnemies(dt) {
     }
     m.stateT -= dt;
     const wm = waterAt(m.x, m.y) ? 0.75 : 1;
-    const spd = m.speed * (m.slowT > 0 ? 0.5 : 1) * wm;
+    const fz = m.frenzy && m.hp < m.maxHp * 0.3 ? 1.5 : 1;       // a Frenzied monster goes berserk when hurt
+    const spd = m.speed * fz * (m.slowT > 0 ? 0.5 : 1) * wm;
     const slowMul = (m.slowT > 0 ? 0.5 : 1) * wm;
 
     if (m.type === 'boss') updateBoss(m, dt, dx, dy, dist, spd);
@@ -852,16 +901,17 @@ function updateEnemies(dt) {
       m.facing = Math.sign(dx) || m.facing;
     } else if (m.type === 'archer') {
       const want = 230, dir = dist > want + 30 ? 1 : dist < want - 30 ? -1 : 0;   // keep distance, shoot arrows
-      m.x += (dx / dist) * spd * dir * dt; m.y += (dy / dist) * spd * dir * dt;
+      const aspd = Math.min(spd, dir < 0 ? ARCHER_BACKOFF : ARCHER_MAX_SPEED);       // however fast tier and Swift make it, it never outruns you for long
+      m.x += (dx / dist) * aspd * dir * dt; m.y += (dy / dist) * aspd * dir * dt;
       m.x = Math.max(15, Math.min(WW - 15, m.x)); m.y = Math.max(50, Math.min(WH - 10, m.y));
       m.facing = Math.sign(dx) || m.facing;
       m.moving = !!dir;
-      if (dir) m.walkT += dt * stepRate(spd, 10.5 * 0.9);
+      if (dir) m.walkT += dt * stepRate(aspd, 10.5 * 0.9);
       const onScreen = m.x > cam.x && m.x < cam.x + VW && m.y > cam.y && m.y < cam.y + VH + 40;
       if (m.state === 'walk' && m.stateT <= 0 && !hero.dead && onScreen) { m.state = 'aim'; m.stateT = 0.7; }
       if (m.state === 'aim' && m.stateT <= 0) {
         const sp = 300;
-        projectiles.push({ x: m.x, y: m.y - 40, vx: dx / dist * sp, vy: dy / dist * sp, t: 3, dmg: m.dmg });
+        projectiles.push({ x: m.x, y: m.y - 40, vx: dx / dist * sp, vy: dy / dist * sp, t: 3, dmg: m.dmg * fz, src: m });
         sfx('arrow');
         m.state = 'walk'; m.stateT = 1.6 + Math.random();
       }
@@ -872,7 +922,7 @@ function updateEnemies(dt) {
     m.knockX *= decay; m.knockY *= decay;
 
     if (!hero.dead && dist < m.r + 12 && (m.hopZ || 0) < 10 && m.spawnT < 0.2) {
-      damageHero(m.state === 'charge' ? m.dmg * 2 + 5 : m.dmg);
+      damageHero((m.state === 'charge' ? m.dmg * 2 + 5 : m.dmg) * fz, true, m);
     }
   }
 
@@ -882,13 +932,17 @@ function updateEnemies(dt) {
     for (const m of enemies) {
       if (hero.hitSet.has(m)) continue;
       const dx = m.x - hero.x, dy = m.y - hero.y;
-      if (Math.hypot(dx, dy) < sw.range + m.r * 0.6 && Math.sign(dx) !== -hero.facing) {
+      const dist = Math.hypot(dx, dy);
+      // what a swing reaches: the arc in front of you (a little past your shoulder counts as in front), and your whole body.
+      // Anything close enough to hurt you (contact is m.r + 12) is always close enough to hit, on whichever side it stands.
+      const inFront = dist < sw.range + m.r * 0.6 && dx * hero.facing > -10, onBody = dist < m.r + 20;
+      if (inFront || onBody) {
         hero.hitSet.add(m);
-        const crit = Math.random() < critChance(), dmg = dev.oneHit ? Math.max(1, Math.ceil(m.hp)) : Math.round(swordDmg() * (crit ? critMult() : 1));
+        const crit = Math.random() < critChance(), dmg = dev.oneHit ? Math.max(1, Math.ceil(m.hp)) : Math.max(1, Math.round(swordDmg() * (crit ? critMult() : 1) * (1 - (m.armor || 0))));
         const hpBefore = m.hp; m.hp -= dmg;
         if (gearHas('lifesteal')) hero.hp = Math.min(hero.maxHp, hero.hp + Math.min(dmg, hpBefore) * 0.04);
         m.flashT = 0.15;
-        m.knockX = hero.facing * (m.type === 'boss' ? 120 : m.type === 'ogre' ? 200 : 500);
+        m.knockX = m.noKnock ? 0 : (Math.sign(dx) || hero.facing) * (m.type === 'boss' ? 120 : m.type === 'ogre' ? 200 : 500);          // away from you, never through you
         if (sw.burn) m.burnT = 3;
         if (sw.slow) m.slowT = 2.5;
         if (m.state === 'windup' && m.type !== 'boss') { m.state = 'walk'; m.stateT = 0.8; } // interrupt
@@ -921,10 +975,11 @@ function onKill(m) {
     for (let i = 0; i < 3; i++) dropItem('star', m.x + (i - 1) * 30, m.y);
     dropItem('potion', m.x, m.y + 25);
     dropItem('big', m.x, m.y - 25);
-    shockwaves = [];
+    shockwaves = []; clearHazards();
     Sound.music(BIOMES[zone % BIOMES.length].music);
   } else {
     sfx('kill');
+    if (m.elite) { popups.push({ text: `${m.name} slain`, x: m.x, y: m.y - 110, t: 1.4, color: '#ffd24a' }); dropItem('potion', m.x - 18, m.y + 12); }
     const r = Math.random() / dropMul;
     if (r < 0.03) dropItem('star', m.x, m.y);
     else if (r < 0.2) dropItem('potion', m.x, m.y);
@@ -933,10 +988,10 @@ function onKill(m) {
   }
   // gold: every kill drops a coin that's worth more in later waves; a boss showers coins
   if (m.type === 'boss') {
-    const total = (GOLD_BOSS_BASE + wave * GOLD_BOSS_PER_WAVE) * (1 + gearStat('gold'));
+    const total = (GOLD_BOSS_BASE + wave * GOLD_BOSS_PER_WAVE) * (1 + gearStat('gold')) * rbGoldMul();
     for (let i = 0; i < 6; i++) dropItem('gold', m.x + Math.cos(i * 1.05) * 44, m.y + Math.sin(i * 1.05) * 26, { amount: Math.round(total / 6) });
   } else {
-    const base = (GOLD_BASE + wave * GOLD_PER_WAVE) * (1 + gearStat('gold')) * (TYPES[m.type]?.gold ?? 1) * ((m.size ?? 1) < 1 ? 0.4 : 1) * (0.7 + Math.random() * 0.6);
+    const base = (GOLD_BASE + wave * GOLD_PER_WAVE) * (1 + gearStat('gold')) * rbGoldMul() * (TYPES[m.type]?.gold ?? 1) * (m.elite ? ELITE_GOLD : 1) * ((m.size ?? 1) < 1 ? 0.4 : 1) * (0.7 + Math.random() * 0.6);
     dropItem('gold', m.x + (Math.random() - 0.5) * 22, m.y + (Math.random() - 0.5) * 12, { amount: Math.max(1, Math.round(base)) });
   }
   for (const it of gearDropsFor(m)) dropGear(it, m.x + (Math.random() - 0.5) * 50, m.y + 10 + Math.random() * 22);
@@ -983,7 +1038,7 @@ function updateDrops(dt) {
 function updateProjectiles(dt) {
   for (const p of projectiles) {
     p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt;
-    if (Math.hypot(p.x - hero.x, p.y - (hero.y - 35)) < 18 && !invulnerable() && !hero.dead) { damageHero(p.dmg); p.t = 0; }
+    if (Math.hypot(p.x - hero.x, p.y - (hero.y - 35)) < 18 && !invulnerable() && !hero.dead) { damageHero(p.dmg, true, p.src); p.t = 0; }
     if (hero.attackT > 0 && Math.hypot(p.x - hero.x, p.y - hero.y + 35) < hero.sword.range) {   // swing deflects arrows
       p.t = 0; sfx('click'); burst(p.x, p.y, '#fff', 6, 150, 1.5, 0, true);
     }
@@ -993,26 +1048,31 @@ function updateProjectiles(dt) {
   for (const s of shockwaves) {
     s.r += 260 * dt;
     const d = Math.hypot(hero.x - s.x, (hero.y - s.y) * 1.6);
-    if (!s.hit && Math.abs(d - s.r) < 16 && !invulnerable() && !hero.dead) { s.hit = true; damageHero(s.dmg); }
+    if (!s.hit && Math.abs(d - s.r) < 16 && !invulnerable() && !hero.dead) { s.hit = true; damageHero(s.dmg); if (s.chill && !hero.dead) { hero.chillT = 2.5; popups.push({ text: 'Chilled', x: hero.x, y: hero.y - 90, t: 0.9, color: '#9fe3ff' }); sfx('chill'); } }
   }
   shockwaves = shockwaves.filter(s => s.r < s.maxR);
+  updateHazards(dt);
 }
 
+// XP to get from this level to the next: a smooth curve (was x1.4 a level, which raced through the early levels and stalled near the cap)
+const xpNeed = lv => Math.round(55 + 16 * lv * lv);
 function gainXp(n, m) {
+  if (hero.level >= levelCap()) { hero.xp = 0; return; }   // nothing past the cap; the shrine is the way on (the level-up message and the purple ring around the level say so once)
+  n = Math.max(1, Math.round(n * rbXpMul()));
   hero.xp += n;
-  popups.push({ text: `+${n} XP`, x: m.x, y: m.y - 60, t: 1, color: '#8cf' });
-  while (hero.xp >= hero.xpNext) {
+  while (hero.xp >= hero.xpNext && hero.level < levelCap()) {
     hero.xp -= hero.xpNext;
     hero.level++;
-    hero.xpNext = Math.round(hero.xpNext * 1.4);
-    hero.points += POINTS_PER_LEVEL;
+    hero.xpNext = xpNeed(hero.level);
+    hero.points += pointsPerLevel();
     hero.hp = hero.maxHp;
     hero.stamina = maxStamina();
     hero.auraT = 1.2;
-    popups.push({ text: `LEVEL UP! +${POINTS_PER_LEVEL} points (M)`, x: VW / 2, y: 230, t: 1.8, color: '#fd4', big: true, screen: true });
+    popups.push({ text: hero.level >= levelCap() ? `MAX LEVEL ${hero.level}! The shrine awaits` : `LEVEL UP! +${pointsPerLevel()} points (M)`, x: VW / 2, y: 230, t: 1.8, color: '#fd4', big: true, screen: true });
     burst(hero.x, hero.y - 30, '#fd4', 30, 200, 2.5, -40, true);
     sfx('levelup');
   }
+  if (hero.level >= levelCap()) hero.xp = 0;
 }
 
 function updateHero(dt) {
@@ -1020,17 +1080,21 @@ function updateHero(dt) {
   hero.flipCd = Math.max(0, hero.flipCd - dt);
   hero.potionCd = Math.max(0, (hero.potionCd || 0) - dt);
   hero.hurtT = Math.max(0, hero.hurtT - dt);
+  hero.dodgeT = Math.max(0, (hero.dodgeT || 0) - dt);
+  hero.capT = Math.max(0, (hero.capT || 0) - dt);
   hero.auraT = Math.max(0, hero.auraT - dt);
+  hero.chillT = Math.max(0, (hero.chillT || 0) - dt);
+  if (hero.poison && tickPoison(dt)) { killHero(); return; }
   if (hero.attackT > 0) hero.attackT -= dt;
   hero.regenT = Math.max(0, hero.regenT - dt);
   // health slowly returns when you haven't been hit for a while
   hero.hpRegenT = Math.max(0, (hero.hpRegenT ?? 0) - dt);
   hero.goldPulse = Math.max(0, (hero.goldPulse || 0) - dt * 2);
-  if (hero.hpRegenT <= 0 && hero.hp < hero.maxHp) {
-    hero.hp = Math.min(hero.maxHp, hero.hp + hero.maxHp * HP_REGEN_RATE * (gearHas('vigor') ? 2.5 : 1) * dt);
+  if (hero.hpRegenT <= 0 && hero.hp < hero.maxHp * regenCap()) {
+    hero.hp = Math.min(hero.maxHp * regenCap(), hero.hp + hero.maxHp * HP_REGEN_RATE * (hero.moving ? HP_REGEN_MOVE : 1) * (gearHas('vigor') ? 2.5 : 1) * dt);
     if (gfx.particles && Math.random() < dt * 3) particles.push({ x: hero.x + (Math.random() - 0.5) * 18, y: hero.y - 20 - Math.random() * 30, vx: 0, vy: -26, life: 0.6, max: 0.6, size: 2, color: '#7fd08a', add: true });
   }
-  if (hero.flipT <= 0 && hero.attackT <= 0 && hero.regenT <= 0) hero.stamina = Math.min(maxStamina(), hero.stamina + staminaRegen() * dt);
+  if (hero.flipT <= 0 && hero.attackT <= 0 && hero.regenT <= 0) hero.stamina = Math.min(maxStamina(), hero.stamina + staminaRegen() * (hero.moving ? STAMINA_REGEN_MOVE : 1) * dt);
   if (dev.stamina) hero.stamina = maxStamina();
 
   if (hero.flipT > 0) {
@@ -1308,7 +1372,7 @@ function statusTint(m, base) {
   return base;
 }
 function drawHpBar(m, yOff) {
-  if (m.dieT !== undefined) return;
+  if (m.dieT !== undefined || m.type === 'boss') return;
   ctx.fillStyle = '#300'; ctx.fillRect(m.x - 20, m.y - yOff, 40, 5);
   ctx.fillStyle = '#e33'; ctx.fillRect(m.x - 20, m.y - yOff, 40 * Math.max(0, m.hp) / m.maxHp, 5);
   if (m.burnT > 0) { ctx.fillStyle = '#f73'; ctx.fillRect(m.x + 22, m.y - yOff, 5, 5); }
@@ -1455,12 +1519,16 @@ function drawEnemy(m) {
     ctx.globalAlpha = 1 - p;
     ctx.translate(0, p * 14);
   }
-  if (m.type === 'boss') { drawMinotaur(m, 2, m.summoned ? '#8b2a1e' : '#5a2e1a', true); }
+  const giant = m.scale > 1;
+  if (giant) { ctx.save(); ctx.translate(m.x, m.y); ctx.scale(m.scale, m.scale); ctx.translate(-m.x, -m.y); }          // Giants are drawn bigger (their tags are not)
+  if (m.type === 'boss') drawBossArt(m);
   else if (m.type === 'minotaur') { drawMinotaur(m); drawHpBar(m, 100); }
   else if (m.type === 'ogre') { drawMinotaur(m, 1.4, '#6a7a3a'); drawHpBar(m, 130); }
   else if (m.type === 'goblin') drawGoblin(m);
   else if (m.type === 'slime') drawSlime(m);
   else if (m.type === 'archer') drawArcher(m);
+  if (giant) ctx.restore();
+  drawVariantTells(m);
   ctx.restore();
 }
 
@@ -1513,26 +1581,30 @@ function drawGrassAndDecor() {
       (DECOR_ART[d.k] || DECOR_ART.dot)(d);
     }
   }
-  if (!gfx.grass) return;
-  const wind = gfx.anim ? Math.sin(tAnim * 0.7) * 1.5 * windMul() + (windMul() - 1) * 1.6 : 0;
+  if (!gfx.grass || !gfx.anim || !world.grassC) return;                 // still grass is already part of the ground
+  const wind = Math.sin(tAnim * 0.7) * 1.5 * windMul() + (windMul() - 1) * 1.6;
   const hx = hero ? hero.x : -999, hy = hero ? hero.y : -999;
-  ctx.lineWidth = 1.3; ctx.lineCap = 'round';
+  const x0 = cam.x - 10, x1 = cam.x + VW + 10, y0 = cam.y - 10, y1 = cam.y + VH + 10;
+  ctx.lineWidth = 1.3; ctx.lineCap = 'butt';                          // butt ends: a 1.3 px blade looks the same and costs about half
   for (let c = 0; c < 2; c++) {
+    const arr = world.grassC[c];
+    let lo = 0, hi = arr.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (arr[m].x < x0) lo = m + 1; else hi = m; }       // first blade inside the strip
     ctx.strokeStyle = B.grass[c];
     ctx.beginPath();
-    for (const g of world.grass) {
-      if (g.c !== c || !inView(g.x, g.y, 10)) continue;
-      let off = 0;
-      if (gfx.anim) {
-        off = Math.sin(tAnim * 2.2 + g.ph + g.x * 0.01) * 2 + wind;
-        const dx = g.x - hx, dy = g.y - hy;
-        if (dx * dx < 900 && dy * dy < 144) off += Math.sign(dx) * (30 - Math.abs(dx)) * 0.35;  // pushed aside by the hero
-      }
-      ctx.moveTo(g.x, g.y); ctx.quadraticCurveTo(g.x - 1, g.y - g.s * 0.6, g.x - 2 + off, g.y - g.s);
-      ctx.moveTo(g.x, g.y); ctx.quadraticCurveTo(g.x + 1, g.y - g.s * 0.6, g.x + 2 + off, g.y - g.s * 0.9);
+    for (let i = lo; i < arr.length; i++) {
+      const g = arr[i];
+      if (g.x > x1) break;
+      if (g.y < y0 || g.y > y1) continue;
+      let off = Math.sin(tAnim * 2.2 + g.ph + g.x * 0.01) * 2 + wind;
+      const dx = g.x - hx, dy = g.y - hy;
+      if (dx * dx < 900 && dy * dy < 144) off += Math.sign(dx) * (30 - Math.abs(dx)) * 0.35;      // pushed aside by the hero
+      ctx.moveTo(g.x, g.y); ctx.lineTo(g.x - 1.5 + off, g.y - g.s);
+      ctx.moveTo(g.x, g.y); ctx.lineTo(g.x + 1.5 + off, g.y - g.s * 0.9);
     }
     ctx.stroke();
   }
+  ctx.lineCap = 'round';
 }
 
 function drawLavaGlow() {
@@ -1575,10 +1647,12 @@ function drawWorld() {
   drawGrassAndDecor();
   drawCloudShadows();
   for (const s of shockwaves) {
-    ctx.strokeStyle = `rgba(255,220,150,${1 - s.r / s.maxR})`; ctx.lineWidth = 6;
+    ctx.strokeStyle = s.color ? withAlpha(s.color, 1 - s.r / s.maxR) : `rgba(255,220,150,${1 - s.r / s.maxR})`; ctx.lineWidth = 6;
     ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r, s.r / 1.6, 0, 0, Math.PI * 2); ctx.stroke();
-    if (gfx.glow) { ctx.lineWidth = 14; ctx.strokeStyle = `rgba(255,180,90,${0.25 * (1 - s.r / s.maxR)})`; ctx.stroke(); }
+    if (gfx.glow) { ctx.lineWidth = 14; ctx.strokeStyle = s.color ? withAlpha(s.color, 0.25 * (1 - s.r / s.maxR)) : `rgba(255,180,90,${0.25 * (1 - s.r / s.maxR)})`; ctx.stroke(); }
   }
+  drawHazards();
+  for (const m of enemies) if (m.type === 'boss' && inView(m.x, m.y, 400)) drawBossTelegraph(m);
   if (!hero) { for (const p of world.props) if (inView(p.x, p.y)) drawProp(p); return; }
   for (const d of drops) if (inView(d.x, d.y)) drawDrop(d);
 
@@ -1612,93 +1686,228 @@ function drawPopups(screen) {
   }
 }
 
+// ---------------------------------------------------------------- the HUD kit: one look for every panel, and text that always fits
+const UI_FONT = '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif';
+// the largest font (down to min) in which the text fits maxW; if even that is too wide it is cut with an ellipsis. Returns the text to draw; ctx.font is set.
+const fitCache = new Map();
+function fitText(text, maxW, size, bold = false, min = 8) {
+  const ck = text + '|' + maxW + '|' + size + '|' + bold + '|' + min, hit = fitCache.get(ck);
+  if (hit) { ctx.font = hit.font; return hit.t; }
+  const r = fitTextNow(text, maxW, size, bold, min);
+  if (fitCache.size > 400) fitCache.clear();
+  fitCache.set(ck, { t: r, font: ctx.font }); return r;
+}
+function fitTextNow(text, maxW, size, bold, min) {
+  const font = s => `${bold ? 'bold ' : ''}${s}px ${UI_FONT}`;
+  let s = size; ctx.font = font(s);
+  while (s > min && ctx.measureText(text).width > maxW) { s -= 0.5; ctx.font = font(s); }
+  let t = String(text);
+  if (ctx.measureText(t).width > maxW) { while (t.length > 1 && ctx.measureText(t + '…').width > maxW) t = t.slice(0, -1); t += '…'; }
+  return t;
+}
+const panelCache = new Map(), PANEL_PAD = 22;
+function hudPanel(x, y, w, h, o = {}) {
+  const S = canvas.width / VW, ck = [Math.round(w), Math.round(h), o.r ?? 12, o.edge || '', o.accent || '', gfx.shadows ? 1 : 0, S.toFixed(3)].join('|');
+  let pc = panelCache.get(ck);
+  if (!pc) {
+    if (panelCache.size > 60) panelCache.clear();
+    const cw = Math.ceil((Math.round(w) + PANEL_PAD * 2) * S), ch = Math.ceil((Math.round(h) + PANEL_PAD * 2) * S);
+    const c = document.createElement('canvas'); c.width = cw; c.height = ch;
+    const cx = c.getContext('2d');
+    drawPanelTo(cx, PANEL_PAD, PANEL_PAD, Math.round(w), Math.round(h), o, S);
+    pc = c; panelCache.set(ck, pc);
+  }
+  ctx.drawImage(pc, Math.round(x) - PANEL_PAD, Math.round(y) - PANEL_PAD, pc.width / S, pc.height / S);
+}
+function drawPanelTo(ctx, x, y, w, h, o, S) {
+  ctx.setTransform(S, 0, 0, S, 0, 0);
+  const r = o.r ?? 12;
+  ctx.save();
+  if (gfx.shadows) { ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3; }
+  const gr = ctx.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, 'rgba(34,34,52,0.84)'); gr.addColorStop(1, 'rgba(12,12,20,0.82)');
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = o.edge || 'rgba(160,160,215,0.26)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, r); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.beginPath(); ctx.moveTo(x + r, y + 1.5); ctx.lineTo(x + w - r, y + 1.5); ctx.stroke();       // a thin highlight along the top edge
+  if (o.accent) { ctx.fillStyle = o.accent; ctx.beginPath(); ctx.roundRect(x + 5, y + 10, 3, h - 20, 2); ctx.fill(); }
+  ctx.restore();
+}
+// a small rounded label; returns its width
+function hudChip(text, x, y, color, size = 10.5) {
+  ctx.font = `bold ${size}px ${UI_FONT}`;
+  const w = Math.ceil(ctx.measureText(text).width) + 12;
+  ctx.fillStyle = 'rgba(8,8,14,0.7)'; ctx.beginPath(); ctx.roundRect(x, y - 11, w, 16, 8); ctx.fill();
+  ctx.strokeStyle = color; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y - 10.5, w - 1, 15, 7.5); ctx.stroke(); ctx.globalAlpha = 1;
+  ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.fillText(text, x + 6, y + 0.5);
+  return w;
+}
 function hudBar(x, y, w, h, frac, bg, fg, label, glow) {
   ctx.fillStyle = bg; ctx.beginPath(); ctx.roundRect(x, y, w, h, h / 2); ctx.fill();
   const fw = w * Math.max(0, Math.min(1, frac));
   if (fw > 1) {
-    ctx.fillStyle = fg; ctx.beginPath(); ctx.roundRect(x, y, fw, h, h / 2); ctx.fill();
-    ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.roundRect(x, y + 1, fw, h / 2.6, h / 4); ctx.fill();
+    const gr = ctx.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, withAlpha(fg, 1)); gr.addColorStop(1, withAlpha(fg, 0.72));
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.roundRect(x, y, Math.max(h, fw), h, h / 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.2)'; ctx.beginPath(); ctx.roundRect(x + 1, y + 1, Math.max(h - 2, fw - 2), h / 2.6, h / 4); ctx.fill();
   }
+  ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, h / 2); ctx.stroke();
   if (glow && gfx.glow) { ctx.strokeStyle = fg; ctx.globalAlpha = 0.35; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(x, y, w, h, h / 2); ctx.stroke(); ctx.globalAlpha = 1; }
   if (label && h >= 10) {
-    ctx.fillStyle = 'rgba(255,255,255,0.92)'; ctx.font = 'bold 10px "Segoe UI", sans-serif';
-    ctx.textAlign = 'right'; ctx.fillText(label, x + w - 6, y + h - 2.5); ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(255,255,255,0.95)'; ctx.font = `bold 10px ${UI_FONT}`;
+    ctx.textAlign = 'right'; ctx.fillText(label, x + w - 7, y + h - 3); ctx.textAlign = 'left';
+  }
+}
+
+// ---------------------------------------------------------------- the HUD
+// bottom centre: health to the left of the level circle, stamina to the right, and the experience as a ring round the circle.
+const clamp01 = x => Math.max(0, Math.min(1, x));
+function vitalBar(x, w, y, h, frac, c1, c2, side, label, mark) {
+  const r = h / 2;
+  ctx.fillStyle = 'rgba(6,6,12,0.75)'; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
+  const fw = frac > 0.002 ? Math.max(h, w * clamp01(frac)) : 0;
+  if (fw) {
+    const fx = side < 0 ? x + w - fw : x, gr = ctx.createLinearGradient(0, y, 0, y + h);
+    gr.addColorStop(0, c1); gr.addColorStop(1, c2);
+    ctx.fillStyle = gr; ctx.beginPath(); ctx.roundRect(fx, y, fw, h, r); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.22)'; ctx.beginPath(); ctx.roundRect(fx + 2, y + 2, fw - 4, h * 0.34, r / 2); ctx.fill();
+  }
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, r); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+  for (const f of [0.25, 0.5, 0.75]) { const tx = side < 0 ? x + w - w * f : x + w * f; ctx.beginPath(); ctx.moveTo(tx, y + 3); ctx.lineTo(tx, y + h - 3); ctx.stroke(); }
+  if (mark) { const mx = side < 0 ? x + w - w * mark : x + w * mark; ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.moveTo(mx, y - 1.5); ctx.lineTo(mx, y + h + 1.5); ctx.stroke(); }
+  if (label) {
+    const t = fitText(label, w - 16, 10, true, 8); ctx.textAlign = 'center';
+    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.65)'; ctx.strokeText(t, x + w / 2, y + h - 3.5);
+    ctx.fillStyle = '#fff'; ctx.fillText(t, x + w / 2, y + h - 3.5); ctx.textAlign = 'left';
+  }
+}
+// Everything harmful that is on the hero right now. A new ailment is one more entry here and one more icon in AILMENT_ICON; the Cure-All clears them all.
+const AILMENT_ICON = {
+  poison(c, r) {                                                    // a skull with a drip
+    c.fillStyle = '#e9ffe9'; c.beginPath(); c.arc(0, -1.5, r * 0.5, 0, Math.PI * 2); c.fill(); c.fillRect(-r * 0.27, r * 0.1, r * 0.54, r * 0.38);
+    c.fillStyle = '#0d2a12'; c.beginPath(); c.arc(-r * 0.2, -r * 0.1, r * 0.14, 0, Math.PI * 2); c.arc(r * 0.2, -r * 0.1, r * 0.14, 0, Math.PI * 2); c.fill();
+    c.fillRect(-1, r * 0.08, 2, r * 0.18); c.fillRect(-r * 0.12, r * 0.3, 1.3, r * 0.18); c.fillRect(r * 0.1, r * 0.3, 1.3, r * 0.18);
+  },
+  chill(c, r) {                                                     // a snowflake
+    c.strokeStyle = '#eaf9ff'; c.lineWidth = 1.7; c.lineCap = 'round';
+    for (let i = 0; i < 3; i++) { c.save(); c.rotate(i * Math.PI / 3); c.beginPath(); c.moveTo(0, -r * 0.62); c.lineTo(0, r * 0.62); c.moveTo(-r * 0.2, -r * 0.42); c.lineTo(0, -r * 0.24); c.lineTo(r * 0.2, -r * 0.42); c.moveTo(-r * 0.2, r * 0.42); c.lineTo(0, r * 0.24); c.lineTo(r * 0.2, r * 0.42); c.stroke(); c.restore(); }
+  },
+};
+function activeAilments() {
+  const out = [];
+  if (hero.poison) out.push({ id: 'poison', name: 'Poisoned', color: '#5fe05f', stacks: hero.poison.stacks, t: hero.poison.t, max: POISON_TIME });
+  if (hero.chillT > 0) out.push({ id: 'chill', name: 'Chilled', color: '#6fd0ff', stacks: 1, t: hero.chillT, max: Math.max(2.5, hero.chillT) });
+  return out;
+}
+// big round badges just above the health and stamina bars: a coloured ring that drains with the time left, the icon, the stack count and the seconds
+function drawAilments(cx, topY) {
+  const list = activeAilments(); if (!list.length) return;
+  const R2 = 18, gapX = 48, x0 = cx - (list.length - 1) * gapX / 2, cy = topY - R2 - 4;
+  list.forEach((a, i) => {
+    const x = x0 + i * gapX, pulse = 0.5 + 0.5 * Math.sin(tAnim * 6 + i), low = a.t < 1.2 && Math.sin(tAnim * 14) > 0;
+    ctx.save(); ctx.translate(x, cy);
+    if (gfx.glow) { const gr = ctx.createRadialGradient(0, 0, R2 * 0.6, 0, 0, R2 + 9); gr.addColorStop(0, withAlpha(a.color, 0.35 + 0.2 * pulse)); gr.addColorStop(1, withAlpha(a.color, 0)); ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, R2 + 9, 0, Math.PI * 2); ctx.fill(); }
+    ctx.fillStyle = 'rgba(8,10,16,0.92)'; ctx.beginPath(); ctx.arc(0, 0, R2, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = withAlpha(a.color, 0.28); ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(0, 0, R2 - 1, 0, Math.PI * 2); ctx.stroke();
+    ctx.strokeStyle = low ? '#fff' : a.color; ctx.lineCap = 'round'; ctx.beginPath(); ctx.arc(0, 0, R2 - 1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * clamp01(a.t / a.max)); ctx.stroke(); ctx.lineCap = 'butt';
+    ctx.save(); ctx.translate(0, 0.5); AILMENT_ICON[a.id](ctx, R2 * 0.95); ctx.restore();
+    ctx.textAlign = 'center';
+    if (a.stacks > 1) { ctx.fillStyle = a.color; ctx.beginPath(); ctx.arc(R2 - 2, R2 - 3, 7, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#04120a'; ctx.font = `bold 10px ${UI_FONT}`; ctx.fillText('x' + a.stacks, R2 - 2, R2 + 0.5); }
+    ctx.restore();
+    ctx.textAlign = 'center'; ctx.font = `bold 10px ${UI_FONT}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; const sec = Math.ceil(a.t) + 's';
+    ctx.strokeText(sec, x, cy - R2 - 4); ctx.fillStyle = a.color; ctx.fillText(sec, x, cy - R2 - 4);
+  });
+  ctx.textAlign = 'left';
+}
+function drawVitals(inVillage) {
+  const cx = VW / 2, cy = VH - 33, Rr = 23, bw = 170, bh = 14, gap = 9, by = cy - bh / 2;
+  const hpF = hero.hp / hero.maxHp, lowHp = hpF < 0.3, canAct = inVillage || hero.stamina >= hero.sword.cost;
+  const total = (Rr + gap + bw) * 2 + 24;
+  hudPanel(cx - total / 2, cy - bh / 2 - 7, total, bh + 14, { r: (bh + 14) / 2 });
+  drawAilments(cx, cy - bh / 2 - 7 - 14);
+  drawPotionSlot(cx - total / 2 - 50, cy);                              // the selected potion sits just left of the health bar
+  // health (left of the circle) and stamina (right of it); both fill outwards from the circle
+  vitalBar(cx - Rr - gap - bw, bw, by, bh, hpF, lowHp && !settings.comfort && Math.sin(tAnim * 5) > 0 ? '#ff8a8a' : '#f06468', '#b8333a', -1, `${Math.ceil(hero.hp)} / ${hero.maxHp}`, regenCap() < 1 ? regenCap() : 0);
+  vitalBar(cx + Rr + gap, bw, by, bh, hero.stamina / maxStamina(), canAct ? '#76e08e' : '#9a9aa8', canAct ? '#2f9a52' : '#5e5e6c', 1, null, 0);
+  if (!inVillage && hero.flipCd > 0) {                                    // the flip coming back, as a thin line under the stamina bar
+    const f = clamp01(1 - hero.flipCd / Math.max(0.05, flipCooldown()));
+    ctx.fillStyle = 'rgba(111,181,255,0.25)'; ctx.beginPath(); ctx.roundRect(cx + Rr + gap, by + bh + 3, bw, 3, 1.5); ctx.fill();
+    ctx.fillStyle = '#6fb5ff'; ctx.beginPath(); ctx.roundRect(cx + Rr + gap, by + bh + 3, Math.max(3, bw * f), 3, 1.5); ctx.fill();
+  }
+  // the level circle, with the experience running round its edge
+  const cap = hero.level >= levelCap(), xf = cap ? 1 : clamp01(hero.xp / hero.xpNext), pulse = hero.auraT > 0 ? Math.min(1, hero.auraT) : 0;
+  ctx.save();
+  if (gfx.shadows) { ctx.shadowColor = 'rgba(0,0,0,0.6)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3; }
+  const disc = ctx.createRadialGradient(cx, cy - 8, 4, cx, cy, Rr + 4); disc.addColorStop(0, '#34344f'); disc.addColorStop(1, '#14141f');
+  ctx.fillStyle = disc; ctx.beginPath(); ctx.arc(cx, cy, Rr + 3, 0, Math.PI * 2); ctx.fill();
+  ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
+  ctx.strokeStyle = 'rgba(190,190,240,0.3)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(cx, cy, Rr + 3.5, 0, Math.PI * 2); ctx.stroke();
+  const xr = Rr - 2.5;
+  ctx.lineCap = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(255,255,255,0.1)'; ctx.beginPath(); ctx.arc(cx, cy, xr, 0, Math.PI * 2); ctx.stroke();
+  if (xf > 0.003) {
+    const xg = ctx.createLinearGradient(cx - xr, cy - xr, cx + xr, cy + xr); xg.addColorStop(0, cap ? '#e6dcff' : '#9fd4ff'); xg.addColorStop(1, cap ? '#9a7ee8' : '#4a8fe0');
+    ctx.strokeStyle = xg; ctx.beginPath(); ctx.arc(cx, cy, xr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * xf); ctx.stroke();
+    if (gfx.glow && (cap || pulse)) { ctx.globalAlpha = 0.25 + 0.2 * Math.sin(tAnim * 3) + pulse * 0.4; ctx.lineWidth = 8; ctx.beginPath(); ctx.arc(cx, cy, xr, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * xf); ctx.stroke(); ctx.globalAlpha = 1; }
+  }
+  ctx.lineCap = 'butt';
+  ctx.fillStyle = 'rgba(8,8,16,0.8)'; ctx.beginPath(); ctx.arc(cx, cy, Rr - 6, 0, Math.PI * 2); ctx.fill();
+  ctx.textAlign = 'center'; ctx.fillStyle = cap ? '#c9b8ff' : '#8f8da8'; ctx.font = `bold 6.5px ${UI_FONT}`; ctx.fillText(cap ? 'MAX' : 'LV', cx, cy - 5.5);
+  ctx.fillStyle = '#fff'; ctx.fillText(fitText(String(hero.level), 2 * (Rr - 9), 16, true, 10), cx, cy + 8);
+  ctx.restore();
+  if (rebirths()) { ctx.font = `bold 10px ${UI_FONT}`; const t = 'R' + rebirths(), w = Math.ceil(ctx.measureText(t).width) + 12; hudChip(t, cx - w / 2, cy + Rr + 2, '#c9b8ff'); }
+  ctx.textAlign = 'left';
+}
+// under the clock: the wave, and ten pips counting the waves to the next boss
+function drawWaveChip(inVillage) {
+  const x = VW - 164, y = 58, w = 150, h = 46;
+  hudPanel(x, y, w, h, { r: 11 });
+  ctx.textAlign = 'left'; ctx.fillStyle = '#fff'; const t = fitText(inVillage ? `Wave ${wave} cleared` : `Wave ${wave}`, inVillage ? w - 28 : 66, 13, true, 10); ctx.fillText(t, x + 14, y + 19);
+  if (!inVillage) { const used = Math.ceil(ctx.measureText(t).width); ctx.fillStyle = '#a3a1b8'; ctx.textAlign = 'right'; ctx.fillText(fitText(D().name, w - 28 - used - 8, 11), x + w - 14, y + 19); ctx.textAlign = 'left'; }
+  const pos = wave === 0 ? 0 : ((wave - 1) % 10) + 1, py = y + 33;
+  for (let i = 1; i <= 10; i++) {
+    const px = x + 14 + (i - 1) * 12.4;
+    if (i === 10) {
+      ctx.fillStyle = pos === 10 ? '#ff5a5a' : '#8a2a2e';
+      ctx.beginPath(); ctx.moveTo(px + 4.5, py - 1); ctx.lineTo(px + 9.5, py + 4); ctx.lineTo(px + 4.5, py + 9); ctx.lineTo(px - 0.5, py + 4); ctx.closePath(); ctx.fill();
+    } else {
+      ctx.fillStyle = i < pos ? '#7fd08a' : i === pos ? (!inVillage && (enemies.length || spawnQueue.length) ? '#fff' : '#7fd08a') : '#2c3140';
+      ctx.beginPath(); ctx.roundRect(px, py, 9, 8, 2); ctx.fill();
+    }
+  }
+}
+// top left: who you are and what you carry. Every text is fitted to the room it has.
+function drawHeroCard(inVillage) {
+  const X = 10, Y = 10, W = 236, L = X + 14, Rt = X + W - 12, bw = Rt - L;
+  const pts = hero.points > 0;
+  const lamp = LAMPS[hero.lamp | 0];
+  hudPanel(X, Y, W, 58 + (lamp ? 18 : 0) + (pts ? 20 : 0));
+  ctx.textAlign = 'left';
+  const gold = fitText(hero.gold.toLocaleString(), 96, 13, true, 9), gw = Math.ceil(ctx.measureText(gold).width), gp = Math.max(0, hero.goldPulse || 0);
+  ctx.fillStyle = '#f5c451'; ctx.textAlign = 'right'; ctx.fillText(gold, Rt, Y + 24); ctx.textAlign = 'left';
+  ctx.save(); ctx.translate(Rt - gw - 11, Y + 20); ctx.scale(1 + gp, 1 + gp);
+  ctx.fillStyle = '#f5c451'; ctx.strokeStyle = '#8a6a1c'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#fff3c0'; ctx.beginPath(); ctx.arc(-1.8, -1.8, 1.8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
+  ctx.fillStyle = '#fff'; ctx.fillText(fitText(hero.name, bw - gw - 30, 15, true, 11), L, Y + 24);
+  const wi = hero.equip.weapon;
+  ctx.fillStyle = RARITIES[wi.rarity].color; ctx.fillText(fitText(wi.name, bw, 12, true, 9), L, Y + 44);
+  let ey = Y + 52;
+  if (lamp) { ctx.fillStyle = '#ffd88a'; ctx.fillText(fitText(lamp.name, bw, 10.5), L, ey + 11); ey += 18; }
+  if (pts) {
+    ctx.globalAlpha = 0.65 + 0.35 * Math.sin(tAnim * 4);
+    ctx.fillStyle = '#f5c451'; ctx.fillText(fitText(`${hero.points} stat point${hero.points === 1 ? '' : 's'}: press M`, bw, 12, true, 9), L, ey + 3);
+    ctx.globalAlpha = 1;
   }
 }
 
 function drawHUD() {
-  const W0 = 268, H0 = 154;
-  ctx.fillStyle = 'rgba(10,10,16,0.62)'; ctx.strokeStyle = 'rgba(120,120,160,0.28)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.roundRect(10, 10, W0, H0, 10); ctx.fill(); ctx.stroke();
-
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Segoe UI", sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(hero.name, 22, 31);
-  ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif';
-  ctx.fillText(`Lv ${hero.level}`, 22 + ctx.measureText(hero.name).width + 44, 31);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#9a98ad'; ctx.font = '11px "Segoe UI", sans-serif';
-  ctx.fillText(`Wave ${wave} · ${D().name}`, W0 + 2, 31);
-  ctx.textAlign = 'left';
-
-  const lowHp = hero.hp / hero.maxHp < 0.3;
-  hudBar(22, 40, 244, 13, hero.hp / hero.maxHp, 'rgba(60,10,14,0.9)',
-    lowHp && !settings.comfort && Math.sin(tAnim * 4) > 0 ? '#ff7a7a' : '#e2565a',
-    `${Math.ceil(hero.hp)} / ${hero.maxHp}`, lowHp);
-  const stFrac = hero.stamina / maxStamina(), canAct = hero.stamina >= hero.sword.cost;
-  hudBar(22, 57, 244, 9, stFrac, 'rgba(10,40,20,0.9)', canAct ? '#5fd07a' : '#7a7a7a', null, false);
-  hudBar(22, 70, 244, 6, hero.xp / hero.xpNext, 'rgba(10,25,45,0.9)', '#6fb5ff', null, false);
-
-  ctx.font = '10px "Segoe UI", sans-serif'; ctx.fillStyle = '#8b8a9c';
-  ctx.fillText(`ST ${Math.floor(hero.stamina)}`, 22, 88);
-  if (hero.hpRegenT <= 0 && hero.hp < hero.maxHp) {
-    ctx.fillStyle = '#7fd08a'; ctx.textAlign = 'right'; ctx.fillText('+regen', 200, 88);
-    ctx.textAlign = 'left'; ctx.fillStyle = '#8b8a9c';
-  }
-  ctx.fillText(`XP ${hero.xp}/${hero.xpNext}`, 78, 88);
-  ctx.textAlign = 'right'; ctx.fillStyle = hero.flipCd <= 0 ? '#7fd08a' : '#6a6a7c';
-  ctx.fillText(hero.flipCd <= 0 ? 'FLIP READY' : `flip ${hero.flipCd.toFixed(1)}s`, 266, 88);
-  ctx.textAlign = 'left';
-
-  const wi = hero.equip.weapon;
-  ctx.fillStyle = RARITIES[wi.rarity].color; ctx.font = 'bold 12px "Segoe UI", sans-serif';
-  ctx.fillText(wi.name, 22, 106, 150);
-  ctx.fillStyle = '#6a6a7c'; ctx.font = '10px "Segoe UI", sans-serif'; ctx.textAlign = 'right';
-  ctx.fillText(`${Math.round(critChance() * 100)}% crit · -${Math.round(dmgReduction() * 100)}% dmg taken`, 266, 106);
-  ctx.textAlign = 'left';
-
-  // gold, and ten pips counting the waves to the next boss
-  const gp = Math.max(0, hero.goldPulse || 0);
-  ctx.save(); ctx.translate(30, 126); ctx.scale(1 + gp, 1 + gp);
-  ctx.fillStyle = '#f5c451'; ctx.strokeStyle = '#8a6a1c'; ctx.lineWidth = 1.2;
-  ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#fff3c0'; ctx.beginPath(); ctx.arc(-1.8, -1.8, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-  ctx.fillStyle = '#f5c451'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(hero.gold.toLocaleString(), 42, 131);
-  const pos = wave === 0 ? 0 : ((wave - 1) % 10) + 1;
-  for (let i = 1; i <= 10; i++) {
-    const px = 126 + (i - 1) * 14;
-    if (i === 10) {                                                  // the boss
-      ctx.fillStyle = pos === 10 ? '#ff5a5a' : '#8a2a2e';
-      ctx.beginPath(); ctx.moveTo(px + 5, 120); ctx.lineTo(px + 10, 126); ctx.lineTo(px + 5, 132); ctx.lineTo(px, 126); ctx.closePath(); ctx.fill();
-    } else {
-      ctx.fillStyle = i < pos ? '#7fd08a' : i === pos ? (enemies.length || spawnQueue.length ? '#fff' : '#7fd08a') : '#2c3140';
-      ctx.beginPath(); ctx.roundRect(px, 122, 10, 8, 2); ctx.fill();
-    }
-  }
-
-  drawPotionHud(22, 148);
-  if (hero.points > 0 && Math.floor(tAnim * 2) % 2) {
-    ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif';
-    ctx.fillText(`${hero.points} stat points — press M`, 22, 178);
-  }
-
+  drawHeroCard(false);
+  drawVitals(false);
   drawClock(VW - 164, 10);
+  drawWaveChip(false);
 
   // minimap
   const mw = 150, mh = 100, mx = VW - mw - 14, my = VH - mh - 14, sx = mw / WW, sy = mh / WH;
-  ctx.fillStyle = 'rgba(10,10,16,0.62)'; ctx.strokeStyle = 'rgba(120,120,160,0.28)';
-  ctx.beginPath(); ctx.roundRect(mx - 5, my - 5, mw + 10, mh + 10, 8); ctx.fill(); ctx.stroke();
+  hudPanel(mx - 6, my - 6, mw + 12, mh + 12, { r: 11 });
   ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
   ctx.globalAlpha = 0.85; ctx.drawImage(world.mini, mx, my, mw, mh); ctx.globalAlpha = 1;
   ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
@@ -1707,8 +1916,8 @@ function drawHUD() {
   for (const d of drops) if (visibilityAt(d.x, d.y) > 0.4) ctx.fillRect(mx + d.x * sx - 1, my + d.y * sy - 1, 2.5, 2.5);
   for (const m of enemies) {
     if (visibilityAt(m.x, m.y) < 0.4) continue;      // hidden in the dark / fog: no safety net on the minimap
-    ctx.fillStyle = m.type === 'boss' ? '#ff5ce0' : '#ff5a5a';
-    const r = m.type === 'boss' ? 3 : 1.6;
+    ctx.fillStyle = m.type === 'boss' ? '#ff5ce0' : m.elite ? '#ffd24a' : '#ff5a5a';
+    const r = m.type === 'boss' ? 3 : m.elite ? 2.4 : 1.6;
     ctx.beginPath(); ctx.arc(mx + m.x * sx, my + m.y * sy, r, 0, Math.PI * 2); ctx.fill();
   }
   const sev = visibilitySeverity();
@@ -1720,16 +1929,14 @@ function drawHUD() {
   }
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(mx + hero.x * sx, my + hero.y * sy, 2.6, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
-  ctx.font = '10px "Segoe UI", sans-serif'; ctx.fillStyle = '#9a98ad'; ctx.textAlign = 'center';
-  ctx.fillText(world.B.name, mx + mw / 2, my - 9);
+  ctx.fillStyle = '#a3a1b8'; ctx.textAlign = 'center'; ctx.fillText(fitText(world.B.name, mw + 10, 10.5), mx + mw / 2, my - 11);
 
   if (boss) {
-    const bw = 400, bx = VW / 2 - bw / 2;
-    ctx.fillStyle = 'rgba(10,10,16,0.66)'; ctx.strokeStyle = 'rgba(160,60,60,0.5)';
-    ctx.beginPath(); ctx.roundRect(bx - 10, VH - 48, bw + 20, 40, 9); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#ffd8d8'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(boss.name.toUpperCase(), VW / 2, VH - 30);
-    hudBar(bx, VH - 24, bw, 11, boss.hp / boss.maxHp, 'rgba(50,8,8,0.9)', boss.summoned ? '#ff6a2a' : '#d02a2a', null, true);
+    const bw = 340, bx = VW / 2 - bw / 2;
+    hudPanel(bx - 12, 10, bw + 24, 44, { r: 11, edge: 'rgba(200,70,70,0.55)' });
+    ctx.fillStyle = '#ffd8d8'; ctx.textAlign = 'center';
+    ctx.fillText(fitText(boss.name.toUpperCase(), bw, 13, true, 10), VW / 2, 29);
+    hudBar(bx, 35, bw, 12, boss.hp / boss.maxHp, 'rgba(50,8,8,0.9)', boss.summoned ? '#ff6a2a' : '#d02a2a', null, true);
     ctx.textAlign = 'left';
   }
 }
@@ -1744,10 +1951,10 @@ function drawSplash() {
   ctx.globalAlpha = 1;
 }
 
-function stickSilhouette(x, y, ph, sc = 1, walking = true) {
+function stickSilhouette(x, y, ph, sc = 1, walking = true, col = '#000') {
   ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
   const J = poseStick(0, 0, 1, { p: ph, run: walking, lean: walking ? 0.14 : 0.02, breath: walking ? 0 : Math.sin(tAnim * 2.6) * 1.2, atk: -1 });
-  ctx.strokeStyle = '#000'; ctx.fillStyle = '#000'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   drawStickBody(J);
   const f = 1, h = J.front.e, dx = Math.cos(J.blade), dy = Math.sin(J.blade);
   line(h.x, h.y, h.x + dx * 26, h.y + dy * 26);
@@ -1755,68 +1962,151 @@ function stickSilhouette(x, y, ph, sc = 1, walking = true) {
   ctx.restore();
 }
 
+// The intro. Time-driven (everything is a function of t), so a replay can simply start part way in.
+//   0-10s  dusk over Aldermere: eight beacons on the ridge, a village with lit windows
+//   10-17s the Hollow opens: a flash, the beacons go out, the sky turns, beasts crest the hill
+//   17-23s someone walks out of the ash
+//   23s    the slash and the title
+const INTRO_LEN = 28, INTRO_SHORT_FROM = 17;
+const introSeen = () => { try { return localStorage.getItem('stickIntroSeen') === '1'; } catch { return false; } };
+const markIntroSeen = () => { try { localStorage.setItem('stickIntroSeen', '1'); } catch {} };
+const ssm = (a, b, x) => { const k = Math.max(0, Math.min(1, (x - a) / (b - a))); return k * k * (3 - 2 * k); };
+const mixRGB = (c1, c2, k) => `rgb(${c1.map((v, i) => Math.round(v + (c2[i] - v) * k)).join(',')})`;
+
 function drawIntro(t) {
-  const fade = Math.min(1, t / 1.2);
+  const F = introFlags, t0 = F.t0 || 0, fade = Math.min(1, (t - t0) / 1.2), hollow = ssm(10, 12.5, t);
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH);
+  // ---- sound cues, once each
+  if (!F.toll && t > 0.4) { F.toll = true; Sound.call('toll'); }
+  if (!F.hollow && t > 10.1) { F.hollow = true; Sound.call('rumble'); sfx('boom'); }
+  if (!F.gust && t > 17.2) { F.gust = true; Sound.call('gust'); }
+  // ---- sky: dusk, then the Hollow's red night
+  const sky = ctx.createLinearGradient(0, 0, 0, VH);
+  sky.addColorStop(0, mixRGB([26, 16, 51], [10, 6, 18], hollow));
+  sky.addColorStop(0.55, mixRGB([106, 43, 85], [58, 15, 31], hollow));
+  sky.addColorStop(0.82, mixRGB([242, 153, 74], [122, 29, 18], hollow));
+  ctx.globalAlpha = fade; ctx.fillStyle = sky; ctx.fillRect(0, 0, VW, VH);
+  for (let i = 0; i < 70; i++) {
+    const sx = (i * 137) % VW, sy = (i * 71) % (VH * 0.45);
+    ctx.globalAlpha = fade * (0.15 + 0.5 * hollow + 0.2 * Math.abs(Math.sin(t * 1.6 + i))) * (sy < VH * 0.3 ? 1 : 0.5);
+    ctx.fillStyle = '#fff'; ctx.fillRect(sx, sy, 1.5, 1.5);
+  }
   ctx.globalAlpha = fade;
-  const g = ctx.createLinearGradient(0, 0, 0, VH);
-  g.addColorStop(0, '#140c28'); g.addColorStop(0.55, '#7a2f4f'); g.addColorStop(0.8, '#f08a4a');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
-  // stars
-  ctx.fillStyle = '#fff';
-  for (let i = 0; i < 60; i++) { const sx = (i * 137) % VW, sy = (i * 71) % (VH * 0.4); ctx.globalAlpha = fade * (0.3 + 0.7 * Math.abs(Math.sin(t * 2 + i))); ctx.fillRect(sx, sy, 1.5, 1.5); }
-  ctx.globalAlpha = fade;
-  // sun
-  const sunY = VH * 0.66 - Math.min(t, 5) * 6;
-  const sg = ctx.createRadialGradient(VW * 0.68, sunY, 0, VW * 0.68, sunY, 160);
-  sg.addColorStop(0, 'rgba(255,220,130,0.9)'); sg.addColorStop(0.35, 'rgba(255,170,90,0.5)'); sg.addColorStop(1, 'rgba(255,120,60,0)');
+  // ---- the sun sets, and turns into a dark ring when the Hollow opens
+  const sunX = VW * 0.7, sunY = VH * 0.5 + Math.min(t, 12) * 5;
+  const sg = ctx.createRadialGradient(sunX, sunY, 0, sunX, sunY, 190);
+  sg.addColorStop(0, `rgba(255,220,130,${0.9 * (1 - hollow)})`); sg.addColorStop(0.35, `rgba(255,170,90,${0.5 * (1 - hollow)})`); sg.addColorStop(1, 'rgba(255,120,60,0)');
   ctx.fillStyle = sg; ctx.fillRect(0, 0, VW, VH);
-  ctx.fillStyle = '#ffd98a'; ctx.beginPath(); ctx.arc(VW * 0.68, sunY, 55, 0, Math.PI * 2); ctx.fill();
-  // hills (parallax)
+  ctx.fillStyle = hollow < 0.5 ? '#ffd98a' : '#12060c'; ctx.beginPath(); ctx.arc(sunX, sunY, 54, 0, Math.PI * 2); ctx.fill();
+  if (hollow > 0) { ctx.strokeStyle = `rgba(255,70,40,${0.85 * hollow})`; ctx.lineWidth = 3 + 2 * Math.sin(t * 3); ctx.beginPath(); ctx.arc(sunX, sunY, 58, 0, Math.PI * 2); ctx.stroke(); }
+  // ---- the Hollow: a crack in the world with a pillar of pale violet light
+  const hx = VW * 0.56 - t * 6, crack = ssm(9.8, 10.7, t);
+  const ridgeFar = x => VH * 0.62 + Math.sin((x + t * 6) * 0.006) * 30 + Math.sin((x + t * 6) * 0.006 * 2.7) * 9;
+  if (crack > 0) {
+    const w = 10 + crack * 70 + Math.sin(t * 9) * 3, top = -20;
+    const bg = ctx.createLinearGradient(hx - w, 0, hx + w, 0);
+    bg.addColorStop(0, 'rgba(190,160,255,0)'); bg.addColorStop(0.5, `rgba(235,225,255,${0.85 * crack * (0.7 + 0.3 * Math.sin(t * 5))})`); bg.addColorStop(1, 'rgba(190,160,255,0)');
+    ctx.fillStyle = bg; ctx.fillRect(hx - w, top, w * 2, ridgeFar(hx) - top);
+  }
+  // ---- far hill: a village whose windows go dark one by one, and the beasts that come over it
   const hill = (base, amp, freq, col, speed) => {
     ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, VH);
     for (let x = 0; x <= VW; x += 10) ctx.lineTo(x, base + Math.sin((x + t * speed) * freq) * amp + Math.sin((x + t * speed) * freq * 2.7) * amp * 0.3);
     ctx.lineTo(VW, VH); ctx.fill();
   };
-  hill(VH * 0.62, 30, 0.006, '#3b1a3a', 8);
-  // minotaur silhouettes on the far hill
-  if (t > 1.2) {
-    ctx.fillStyle = '#1e0d1e';
-    for (let i = 0; i < 4; i++) {
-      const mx = VW * 0.72 + i * 45, my = VH * 0.62 + Math.sin((mx + t * 8) * 0.006) * 30 - 4;
-      ctx.beginPath(); ctx.ellipse(mx, my - 14, 8, 12, 0, 0, Math.PI * 2); ctx.fill();
-      ctx.beginPath(); ctx.arc(mx - 4, my - 30, 6, 0, Math.PI * 2); ctx.fill();
-      ctx.strokeStyle = '#1e0d1e'; ctx.lineWidth = 2;
-      line(mx - 8, my - 34, mx - 12, my - 42); line(mx, my - 34, mx + 4, my - 42);
+  hill(VH * 0.62, 30, 0.006, mixRGB([59, 26, 58], [28, 10, 24], hollow), 6);
+  for (let i = 0; i < 6; i++) {
+    const x = VW * 0.1 + i * 58 - t * 6 + (i > 2 ? 60 : 0), y = ridgeFar(x) + 4, w = 22 + (i % 3) * 5, h = 15 + (i % 2) * 6;
+    ctx.fillStyle = '#1a0b19'; ctx.fillRect(x, y - h, w, h);
+    ctx.beginPath(); ctx.moveTo(x - 3, y - h); ctx.lineTo(x + w / 2, y - h - 11); ctx.lineTo(x + w + 3, y - h); ctx.fill();
+    const lit = t < 12.4 + i * 0.7;                                                        // windows go out in turn
+    if (lit) { ctx.fillStyle = `rgba(255,205,110,${0.8 + 0.2 * Math.sin(t * 7 + i * 2)})`; ctx.fillRect(x + w * 0.3, y - h * 0.65, 4, 4); if (w > 26) ctx.fillRect(x + w * 0.62, y - h * 0.65, 4, 4); }
+    if (i === 1 && t < 18) { ctx.fillStyle = 'rgba(120,100,120,0.35)'; for (let k = 0; k < 4; k++) ctx.fillRect(x + w * 0.75 + Math.sin(t + k) * 3, y - h - 18 - k * 8 - (t * 6) % 8, 3, 3); }   // chimney smoke
+  }
+  // ---- eight beacons on the middle ridge, the Wardens' watch fires
+  const ridgeMid = x => VH * 0.7 + Math.sin((x + t * 14) * 0.008) * 22 + Math.sin((x + t * 14) * 0.008 * 2.7) * 6;
+  hill(VH * 0.7, 22, 0.008, mixRGB([42, 18, 44], [20, 8, 18], hollow), 14);
+  for (let i = 0; i < 8; i++) {
+    const x = 250 + i * 150 - t * 14, y = ridgeMid(x) + 2, outAt = 10.4 + i * 0.35, on = t < outAt;
+    ctx.fillStyle = '#120812'; ctx.fillRect(x - 3, y - 34, 6, 34); ctx.fillRect(x - 8, y - 38, 16, 5);
+    if (on) {
+      const fl = 0.8 + 0.2 * Math.sin(t * 11 + i * 3) * (t > outAt - 0.5 ? 2 : 1);
+      const bgl = ctx.createRadialGradient(x, y - 46, 0, x, y - 46, 46); bgl.addColorStop(0, `rgba(255,190,90,${0.75 * fl})`); bgl.addColorStop(1, 'rgba(255,120,40,0)');
+      ctx.fillStyle = bgl; ctx.fillRect(x - 50, y - 96, 100, 100);
+      ctx.fillStyle = '#ffd27a'; ctx.beginPath(); ctx.ellipse(x, y - 45, 4.5, 8 * fl, 0, 0, Math.PI * 2); ctx.fill();
+    } else if (t < outAt + 2.5) {                                                         // a last wisp of smoke
+      ctx.fillStyle = `rgba(160,150,170,${0.4 * (1 - (t - outAt) / 2.5)})`; ctx.fillRect(x - 1, y - 48 - (t - outAt) * 14, 3, 6);
     }
   }
-  hill(VH * 0.76, 18, 0.01, '#1a0c1a', 20);
-  // hero walks in
-  const hx = -40 + Math.min(1, Math.max(0, (t - 0.8) / 2.6)) * (VW * 0.36 + 40);
-  const walking = t > 0.8 && t < 3.4;
-  stickSilhouette(hx, VH * 0.76 + Math.sin((hx + t * 20) * 0.01) * 18 - 2, (hx + 40) / 1.4 * Math.PI / (2 * HERO_STRIDE), 1.4, walking);
-  ctx.globalAlpha = 1;
-  // narration
-  const say = (txt, a, b) => {
+  // beasts crest the far hill in waves, red eyes first
+  if (t > 10.6) {
+    for (let i = 0; i < 26; i++) {
+      const born = 10.6 + i * 0.28; if (t < born) continue;
+      const bx = VW * 0.56 + 40 + (i % 5) * 26 - (t - born) * 22 - i * 14, by = ridgeFar(bx) + 3 + (i % 3) * 2, sc = 0.8 + (i % 4) * 0.12;
+      const a = ssm(born, born + 0.8, t);
+      ctx.globalAlpha = a * fade; ctx.fillStyle = '#12060f';
+      ctx.beginPath(); ctx.ellipse(bx, by - 14 * sc, 8 * sc, 12 * sc, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(bx - 4 * sc, by - 30 * sc, 6 * sc, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#12060f'; ctx.lineWidth = 2; line(bx - 8 * sc, by - 34 * sc, bx - 12 * sc, by - 43 * sc); line(bx, by - 34 * sc, bx + 4 * sc, by - 43 * sc);
+      ctx.fillStyle = `rgba(255,60,50,${0.6 + 0.4 * Math.sin(t * 6 + i)})`; ctx.fillRect(bx - 7 * sc, by - 31 * sc, 2, 2); ctx.fillRect(bx - 3 * sc, by - 31 * sc, 2, 2);
+    }
+    ctx.globalAlpha = fade;
+  }
+  // ---- near ridge and the hero walking out of the ash
+  hill(VH * 0.78, 18, 0.01, '#0c050d', 22);
+  const hk = ssm(17.4, 22.6, t), hxp = -50 + hk * (VW * 0.37 + 50), walking = t > 17.4 && t < 22.6;
+  if (t > 17.2) {
+    const hy = VH * 0.78 + Math.sin((hxp + t * 22) * 0.01) * 18 + 3;
+    stickSilhouette(hxp, hy, (hxp + 50) / 1.4 * Math.PI / (2 * HERO_STRIDE), 1.5, walking);
+    ctx.strokeStyle = '#a82a2a'; ctx.lineWidth = 3; ctx.lineCap = 'round';                // the red scarf is the only colour on them
+    const sx = hxp - 6, sy = hy - 52 * 1.5 / 1.5 * 1.4;
+    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(sx - 18, sy + 3 + Math.sin(t * 9) * 3, sx - 34, sy - 2 + Math.sin(t * 8) * 6); ctx.stroke();
+  }
+  // ---- embers and ash after the Hollow
+  if (hollow > 0) {
+    for (let i = 0; i < 80; i++) {
+      const sp = 20 + (i % 7) * 9, ex = ((i * 97 + 31) % (VW + 100)) - 50 + Math.sin(t * 0.8 + i) * 22 - t * 8, ey = VH - (((i * 53) % VH) + t * sp) % (VH + 40) + 20;
+      ctx.globalAlpha = hollow * fade * (0.25 + 0.5 * ((i * 13) % 10) / 10);
+      ctx.fillStyle = i % 3 ? '#ff8a3a' : '#b9a8ff'; ctx.fillRect(((ex % VW) + VW) % VW, ey, 2, 2);
+    }
+    ctx.globalAlpha = fade;
+  }
+  // ---- the flash when the Hollow opens
+  const flash = Math.max(0, 1 - Math.abs(t - 10.2) / 0.5);
+  if (flash > 0) { ctx.fillStyle = `rgba(240,230,255,${0.85 * flash})`; ctx.fillRect(0, 0, VW, VH); }
+  // ---- vignette and cinema bars
+  const vg = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.35, VW / 2, VH / 2, VH * 0.95);
+  vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, `rgba(0,0,0,${0.45 + 0.2 * hollow})`);
+  ctx.globalAlpha = 1; ctx.fillStyle = vg; ctx.fillRect(0, 0, VW, VH);
+  const bar = VH * 0.085 * ssm(0, 1.4, t - t0); ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, bar); ctx.fillRect(0, VH - bar, VW, bar);
+  // ---- the story, typed out line by line
+  const say = (txt, a, b, y = VH * 0.2, size = 22, col = '#f4ecd8') => {
     if (t < a || t > b) return;
-    ctx.globalAlpha = Math.min(1, (t - a) * 2, (b - t) * 2);
-    ctx.fillStyle = '#fff'; ctx.font = 'italic 20px Georgia, serif'; ctx.textAlign = 'center';
-    ctx.fillText(txt, VW / 2, VH * 0.2); ctx.globalAlpha = 1;
+    const shown = txt.slice(0, Math.ceil(txt.length * Math.min(1, (t - a) / 1.5)));
+    ctx.globalAlpha = Math.min(1, (t - a) * 3, (b - t) * 2);
+    ctx.font = `italic ${size}px Georgia, serif`; ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(0,0,0,0.55)'; ctx.fillText(shown, VW / 2 + 1.5, y + 1.5);
+    ctx.fillStyle = col; ctx.fillText(shown, VW / 2, y); ctx.globalAlpha = 1;
   };
-  say('The land has fallen to monsters...', 0.6, 2.4);
-  say('One stickman stands against them.', 2.4, 3.9);
-  // slash + title
-  if (t > 4) {
-    if (!introFlags.slash) { introFlags.slash = true; sfx('slash'); setTimeout(() => sfx('boom'), 120); }
-    const p = t - 4;
+  say('Aldermere was eight kingdoms, joined by a single road.', 0.9, 5.0);
+  say('Eight Wardens kept watch over every mile of it.', 5.4, 9.4);
+  say('Then the Hollow opened beneath the road.', 10.9, 14.7, VH * 0.2, 24, '#ffd8d0');
+  say('The Wardens fell. The villages lit their lanterns, and waited.', 14.9, 17.9);
+  say('Now someone walks out of the ash.', 18.3, 22.6);
+  say('No one remembers who. Not even them.', 20.4, 22.8, VH * 0.2 + 34, 17, '#cdbfae');
+  // ---- slash and title
+  if (t > 23) {
+    if (!F.slash) { F.slash = true; sfx('slash'); setTimeout(() => sfx('boom'), 120); }
+    const p = t - 23;
     drawTitleText(Math.min(1, p * 2), 1 + Math.max(0, 0.5 - p) * 1.5);
     if (p < 0.4) { ctx.fillStyle = `rgba(255,255,255,${1 - p / 0.4})`; ctx.fillRect(0, 0, VW, VH); }
     ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, 1 - p * 1.5)})`; ctx.lineWidth = 4;
     line(VW * 0.1, VH * 0.55, VW * 0.1 + Math.min(1, p * 5) * VW * 0.8, VH * 0.25);
   }
   ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.font = '12px sans-serif'; ctx.textAlign = 'right';
-  ctx.fillText('Press any key to skip', VW - 14, VH - 12);
-  if (t > 6.8) goTitle();
+  ctx.fillText('Press any key to skip', VW - 14, VH - bar - 8);
+  if (t > 3 && !F.seen) { F.seen = true; markIntroSeen(); }
+  if (t > INTRO_LEN) goTitle();
 }
 
 function drawTitleText(a = 1, scale = 1) {
@@ -1865,14 +2155,15 @@ function renderDev() {
     ${inPlay ? `
     <h3>HERO</h3><div class="dev-grid">
       ${btn('gold100', '+100 gold')}${btn('gold1000', '+1000 gold')}${btn('savenow', 'Save now')}
-      ${btn('heal', 'Full heal')}${btn('lvl1', '+1 level')}${btn('lvl10', '+10 levels')}${btn('pts', '+10 stat points')}${btn('kill', 'Kill hero')}</div>
+      ${btn('heal', 'Full heal')}${btn('lvl1', '+1 level')}${btn('lvl10', '+10 levels')}${btn('pts', '+10 stat points')}${btn('maxlvl', 'Max level')}${btn('rebirth', '+1 rebirth (keeps all)')}${btn('kill', 'Kill hero')}</div>
     <h3>GEAR</h3><div class="dev-grid">
       ${RARITIES.map((r, i) => `<button data-dev="gear" data-t="${i}" style="border-color:${r.color}">${r.name}</button>`).join('')}${btn('fillpack', 'Fill backpack')}${btn('clearpack', 'Clear backpack')}</div>
     <h3>WAVES</h3><div class="dev-grid">
       ${btn('clear', 'Kill all enemies')}${btn('next', 'Skip wave')}
       <input type="text" id="devWave" value="${wave + 1}"> ${btn('goto', 'Go to wave')}</div>
     <h3>SPAWN</h3><div class="dev-grid">
-      ${Object.keys(TYPES).map(t => btn('spawn', t, `data-t="${t}"`)).join('')}${btn('boss', 'BOSS')}
+      ${Object.keys(TYPES).map(t => btn('spawn', t, `data-t="${t}"`)).join('')}${btn('spawn', 'ELITE', 'data-t="elite"')}${MUT_KEYS.map(k => btn('spawn', 'mut: ' + k, `data-t="mut:${k}"`)).join('')}${btn('boss', 'BOSS (this biome)')}
+      ${Object.keys(BOSSES).map(k => btn('boss', BOSSES[k].names[0], `data-t="${k}"`)).join('')}
       ${Object.keys(DROPS).map(d => btn('drop', 'drop: ' + d, `data-t="${d}"`)).join('')}</div>
     <h3>WORLD</h3><div class="dev-grid">
       ${BIOMES.map((b, i) => btn('biome', b.name, `data-t="${i}"`)).join('')}${btn('biome', 'Random biome', 'data-t="rand"')}${btn('camp', 'Play campfire scene')}${btn('village', 'Visit the village')}</div>
@@ -1899,6 +2190,8 @@ document.getElementById('devBody').addEventListener('click', e => {
     for (let i = 0; i < n; i++) gainXp(hero.xpNext - hero.xp, hero);
   }
   if (act === 'pts') hero.points += 10;
+  if (act === 'maxlvl') { while (hero.level < levelCap()) gainXp(hero.xpNext, hero); hero.xp = 0; }
+  if (act === 'rebirth') { hero.rebirth = rebirths() + 1; applyRebirthPerks(); recalcGear(); }
   if (act === 'gear') { const it = rollItem({ rarity: +t, level: hero.level }); if (!addToBag(it)) dropGear(it, hero.x + 60, hero.y); }
   if (act === 'fillpack') while (hero.inv.length < INV_MAX) hero.inv.push(rollItem({ tier: depthOf(), level: hero.level }));
   if (act === 'clearpack') hero.inv = [];
@@ -1909,12 +2202,16 @@ document.getElementById('devBody').addEventListener('click', e => {
   if (act === 'clear') { for (const m of enemies) m.hp = 0; spawnQueue = []; updateEnemies(0); }
   if (act === 'next' || act === 'goto') {
     const target = act === 'goto' ? Math.max(1, parseInt(document.getElementById('devWave').value) || 1) : wave + 1;
-    enemies = []; spawnQueue = []; boss = null; projectiles = []; shockwaves = [];
+    enemies = []; spawnQueue = []; boss = null; projectiles = []; shockwaves = []; clearHazards();
     wave = target - 1; waveTimer = 0.2;
     if (Sound.current === 'boss') Sound.music(BIOMES[zone % BIOMES.length].music);
   }
-  if (act === 'spawn') spawnEnemy(t, near(), { spawnT: 0.3 });
-  if (act === 'boss') { const w = wave; wave = Math.max(WAVES_PER_SET, wave); spawnBoss(); wave = w; }
+  if (act === 'spawn') {
+    if (t === 'elite') { const m = spawnEnemy(['goblin', 'minotaur', 'archer'][Math.floor(Math.random() * 3)], near(), { variant: 'elite', spawnT: 0.3 }); popups.push({ text: `Elite: ${m.name}`, x: VW / 2, y: 170, t: 1.8, screen: true, small: true, color: '#ffd24a' }); }
+    else if (t.startsWith('mut:')) { const m = spawnEnemy('goblin', near(), { variant: 'plain', spawnT: 0.3 }); applyMutation(m, t.slice(4)); }
+    else spawnEnemy(t, near(), { spawnT: 0.3 });
+  }
+  if (act === 'boss') { const w = wave; wave = Math.max(WAVES_PER_SET, wave); spawnBoss(t); wave = w; }
   if (act === 'drop') dropItem(t, hero.x + hero.facing * 50, hero.y - 20);
   if (act === 'biome') { const z = t === 'rand' ? randomBiome() : +t; setBiome(z); Sound.music(BIOMES[z].music); }
   if (act === 'time') tod = +t;
@@ -1928,8 +2225,9 @@ function drawHitboxes() {
   ctx.save(); ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(255,60,60,0.9)';
   for (const m of enemies) { ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 12, 0, Math.PI * 2); ctx.stroke(); }    // contact damage
-  ctx.strokeStyle = 'rgba(80,200,255,0.9)';                                                                  // sword reach
-  ctx.beginPath(); ctx.arc(hero.x, hero.y, hero.sword.range, hero.facing > 0 ? -Math.PI / 2 : Math.PI / 2, hero.facing > 0 ? Math.PI / 2 : Math.PI * 1.5); ctx.stroke();
+  for (const m of enemies) { ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,160,60,0.8)'; ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 20, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }   // within this of the hero's feet a swing always lands
+  ctx.strokeStyle = 'rgba(80,200,255,0.9)';                                                                  // sword reach: the arc in front, from just behind the shoulder
+  { const a0 = hero.facing > 0 ? -Math.PI / 2 : Math.PI / 2, a1 = hero.facing > 0 ? Math.PI / 2 : Math.PI * 1.5, back = Math.asin(10 / hero.sword.range) * hero.facing; ctx.beginPath(); ctx.arc(hero.x, hero.y, hero.sword.range, a0 - back, a1 + back); ctx.stroke(); }
   ctx.strokeStyle = 'rgba(255,255,255,0.8)';                                                                 // arrow hurtbox
   ctx.beginPath(); ctx.arc(hero.x, hero.y - 35, 18, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = 'rgba(255,220,80,0.8)';                                                                  // pickup radius
@@ -1946,6 +2244,7 @@ function startCamp(z) {
   state = 'camp';
   for (const k in keys) keys[k] = false;
   hero.hp = hero.maxHp; hero.stamina = maxStamina();      // a night's rest
+  clearPoison(); clearHazards(); hero.chillT = 0;
   Sound.music('camp');
   Sound.setScene({ biome: 'camp', night: true, wind: 0.03, rain: 0, pitch: 450 });
 }
@@ -1957,7 +2256,7 @@ function updateCamp(dt) {
     tod = camp.plan.endTod; dayCount = camp.plan.endDay;        // morning has come (before the biome rolls its weather)
     setBiome(camp.zone, false);
     hero.x = WW / 2; hero.y = WH / 2; cam.x = hero.x - VW / 2; cam.y = hero.y - VH / 2;
-    drops = []; projectiles = []; shockwaves = []; particles = []; corpses = [];
+    drops = []; projectiles = []; shockwaves = []; particles = []; corpses = []; clearHazards(); clearPoison();
   }
   camp.crackleT -= dt;
   if (camp.crackleT <= 0) { camp.crackleT = 0.08 + Math.random() * 0.35; sfx('crackle'); }
@@ -1971,12 +2270,10 @@ function endCamp() {
   state = 'play';
   const B = BIOMES[camp.zone % BIOMES.length];
   popups.push({ text: `— ${B.name} —`, x: VW / 2, y: 190, t: 3, big: true, screen: true, color: '#fff' });
-  popups.push({ text: 'Rested: HP & stamina restored', x: VW / 2, y: 225, t: 3, screen: true, small: true, color: '#9f9' });
   popups.push({ text: `Monsters grow stronger (tier ${tierOf(wave)})`, x: VW / 2, y: 250, t: 3, screen: true, small: true, color: '#fb8' });
   saveGame(true);                       // campfires are save points (gold is banked here)
   Sound.music(B.music);
   camp = null;
-  acc = 0;
 }
 
 function drawCamp(t) {
@@ -2068,7 +2365,7 @@ function drawCamp(t) {
 }
 
 // --- Frame ---
-function render(alpha) {
+function render() {
   const S = canvas.width / VW;
   ctx.setTransform(S, 0, 0, S, 0, 0);
   ctx.imageSmoothingEnabled = settings.quality !== 'low';
@@ -2078,15 +2375,6 @@ function render(alpha) {
   if (state === 'camp') return drawCamp(campT);
   if (state === 'village') return drawVillage();
 
-  // interpolate positions between the last two simulation steps (frame generation)
-  const lerped = [];
-  if (alpha < 1) {
-    for (const e of [hero, cam, ...enemies, ...projectiles, ...particles]) {
-      if (e.px === undefined) continue;
-      lerped.push([e, e.x, e.y]);
-      e.x = e.px + (e.x - e.px) * alpha; e.y = e.py + (e.y - e.py) * alpha;
-    }
-  }
   const sh = cam.shake;
   ctx.save();
   ctx.translate(-cam.x + Math.sin(tAnim * 47) * sh * 0.5, -cam.y + Math.cos(tAnim * 41) * sh * 0.5);
@@ -2103,7 +2391,6 @@ function render(alpha) {
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   }
   drawSky();
-  for (const [e, x, y] of lerped) { e.x = x; e.y = y; }   // after drawSky: the light circle must follow the interpolated hero
   if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, flash)})`; ctx.fillRect(0, 0, VW, VH); }
   drawHUD();
   drawPopups(true);
@@ -2123,20 +2410,28 @@ function render(alpha) {
     ctx.fillText('R: reload your last save   ·   Esc: menu', VW / 2, VH / 2 + 92);
     ctx.globalAlpha = 1;
   }
+  if (rebirthFx) drawRebirthFx();
 }
 
-function snapshot() {
-  for (const e of [hero, cam, ...enemies, ...projectiles, ...particles]) { e.px = e.x; e.py = e.y; }
-}
 
-// Frame pacing: FPS cap + optional frame generation (fixed-step sim, interpolated frames).
+// Frame pacing: the FPS cap.
 // The cap snaps to a whole divisor of the monitor's refresh rate (144 Hz + "60" -> 72 FPS): an uneven
 // cap shows some frames for 2 refreshes and others for 3, which is what makes motion stutter.
-let last = performance.now(), acc = 0, fpsShown = 0, fpsFrames = 0, fpsTime = 0;
+let last = performance.now(), fpsShown = 0, fpsFrames = 0, fpsTime = 0;
 let refreshMs = 1000 / 60, prevRaf = 0, crash = null;
 const rafSamples = [];
 function frameInterval() {
   return settings.fps ? 1000 / settings.fps : 0;     // exact: 120 means 120, not a refresh-rate divisor
+}
+
+// the key bar at the bottom: hidden on the title screens, and the weapon swap only shows once the spare slot is unlocked
+const helpEl = document.getElementById('help'), helpBase = helpEl.innerHTML;
+let helpKey = '';
+function updateHelp() {
+  const hide = state === 'splash' || state === 'intro' || state === 'title', swap = !hide && hero && slotOpen('weapon2'), key = hide + ':' + swap;
+  if (key === helpKey) return; helpKey = key;
+  helpEl.style.visibility = hide ? 'hidden' : 'visible';
+  helpEl.innerHTML = swap ? helpBase.replace('<b>M</b>', '<b>X</b>swap weapon<b>M</b>') : helpBase;
 }
 
 function loop(now) {
@@ -2146,6 +2441,7 @@ function loop(now) {
     if (rafSamples.length >= 90) { rafSamples.sort((a, b) => a - b); refreshMs = rafSamples[45]; rafSamples.length = 0; }
   }
   prevRaf = now;
+  updateHelp();
   const interval = frameInterval(), elapsed = now - last;
   if (interval && elapsed < interval - 0.6) return;
   // keep the average exact without drifting if a frame runs long
@@ -2153,23 +2449,15 @@ function loop(now) {
   const dt = Math.min(0.1, elapsed / 1000);
 
   try {
-    let alpha = 1;
     if (state === 'intro') introT += dt;
     if (state === 'title') tAnim += dt;
     if (state === 'camp') updateCamp(dt);
     if (state === 'village' && !paused) updateVillage(Math.min(0.05, dt));
-    if (state === 'play' && !paused) {
-      if (genFactor() <= 1) { update(Math.min(0.05, dt)); acc = 0; }
-      else {
-        const step = 1 / simHz();
-        acc += dt;
-        let n = 0;
-        while (acc >= step && n < 6) { snapshot(); update(step); acc -= step; n++; }
-        if (n === 6) acc = 0;
-        alpha = acc / step;
-      }
+    if (rebirthFx) updateRebirthFx(dt);
+    if (state === 'play' && !paused && !rebirthFx) {
+      update(Math.min(0.05, dt));
     }
-    render(alpha);
+    render();
     crash = null;
   } catch (e) {
     // never freeze on a bug: log it once, show it, keep the loop alive
@@ -2185,10 +2473,10 @@ function loop(now) {
   if (settings.showFps) {
     const S = canvas.width / VW;
     ctx.setTransform(S, 0, 0, S, 0, 0);
-    const label = genFactor() > 1 ? ` · ${genFactor()}× gen (sim ${Math.round(simHz())})` : '';
-    ctx.fillStyle = 'rgba(0,0,0,0.6)'; ctx.fillRect(VW - 210, 56, 200, 24);
-    ctx.fillStyle = '#7f7'; ctx.font = '13px monospace'; ctx.textAlign = 'right';
-    ctx.fillText(`${fpsShown} FPS${label} · ${Math.round(1000 / refreshMs)} Hz`, VW - 16, 73);
+    const txt = `${fpsShown} FPS · ${Math.round(1000 / refreshMs)} Hz`;       // bottom right, above the minimap: nothing else lives there
+    ctx.font = '12px monospace'; const w = ctx.measureText(txt).width + 16;
+    hudPanel(VW - 14 - w, VH - 152, w, 24, { r: 8 });
+    ctx.fillStyle = '#7f7'; ctx.textAlign = 'center'; ctx.fillText(txt, VW - 14 - w / 2, VH - 135);
   }
   if (postActive) PostFX.present(canvas, {
     fx: gfx.post, sharp: settings.sharpness / 100, outW: outRes.w, outH: outRes.h,

@@ -37,7 +37,9 @@ if (SELFTEST && !process.env.STICKRPG_PORTABLE) {                // tests never 
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
 app.commandLine.appendSwitch('ignore-gpu-blocklist');
 app.commandLine.appendSwitch('enable-gpu-rasterization');
-app.commandLine.appendSwitch('force_high_performance_gpu');     // on laptops with two GPUs, use the discrete (NVIDIA / AMD) one
+app.commandLine.appendSwitch('force_high_performance_gpu');
+// benchmarking only: draw as fast as the GPU can instead of waiting for the screen (node build/fps.js)
+if (process.env.STICKRPG_UNCAPPED) { app.commandLine.appendSwitch('disable-frame-rate-limit'); app.commandLine.appendSwitch('disable-gpu-vsync'); }     // on laptops with two GPUs, use the discrete (NVIDIA / AMD) one
 
 const SAVE_DIR = () => SAVES_ROOT;
 const STATE_FILE = () => path.join(app.getPath('userData'), 'window-state.json');
@@ -129,6 +131,7 @@ ${fs.readFileSync(process.env.STICKRPG_TESTSCRIPT, 'utf8')}
     }
     if (process.env.STICKRPG_TESTPHASE === 'shots') {            // screenshots of set-up scenes into STICKRPG_SHOTS_DIR (to look at the game for real)
       const dir = process.env.STICKRPG_SHOTS_DIR || os.tmpdir();
+      if (process.env.STICKRPG_SHOTS_SIZE) { const [w, h] = process.env.STICKRPG_SHOTS_SIZE.split('x').map(Number); win.setContentSize(w, h); await wait(400); }
       fs.mkdirSync(dir, { recursive: true });
       await run(`advanceIntro(); advanceIntro(); localStorage.clear(); newRun('Shots', 'normal', 1); settings.quality = 'high'; settings.comfort = false; applySettings(); dev.freezeTime = true; dev.god = true;`);
       const scenes = JSON.parse(process.env.STICKRPG_SCENES || '[]');

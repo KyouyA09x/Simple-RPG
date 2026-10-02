@@ -93,30 +93,28 @@ function visibilityClearRadius() {
 }
 
 // Draws the obscuring layers in screen space (called from drawSky, after the world, before the HUD).
-function drawVision() {
-  computeVision();
+function drawVision(c = ctx) {
   if (!visLayers.length) return;
   const cx = hero.x - cam.x, cy = hero.y - cam.y - 28;
   for (const L of visLayers) {
     const [r, g, b] = L.c;
-    const grad = ctx.createRadialGradient(cx, cy, L.r, cx, cy, L.r + L.fade);
+    const grad = c.createRadialGradient(cx, cy, L.r, cx, cy, L.r + L.fade);
     grad.addColorStop(0, `rgba(${r},${g},${b},0)`);
     grad.addColorStop(0.3, `rgba(${r},${g},${b},${L.d * 0.12})`);
     grad.addColorStop(0.6, `rgba(${r},${g},${b},${L.d * 0.55})`);
     grad.addColorStop(1, `rgba(${r},${g},${b},${L.d})`);
-    ctx.fillStyle = grad;
-    ctx.fillRect(0, 0, VW, VH);
+    c.fillStyle = grad;
+    c.fillRect(0, 0, VW, VH);
   }
   // fear: the whole picture dims and cools even inside the light, and the corners close in and out like slow breathing
   const sev = visibilitySeverity();
   if (sev > 0.3) {
-    ctx.fillStyle = `rgba(4,8,20,${0.11 * sev})`; ctx.fillRect(0, 0, VW, VH);
+    c.fillStyle = `rgba(4,8,20,${0.11 * sev})`; c.fillRect(0, 0, VW, VH);
     const pulse = settings.comfort ? 0.5 : 0.5 + 0.5 * Math.sin(tAnim * 1.3);
-    const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.32, VW / 2, VH / 2, VH * 0.95);
+    const g = c.createRadialGradient(VW / 2, VH / 2, VH * 0.32, VW / 2, VH / 2, VH * 0.95);
     g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${(0.3 + 0.1 * pulse) * sev})`);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+    c.fillStyle = g; c.fillRect(0, 0, VW, VH);
   }
-  drawDarkEyes();
 }
 
 // Pairs of eyes glint out in the dark beyond the light, watch for a moment and vanish if you step toward them.

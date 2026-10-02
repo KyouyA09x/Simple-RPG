@@ -26,34 +26,73 @@ const LAMPS = [null,
   { name: "Hunter's Lantern", bonus: 80,  cost: 420 },
   { name: 'Radiant Lantern',  bonus: 130, cost: 1000 },
 ];
-const POTION_HEAL = 0.45, POTION_MAX = 5;
+const POTION_HEAL = 0.45, POTION_MAX = 15;                  // up to 15 of each kind
+// Potions come in kinds. Q drinks the one you have selected, R switches. Add a kind here (and what it does in drinkPotion) to add a potion.
+const POTIONS = {
+  heal: { name: 'Healing Potion', short: 'Heal', color: '#d9534f', field: 'potions' },
+  cure: { name: 'Cure-All Potion', short: 'Cure', color: '#4fd69c', field: 'cures' },
+};
+const POTION_KEYS = Object.keys(POTIONS);
+const potionCount = k => (hero && hero[POTIONS[k].field]) | 0;
 const potionCost = () => Math.round(22 + wave * 2.2);
+const cureCost = () => Math.round(30 + wave * 2.8);
+// every harmful effect on the hero that a Cure-All removes. New ailments (bleed, burn, weakness...) go here.
+const hasAilment = () => !!(hero.poison || hero.chillT > 0);
+function cureAilments() { clearPoison(); hero.chillT = 0; }
 function applyLamp() { hero.lightBonus = (LAMPS[hero.lamp | 0] || { bonus: 0 }).bonus; }
 
+function potionSay(text, color) { popups.push({ text, x: VW / 2, y: VH - 112, t: 1.4, screen: true, small: true, color }); }
+function switchPotion() {
+  if (!hero || hero.dead || paused || (state !== 'play' && state !== 'village')) return;
+  const prev = hero.potionSel;
+  hero.potionSel = POTION_KEYS[(POTION_KEYS.indexOf(hero.potionSel) + 1) % POTION_KEYS.length];
+  const P = POTIONS[hero.potionSel];
+  hero.potionAnim = { from: prev, to: hero.potionSel, t0: tAnim };
+  sfx('switch'); potionSay(`${P.name}: ${potionCount(hero.potionSel)}`, P.color);
+}
 function drinkPotion() {
   if (!hero || hero.dead || paused || (state !== 'play' && state !== 'village')) return;
-  const say = (text, color) => popups.push({ text, x: VW / 2, y: VH - 96, t: 1.4, screen: true, small: true, color });
-  if ((hero.potions | 0) <= 0) { say('No potions left', '#f88'); sfx('tired'); return; }
-  if (hero.hp >= hero.maxHp) { say('Already at full health', '#ccc'); return; }
+  const kind = POTIONS[hero.potionSel] ? hero.potionSel : 'heal', P = POTIONS[kind];
+  if (potionCount(kind) <= 0) { potionSay(`No ${P.name}s left`, '#f88'); sfx('tired'); return; }
+  if (kind === 'heal' && hero.hp >= hero.maxHp) { potionSay('Already at full health', '#ccc'); return; }
+  if (kind === 'cure' && !hasAilment()) { potionSay('Nothing to cure', '#ccc'); return; }
   if ((hero.potionCd || 0) > 0) return;
-  hero.potions--; hero.potionCd = 1;
-  const heal = Math.round(hero.maxHp * POTION_HEAL);
-  hero.hp = Math.min(hero.maxHp, hero.hp + heal);
-  hero.hpRegenT = Math.max(hero.hpRegenT || 0, 0);
-  sfx('potion'); say(`+${heal} HP`, '#7fd08a');
-  if (state === 'play') burst(hero.x, hero.y - 30, '#7fd08a', 14, 90, 3, -30, true);
+  hero[P.field]--; hero.potionCd = 1;
+  if (kind === 'heal') {
+    const heal = Math.round(hero.maxHp * POTION_HEAL);
+    hero.hp = Math.min(hero.maxHp, hero.hp + heal);
+    potionSay(`+${heal} HP`, '#7fd08a');
+  } else { cureAilments(); potionSay('Cured!', P.color); }
+  sfx('potion');
+  if (state === 'play') burst(hero.x, hero.y - 30, P.color, 14, 90, 3, -30, true);
 }
 
-function drawPotionHud(x, y) {
-  const n = hero.potions | 0, lamp = LAMPS[hero.lamp | 0];
-  ctx.save(); ctx.translate(x, y);
-  ctx.fillStyle = n ? '#d9534f' : '#3c3a46'; ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(-2, -7); ctx.lineTo(2, -7); ctx.lineTo(2, -3); ctx.lineTo(6, 4); ctx.lineTo(-6, 4); ctx.lineTo(-2, -3); ctx.closePath(); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#c9c7d6'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(`${n}/${POTION_MAX}`, 12, 4);
-  ctx.fillStyle = '#6a6a7c'; ctx.font = '10px "Segoe UI", sans-serif'; ctx.fillText('Q to drink', 46, 4);
-  if (lamp) { ctx.fillStyle = '#ffd88a'; ctx.textAlign = 'right'; ctx.fillText(lamp.name, 246, 4); }
+// One potion slot beside the health bar. Switching slides the old bottle out and the new one in (and spins them a little), instead of showing both.
+function drawFlask(kind, cx, cy, alpha, scale, rot, empty) {
+  const P = POTIONS[kind];
+  ctx.save(); ctx.translate(cx, cy); ctx.rotate(rot); ctx.scale(scale, scale); ctx.globalAlpha *= alpha;
+  ctx.fillStyle = empty ? '#3c3a46' : P.color; ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.2;
+  ctx.beginPath(); ctx.moveTo(-3, -11); ctx.lineTo(3, -11); ctx.lineTo(3, -5); ctx.lineTo(10, 8); ctx.quadraticCurveTo(10, 11, 7, 11); ctx.lineTo(-7, 11); ctx.quadraticCurveTo(-10, 11, -10, 8); ctx.lineTo(-3, -5); ctx.closePath(); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.35)'; ctx.beginPath(); ctx.moveTo(-5, 6); ctx.lineTo(-2, -1); ctx.lineTo(-1, 6); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#d8cdb0'; ctx.fillRect(-3.5, -14, 7, 4);                                    // the cork
   ctx.restore();
+}
+function drawPotionSlot(x, cy) {
+  const w = 40, h = 40, y = cy - h / 2, sel = POTIONS[hero.potionSel] ? hero.potionSel : 'heal', P = POTIONS[sel], n = potionCount(sel);
+  hudPanel(x, y, w, h, { r: 12, edge: withAlpha(P.color, 0.6) });
+  const an = hero.potionAnim, k = an ? clamp01((tAnim - an.t0) / 0.32) : 1, mid = x + w / 2, my = cy - 1;
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 10.5); ctx.clip();
+  if (gfx.glow) { const gr = ctx.createRadialGradient(mid, my, 2, mid, my, 24); gr.addColorStop(0, withAlpha(P.color, n ? 0.28 : 0.08)); gr.addColorStop(1, withAlpha(P.color, 0)); ctx.fillStyle = gr; ctx.fillRect(x, y, w, h); }
+  if (an && k < 1) {
+    const e = 1 - Math.pow(1 - k, 3);
+    drawFlask(an.from, mid, my - e * 26, 1 - e, 1 - e * 0.35, -e * 0.9, potionCount(an.from) <= 0);
+    drawFlask(an.to, mid, my + (1 - e) * 26, e, 0.65 + e * 0.35, (1 - e) * 0.9, n <= 0);
+  } else drawFlask(sel, mid, my, 1, 1, 0, n <= 0);
+  ctx.restore();
+  ctx.textAlign = 'right'; const t = fitText(String(n), 26, 11, true, 8);
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(t, x + w - 5, y + h - 5); ctx.fillStyle = n ? '#fff' : '#f88'; ctx.fillText(t, x + w - 5, y + h - 5);
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `bold 8px ${UI_FONT}`; ctx.fillText('Q', x + 5, y + 10);
+  ctx.textAlign = 'center'; ctx.fillStyle = '#7d7b92'; ctx.font = `8.5px ${UI_FONT}`; ctx.fillText('R switch', mid, y + h + 10); ctx.textAlign = 'left';
 }
 
 // Stat reset (innkeeper): pay gold to take back every spent stat point and spend them again.
@@ -64,16 +103,17 @@ function respecStats() {
   if (n <= 0 || hero.gold < cost) return false;
   hero.gold -= cost; hero.goldPulse = 0.6;
   hero.points += n;
-  hero.maxHp = Math.max(1, hero.maxHp - 20 * (hero.stats.hp | 0));        // Vitality is the only thing that raised max HP
+  hero.maxHp = Math.max(1, hero.maxHp - VIT_HP * (hero.stats.hp | 0));        // Vitality is the only thing that raised max HP
   hero.stats = newStats();
+  syncRebirthHp();
   hero.hp = Math.min(hero.hp, hero.maxHp); hero.stamina = Math.min(hero.stamina, maxStamina());
   saveGame(true, true);
   return true;
 }
 
 // ---------------------------------------------------------------- collision (circle vs rectangles and circles)
-function vilOverlaps(v, x, y, r, eps = 0.6) {
-  for (const s of v.solids) {
+function vilOverlaps(v, x, y, r, eps = 0.6, hero = false) {
+  for (const s of (hero && v.solidsH) || v.solids) {
     if (s.r !== undefined) { if (Math.hypot(x - s.x, y - s.y) < s.r + r - eps) return true; }
     else { const cx = Math.max(s.x0, Math.min(x, s.x1)), cy = Math.max(s.y0, Math.min(y, s.y1)); if (Math.hypot(x - cx, y - cy) < r - eps) return true; }
   }
@@ -81,9 +121,10 @@ function vilOverlaps(v, x, y, r, eps = 0.6) {
 }
 // Moves a circle (radius r) out of every solid. (ox, oy) is where it was before the move: if the push-out can't
 // find a free spot (a tight pocket between obstacles) the old, known-good position is kept instead.
-function vilCollide(v, x, y, r, ox, oy) {
+function vilCollide(v, x, y, r, ox, oy, hero = false) {
+  const solids = (hero && v.solidsH) || v.solids;
   for (let it = 0; it < 6; it++) {
-    for (const s of v.solids) {
+    for (const s of solids) {
       if (s.r !== undefined) {
         const dx = x - s.x, dy = y - s.y, d = Math.hypot(dx, dy), m = s.r + r;
         if (d < m) { if (d < 0.001) x += m; else { x = s.x + dx / d * m; y = s.y + dy / d * m; } }
@@ -101,7 +142,7 @@ function vilCollide(v, x, y, r, ox, oy) {
     }
   }
   x = Math.max(24, Math.min(VIL_W - 24, x)); y = Math.max(112, Math.min(VIL_H - 24, y));
-  if (ox !== undefined && vilOverlaps(v, x, y, r) && !vilOverlaps(v, ox, oy, r)) return { x: ox, y: oy };
+  if (ox !== undefined && vilOverlaps(v, x, y, r, 0.6, hero) && !vilOverlaps(v, ox, oy, r, 0.6, hero)) return { x: ox, y: oy };
   return { x, y };
 }
 
@@ -123,8 +164,8 @@ function buildVillage() {
   const seed = (Math.random() * 1e9) | 0, r = mulberry(seed);
   const E = r() < 0.5 ? 1 : -1;                          // the gate is on the east (1) or west (-1) side; you arrive from the other
   const v = {
-    B, st, seed, E, name: st.name, t: 0, fade: 1, leaveT: 0, solids: [], statics: [], buildings: [], b: {}, npcs: [], animals: [], hens: [],
-    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 2 + Math.floor(Math.random() * 4) },
+    B, st, seed, E, name: st.name, t: 0, fade: 1, leaveT: 0, solids: [], hsolids: [], statics: [], buildings: [], b: {}, npcs: [], animals: [], hens: [],
+    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 3 + Math.floor(Math.random() * 5), cure: 2 + Math.floor(Math.random() * 3) },
     near: null, talk: null, shop: null, kidMode: 'ball', kidT: 25, tag: { it: 0, imm: 0 }, kickCd: 0, chaseT: 0, chaser: null, lastKicker: null,
     stats: { stuck: 0, snaps: 0 }, smokeT: 0, soundT: 0, doneLeave: false,
   };
@@ -159,6 +200,7 @@ function buildVillage() {
   const counter = (b, w, kind, awn) => {
     const p = { x: b.x, y: b.y + 58, w, kind, awn };
     add(p.y, () => VPROP.counter(p)); rect(p.x - w / 2, p.y - 14, p.x + w / 2, p.y + 4);
+    v.hsolids.push({ x0: p.x - w / 2 - 20, y0: b.y + 2, x1: p.x - w / 2, y1: p.y + 4 }, { x0: p.x + w / 2, y0: b.y + 2, x1: p.x + w / 2 + 20, y1: p.y + 4 });   // the shopkeeper's side of the counter is closed to you
   };
   counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b'); counter(armoury, 120, 'armour', '#2f6aa8'); counter(jewel, 100, 'jewel', '#2f8a6a');
   const barrel = (x, y, o = {}) => { prop('barrel', x, y, o); circle(x, y - 4, 11); };
@@ -191,6 +233,20 @@ function buildVillage() {
   const wx = E > 0 ? 150 : VIL_W - 150;
   prop('welcome', wx, 502, { text: st.name }); circle(wx, 500, 5);
   v.arrive = { x: E > 0 ? 112 : VIL_W - 112, y: VIL_ROAD + 4 };
+
+  // ---- the Shrine of Return (rebirth): north of the plaza, clear of the shop doors and the furniture ----
+  {
+    const avoid = [...doors.map(d => [d, 84]), [benchA.x, 90], [benchB.x, 90], [board.x, 90], [plaza.x, 66], [gate.x, 150]];
+    let sx = null;
+    for (let dx = 0; dx <= 760 && sx === null; dx += 10) for (const sg of [1, -1]) {
+      const x = plaza.x + sg * dx;
+      if (x < 190 || x > VIL_W - 190 || avoid.some(([a, m]) => Math.abs(x - a) < m)) continue;
+      sx = x; break;
+    }
+    if (sx === null) sx = plaza.x + (sA > 0 ? -330 : 330);
+    v.shrine = prop('shrine', sx, 462, { glow: 0 }); rect(sx - 34, 462 - 18, sx + 34, 462 + 2);
+    keep(sx - 80, 380, sx + 80, 500);
+  }
 
   // ---- the yards south of the road, in a random order ----
   const YARDS = {
@@ -284,6 +340,7 @@ function buildVillage() {
   v.ball = { x: (v.lawn.x0 + v.lawn.x1) / 2, y: 680, vx: 0, vy: 0, z: 0 };
   v.lawnC = { x: (v.lawn.x0 + v.lawn.x1) / 2, y: (v.lawn.y0 + v.lawn.y1) / 2 };
   makeStock(v);
+  v.solidsH = v.solids.concat(v.hsolids);
   return v;
 }
 
@@ -342,6 +399,22 @@ function bakeVillageGround(v) {
 
 
 // ---------------------------------------------------------------- the people
+// more for everyone to say (the first lines live with each person below); {biome} {village} {name} {wave} {tier} are filled in when they speak
+const MORE_LINES = {
+  mira: ['Three drops of this and you will feel ten years younger. Four and you will feel nothing at all.', 'Do not shake the bottles. Do not drop the bottles. Do not look at the green bottle.', 'Every set of ten waves, the herbs grow stranger. {biome} herbs are the strangest yet.'],
+  tobin: ['Rope, lanterns, rations... and one slightly used boot. Do not ask.', 'Business is good for a village on the edge of a beast road.', 'I would give you a discount, {name}, but I would then be out of business.'],
+  hilda: ['The beds are clean, the soup is hot, and there is nothing on my shelf that bites. Mostly.', 'You are welcome to stay as long as you like. The innkeeper in me says so. The one who pays the bills is quieter.', 'Folk come through {village} all the time. Few come back with that look in their eye.'],
+  brann: ['Iron remembers every blow. So should you.', 'A hero with bad gear is just a short story.', 'Hm. You swing like someone who has been hit a lot. Good. That is how you learn.', 'Spare gear? Bring it. Honest coin for honest steel.'],
+  dagna: ['Plate is heavy. Dead is heavier.', 'I make armour that fits a fighter, not a statue. Move around in it first.', 'Helm, mail, boots... in that order of importance. Do not let anyone tell you different.', 'I once sold a helm to a hero who swore he did not need one. He bought three more.'],
+  lysa: ['Gold finds gold, they say. A good ring helps it along.', 'Stones are honest. It is the people who carry them who lie.', 'That one? Cut by a dwarf who talked to it the whole time. I think it listened.', 'Do not lick the gems. Someone always tries.'],
+  pim: ['My grandfather planted these beds. His grandfather planted the well, I swear.', 'You can tell a good soil by its smell. This one smells like a promise.', 'Every flower out here has a name. Daisy, Rose, and Gerald. Gerald is a cabbage.', 'Weeds are just plants nobody asked for. I do not hold it against them. Much.'],
+  rurik: ['An axe, a stump and a quiet morning. What more could a man ask?', 'Oak splits clean. Elm fights back. Pine just smells nice and complains.', 'I cut one tree for every ten I plant. At least, that was the idea.', 'The wood pile does not stack itself, though the kids keep trying to help.'],
+  orla: ['I knit a scarf for the hero every winter. None of them have ever come back to collect it.', 'In my day the road had a toll. Now it has a beast. I preferred the toll.', 'Sit, dear. The best stories take a while, and so does the tea.', 'That dog is smarter than the mayor. Do not tell the mayor.'],
+  voss: ['Orders are simple. Nobody comes in with a weapon drawn. Nobody goes out unprepared. That includes you.', 'Quiet night, quiet morning. I like it that way. The beast on the road does not.', 'I have stood this gate for eleven winters. Nothing has got past me. Yet.', 'Rest, buy what you need, and leave on your own terms. The road waits.'],
+  pip: ['I can do forty keepy-ups! ...Three. I can do three.', 'Nell cheats at tag. She says she does not. She does.', 'Do you have a sword? A real one? Can I hold it? ...No? Okay.', 'Tam says the dog can talk. Tam is nine and lies a lot.'],
+  nell: ['One day I will fight monsters too. I will be much better than Pip.', 'Granny Orla says I may have her old stick. It is very long.', 'If you see my ball, it is red. If you see Pip, it is probably his fault.', 'We play until the lamps come on. Then Mum shouts.'],
+  tam: ['The ball went into the hay again. Pip says he did not kick it. He did.', 'Do you think the beast is scared of us? I would be scared of us.', 'My dad says you are very brave. My mum says you are very late for dinner.', 'I am the fastest in the village. ...After Nell.'],
+};
 function makeNpcs(v) {
   const night = night01() > 0.55;
   const mk = (id, name, role, x, y, o) => {
@@ -423,8 +496,8 @@ function makeNpcs(v) {
     lines: ["Winter's coming. A full woodpile is a promise.", 'The beast beyond the gate scatters the trees. I stay on this side.', 'Mind the axe!'],
     chat: ['Timber!', 'Heave... and split.', 'Good oak, this.'],
     script: () => [{ go: logsStand }, { t: 0.5, face: -1, enter: n => { n.carry = 'log'; v.logs.n = Math.max(2, v.logs.n - 1); } }, { go: stumpStand },
-      { t: 0.3, face: 1, enter: n => { n.carry = null; } },
-      { do: 'chop', t: [5, 7.5], face: 1, tick: (n, vv, dt) => chopTick(n, vv, dt) }, { t: 0.4, enter: n => { n.carry = 'wood'; v.stump.split = Math.min(4, v.stump.split + 1); } },
+      { t: 0.4, face: 1, enter: n => { n.carry = null; v.stump.log = 1; v.stump.hits = 0; sfxNear(n, 'kick', 0.5); } },       // stands the log on end on the stump
+      { do: 'chop', t: 9, face: 1, tick: (n, vv, dt) => chopTick(n, vv, dt) }, { t: 0.5, enter: n => { n.carry = 'wood'; v.stump.log = 0; v.stump.split = Math.min(4, v.stump.split + 1); } },
       { go: stackStand }, { t: 0.5, face: 1, enter: n => { n.carry = null; v.stack.n = v.stack.n >= 12 ? 4 : v.stack.n + 1; v.logs.n = Math.min(6, v.logs.n + (Math.random() < 0.4 ? 1 : 0)); v.stump.split = 0; } },
       { do: 'wipe', t: [2, 4] }],
   });
@@ -443,12 +516,19 @@ function makeNpcs(v) {
     script: () => [{ go: [v.benchA.x, v.benchA.y + 6] }, { do: 'knit', t: [18, 30], face: -1 }, { go: [v.board.x - 40 * Math.sign(v.board.x - v.benchA.x), v.board.y + 8], speed: 30 }, { do: 'read', t: [4, 6], face: 1 },
       { go: [wellSpot[0] + 10, wellSpot[1] + 6], speed: 30 }, { t: [3, 5], face: 1 }, { go: [v.benchA.x, v.benchA.y + 6], speed: 30 }],
   });
+  mk('eira', 'Eira', 'Keeper of the Shrine', v.shrine.x + 50, v.shrine.y + 16, {
+    special: 'shrine', look: { dress: '#d9d4f0', hat: 'kerchief', hatColor: '#c9b8ff', hair: '#e8e0ff', cheek: true }, f: -1, speed: 36,
+    lines: ['The shrine remembers everyone who has climbed as far as you. It also remembers the ones who did not come back.', 'Reach the top, and I can send you back down, stronger. Ask me when you are ready.', 'Mythical and secret things are loyal. They will wait for you in the pack. Everything else is only gold.'],
+    chat: ['Hm hm...', 'The light is kind today.', 'Begin again, and again.'],
+    script: () => [{ t: [6, 11], face: -1 }, { do: 'wipe', t: [2, 3] }, { t: [6, 11], face: 1 }],
+  });
   mk('voss', 'Sgt. Voss', 'Gate Guard', v.gate.x - 98 * v.E, v.gate.y - 28, {
     special: 'guard', look: { body: '#4a5a7a', hat: 'helmet', hatColor: '#c0392b', beard: '#6a5a4a', spear: true }, f: -v.E, speed: 36,
     lines: ['Beyond this gate the road runs to a beast. Are you ready to face it?'],
     chat: ['Move along, citizens.', 'All quiet.', 'Halt. ...Oh, it is you.'],
     script: () => [{ do: 'lean', t: [9, 15], face: -v.E }, { go: [v.gate.x - 98 * v.E, v.gate.y + 26] }, { t: [4, 6], face: -v.E }, { go: [v.gate.x - 98 * v.E, v.gate.y - 28] }],
   });
+  for (const n of v.npcs) if (MORE_LINES[n.id]) n.lines = n.lines.concat(MORE_LINES[n.id]);
   // the notice board is a talk target too
   v.sleepAt = { x: b.inn.x + 118, y: b.inn.y + 40 };
 }
@@ -483,10 +563,13 @@ function waterTick(n, v, dt, dir) {
   for (const p of v.plants) if (Math.abs(p.x - (n.x + n.f * 16)) < 22 && Math.abs(p.y - n.y) < 36) { p.wet = 1; p.g = Math.min(1, p.g + dt * 0.08); }
 }
 function chopTick(n, v, dt) {
-  const ph = (n.pt * 1.7) % 1, prev = n._ph ?? 0; n._ph = ph;
-  if (prev < 0.66 && ph >= 0.66) {
-    sfxNear(n, 'chop', 1);
-    for (let i = 0; i < 5; i++) vfx(v, { x: v.stump.x + (Math.random() - 0.5) * 10, y: v.stump.y - 18, vx: (Math.random() - 0.5) * 90, vy: -50 - Math.random() * 60, grav: 300, life: 0.6, size: 2, color: Math.random() < 0.5 ? '#d9b27a' : '#a87a44' });
+  const ph = (n.pt * 1.7) % 1, prev = n._ph ?? 0; n._ph = ph; const st = v.stump;
+  st.kick = Math.max(0, (st.kick || 0) - dt * 5);
+  if (prev < 0.66 && ph >= 0.66 && st.log === 1) {
+    st.hits = (st.hits | 0) + 1; st.kick = 1;
+    sfxNear(n, st.hits >= 5 ? 'hammer' : 'chop', 1);
+    if (st.hits >= 5) { st.log = 2; if (n.cur) n.cur.t = Math.min(n.cur.t, 0.12); }      // the log falls apart: two halves on the ground
+    for (let i = 0; i < (st.hits >= 5 ? 9 : 5); i++) vfx(v, { x: v.stump.x + (Math.random() - 0.5) * 10, y: v.stump.y - (st.log === 1 ? 30 : 18), vx: (Math.random() - 0.5) * 90, vy: -50 - Math.random() * 60, grav: 300, life: 0.6, size: 2, color: Math.random() < 0.5 ? '#d9b27a' : '#a87a44' });
   }
 }
 function hammerTick(n, v, dt) {
@@ -771,6 +854,15 @@ function animalTick(d, dt, v) {
 }
 
 // ---------------------------------------------------------------- the hero inside the village
+function pushOutOfPeople(v) {
+  let moved = false;
+  for (const n of v.npcs) {
+    if (n.inside || n.alpha < 0.5) continue;
+    const dx = hero.x - n.x, dy = hero.y - n.y, d = Math.hypot(dx, dy), min = 9 + n.r + 2;
+    if (d < min) { const k = d < 0.01 ? 0 : (min - d) / d; hero.x += d < 0.01 ? min : dx * k; hero.y += dy * k; moved = true; }
+  }
+  if (moved) { const c = vilCollide(v, hero.x, hero.y, 9, undefined, undefined, true); hero.x = c.x; hero.y = c.y; }
+}
 function updateVillageHero(dt, v) {
   hero.hurtT = 0; hero.flipT = 0; hero.attackT = 0; hero.auraT = Math.max(0, hero.auraT - dt);
   hero.goldPulse = Math.max(0, (hero.goldPulse || 0) - dt * 2);
@@ -778,14 +870,15 @@ function updateVillageHero(dt, v) {
   hero.stamina = Math.min(maxStamina(), hero.stamina + staminaRegen() * 2 * dt);
   hero.hp = Math.min(hero.maxHp, hero.hp + hero.maxHp * 0.02 * dt);              // safe ground: health returns quickly
   let dx = 0, dy = 0;
-  if (v.leaveT <= 0) {
+  if (v.leaveT <= 0 && !v.skip) {
     if (keys.KeyA || keys.ArrowLeft) dx--; if (keys.KeyD || keys.ArrowRight) dx++;
     if (keys.KeyW || keys.ArrowUp) dy--; if (keys.KeyS || keys.ArrowDown) dy++;
   }
   hero.moving = !!(dx || dy);
+  pushOutOfPeople(v);                                                   // someone walked into you: step aside rather than overlap
   if (hero.moving) {
     const len = Math.hypot(dx, dy), spd = moveSpeed() * 0.92;
-    const c = vilCollide(v, hero.x + dx / len * spd * dt, hero.y + dy / len * spd * dt, 9, hero.x, hero.y);
+    const c = vilCollide(v, hero.x + dx / len * spd * dt, hero.y + dy / len * spd * dt, 9, hero.x, hero.y, true);
     hero.x = c.x; hero.y = c.y;
     if (dx) hero.facing = Math.sign(dx);
     hero.walkT += dt * stepRate(moveSpeed(), HERO_STRIDE);
@@ -809,9 +902,21 @@ function updateVillageHero(dt, v) {
 function updateVillage(dt) {
   const v = vil; if (!v || !hero) return;
   tAnim += dt; v.t += dt;
-  const before = tod; tod = (tod + dt / DAY_LEN) % 1; if (tod < before) dayCount++;
+  if (!(v.skip && v.skip.t > 0.3 && !v.skip.done)) { const before = tod; tod = (tod + dt / DAY_LEN) % 1; if (tod < before) dayCount++; }
   curNight = night01();
   v.fade = Math.max(0, v.fade - dt * 1.4);
+  if (v.skip) {
+    v.skip.t += dt;
+    const sk = v.skip;
+    if (sk.t > 0.9 && sk.t < SLEEP_WAKE - 0.2 && (sk.snoreT -= dt) <= 0) { sk.snoreT = 0.95; sfx('snore'); }
+    if (sk.t >= SLEEP_WAKE && !sk.done) {
+      sk.done = true; tod = sk.to; dayCount += sk.days; curNight = night01(); settleVillage(v);
+      if (sk.rest) { hero.hp = hero.maxHp; hero.stamina = maxStamina(); saveGame(false); sfx('save'); popups.push({ text: 'Rested and fully healed · progress saved', x: VW / 2, y: 150, t: 2.6, big: true, screen: true, color: '#fff' }); }
+      else popups.push({ text: `${sk.label}: ${campClockLabel(tod)} · Day ${dayCount}`, x: VW / 2, y: 150, t: 2.6, big: true, screen: true, color: '#fff' });
+      if (night01() < 0.3) Sound.call('birdsong');
+    }
+    if (sk.t >= SLEEP_LEN) v.skip = null;
+  }
   if (v.leaveT > 0) { v.leaveT -= dt; if (v.leaveT <= 0 && !v.doneLeave) { v.doneLeave = true; leaveVillage(); return; } }
   updateVillageHero(dt, v);
   for (const n of v.npcs) npcTick(n, dt, v);
@@ -846,7 +951,7 @@ function enterVillage() {
   if (state !== 'play' || vil) return;
   for (const k in keys) keys[k] = false;
   hero.flipT = 0; hero.attackT = 0; hero.hitSet = null; hero.moving = false; hero.hurtT = 0;
-  projectiles = []; shockwaves = []; popups = popups.filter(p => p.screen);
+  projectiles = []; shockwaves = []; clearHazards(); clearPoison(); popups = popups.filter(p => p.screen);
   vil = buildVillage();
   vil.ret = { x: hero.x, y: hero.y };
   curNight = night01();
@@ -857,7 +962,6 @@ function enterVillage() {
   state = 'village';
   saveGame(true);                                           // the village is the save point of the set
   popups.push({ text: `— ${vil.name} —`, x: VW / 2, y: 190, t: 3.2, big: true, screen: true, color: '#fff' });
-  popups.push({ text: 'A safe place to rest, shop and prepare for the boss', x: VW / 2, y: 225, t: 3.2, screen: true, small: true, color: '#9f9' });
   Sound.music('village');
   Sound.setScene({ biome: 'village', night: curNight > 0.5, wind: 0.02, rain: 0, pitch: 450 });
   sfx('unlock');
@@ -879,13 +983,81 @@ function leaveVillage() {
 }
 
 // ---------------------------------------------------------------- talking and shopping (HTML panels)
-function talkText(n) {
-  const pool = n.lines.length ? n.lines : ['...'];
-  let i = Math.floor(Math.random() * pool.length); if (pool.length > 1 && i === n.lastLine) i = (i + 1) % pool.length; n.lastLine = i;
-  return pool[i].replace('{biome}', vil.B.name).replace('{tier}', String(tierOf(wave)));
+// What people say depends on who you are right now: the time of day, your health, gold, pack and how far you have got.
+// {name} {village} {biome} {wave} {tier} are filled in. A villager greets you properly the first time you speak this visit.
+const HELLO = {
+  mira: ['Ah, a customer! Welcome to {village}, {name}.', 'Mind the fumes, {name}. Come in, come in.'],
+  tobin: ['Welcome, welcome! Tobin, General Store. You must be {name}.', 'A hero in {village}! Come and see what I have.'],
+  hilda: ['Welcome to {village}, dear. Hilda keeps the inn, and the fire, and the peace.', '{name}! The road has been hard on you, I can tell. Sit, sit.'],
+  brann: ['Hm. {name}. Brann. Forge is hot, so be quick.', 'A hero. Good. Heroes break a lot of iron.'],
+  dagna: ['Dagna, armourer. Let me look at what you are wearing... hm. We can do better.', 'Welcome, {name}. Steel is cheaper than a funeral.'],
+  lysa: ['Oh, hello! Lysa. Small things, big luck. Have a look.', 'Welcome, {name}. Careful, everything here is worth more than it looks.'],
+  pim: ['Well met, {name}! Mind the cabbages.', 'A visitor! Come to admire the garden?'],
+  rurik: ['Rurik. Woodcutter. Watch your feet.', 'Hello there, {name}. Mind the chips.'],
+  orla: ['Hello, dear. Sit a while, you look like you could use it.', 'Ah, the hero. {village} has been talking about you.'],
+  voss: ['Sergeant Voss. {village} is under my watch.', 'Halt. State your... oh. The hero. Carry on.'],
+  eira: ['Welcome, {name}. I am Eira. I keep the Shrine of Return, and I have been expecting you.', 'Ah. A traveller with a long road behind them. Come and see the shrine.'],
+};
+function contextLines(n) {
+  const h = hero, out = [], night = night01() > 0.5, hpf = h.hp / h.maxHp, morning = tod > 0.28 && tod < 0.45, id = n.id;
+  const all = (c, t) => { if (c) out.push(t); };
+  all(h.points > 0, 'You have ' + h.points + ' stat point' + (h.points === 1 ? '' : 's') + ' unspent, {name}. Press M and put them to use before you head out.');
+  all(hpf < 0.5, 'You look worse for wear, {name}. Mind yourself out there.');
+  all(wave >= 19, 'Wave {wave} already. Tier {tier} beasts out there. You are braver than most.');
+  if (id === 'mira') { all(!h.potions, 'No potions on you? That is how heroes end up in a ditch. Buy a few.'); all(h.potions >= POTION_MAX, 'A full satchel of potions. Good. Now do not waste them.'); all(hasAilment() && !h.cures, 'Poisoned, and not a Cure-All on you? Take one of mine. Please.'); all(!h.cures && h.level >= 8, 'A Cure-All potion clears poison and chills. Press R to switch to it, Q to drink.'); all(night, 'Night brews best. The fumes are... livelier.'); }
+  if (id === 'tobin') { all(night, 'A lantern at night is worth ten swords, mark me.'); all((h.lamp | 0) >= 3, 'The Radiant Lantern! My finest. Lights up half the road.'); all((h.lamp | 0) === 0 && h.gold >= 140, 'You can afford a lantern now. The dark hides things that bite.'); all(h.gold < 30, 'Empty pockets? Come back when the beasts have been generous.'); }
+  if (id === 'hilda') { all(night, 'The inn is quiet tonight. If you want the hours to pass, I can sort that.'); all(morning, 'Good morning, {name}. Porridge is on, and the day is yours.'); all(hpf < 0.5, 'Sit down before you fall down. A rest is free, dear.'); }
+  if (id === 'brann') { all(h.inv.length >= INV_MAX - 2, 'Your pack is nearly bursting. Sell me the junk.'); all(h.gold >= 600, 'Coin to burn? Let me temper that gear for you.'); all(night, 'Fire never sleeps. Neither do I, when there is iron to turn.'); }
+  if (id === 'dagna') { all(!h.equip.armor, 'No armour at all? Brave. Foolish, but brave. Have a look.'); all(!h.equip.helmet, 'A hero without a helm. One knock and that is the end of the story.'); }
+  if (id === 'lysa') { all(!h.equip.ring1 && !h.equip.ring2, 'Bare fingers! A ring will fix that. Take your pick.'); all(!h.equip.necklace, 'Not a necklace on you. I have just the thing.'); }
+  if (id === 'pim') { all(morning, 'Best time to water is the morning. The plants drink it up.'); all(night, 'You should be indoors in this dark. I will see to the beds tomorrow.'); }
+  if (id === 'rurik') { all(night, 'Cannot chop in the dark, can I? The axe knows when to rest.'); all(wave >= 10, 'The trees by the road thin out every set. Whatever is out there, it is hungry.'); }
+  if (id === 'orla') { all(night, 'The night air is bad for old bones. Come and tell me a story in the morning.'); all(h.level >= 10, 'Level {name}... such a hero. In my day we just had a stout stick.'); }
+  if (id === 'eira') { all(h.level >= levelCap(), 'You have climbed as far as you can, {name}. The shrine is ready for you whenever you are.'); all(h.level < levelCap(), 'Level {name}... not yet at the top. Come back at level ' + levelCap() + '.'); all(rebirths() > 0, 'Reborn ' + rebirths() + ' time' + (rebirths() === 1 ? '' : 's') + ' already. The shrine knows you.'); }
+  if (id === 'voss') { all(hpf < 0.7, 'You are bleeding, {name}. See the innkeeper before you go out that gate.'); all(h.potions === 0, 'Not a single potion? I would not walk that road without one.'); }
+  if (n.kid) { all(h.gold >= 400, 'Whoa, you have so much gold! Are you rich?'); all(night, 'Mum says I should be in bed...'); }
+  return out;
 }
+function talkText(n) {
+  const v = vil, fill = t => t.replace(/\{name\}/g, hero.name).replace(/\{village\}/g, v.name).replace(/\{biome\}/g, v.B.name).replace(/\{wave\}/g, String(wave)).replace(/\{tier\}/g, String(tierOf(wave)));
+  if (!n.met && HELLO[n.id]) { n.met = true; return fill(HELLO[n.id][Math.floor(Math.random() * HELLO[n.id].length)]); }
+  n.met = true;
+  const ctxL = contextLines(n), pool = n.lines.length ? n.lines : ['...'];
+  const useCtx = ctxL.length && (Math.random() < 0.55 || n.lastCtxMiss > 1);
+  n.lastCtxMiss = useCtx ? 0 : (n.lastCtxMiss | 0) + 1;
+  const from = useCtx ? ctxL : pool;
+  let i = Math.floor(Math.random() * from.length); if (from.length > 1 && from[i] === n.lastLine) i = (i + 1) % from.length;
+  n.lastLine = from[i];
+  return fill(from[i]);
+}
+// ---------------------------------------------------------------- waiting at the inn
+const TIME_STOPS = [['Dawn', 0.27], ['Sunrise', 0.30], ['Morning', 0.38], ['Midday', 0.50], ['Sunset', 0.76], ['Dusk', 0.82], ['Night', 0.90], ['Midnight', 0.0]];
+const timeUntil = at => ((at - tod) % 1 + 1) % 1;                       // how much of a day until the clock reaches `at`, always forwards
+const SLEEP_LEN = 4.2, SLEEP_WAKE = 2.3;                                 // seconds in all; the clock jumps at SLEEP_WAKE
+function startTimeSkip(at) {
+  const v = vil; if (!v || v.skip) return;
+  const d = at === null ? 0 : (timeUntil(at) || 1);                       // null = a plain rest: the clock stays where it is
+  v.skip = { from: tod, span: d, to: (tod + d) % 1, days: Math.floor(tod + d + 1e-9), t: 0, done: false, rest: at === null, snoreT: 0, label: at === null ? 'Rested' : (TIME_STOPS.find(x => Math.abs(x[1] - at) < 1e-6) || ['later'])[0] };
+  sfx('yawn');
+}
+// the world catches up with the new time: people are home or out, as they would be at that hour
+function settleVillage(v) {
+  const nt = night01();
+  for (const n of v.npcs) {
+    if (!n.nightHome) continue;
+    if (nt > 0.55) { n.inside = true; n.alpha = 0; n.cur = null; n.queue = null; n.goHome = false; n.fadeOut = false; n.exiting = false; n.carry = null; n.moving = false; }
+    else if (nt < 0.3 && (n.inside || n.goHome)) {
+      n.inside = false; n.goHome = false; n.fadeOut = false; n.alpha = 1; n.x = n.home.x; n.y = n.home.y; n.cur = null; n.carry = null;
+      n.queue = homeRoute(n, v, 'out'); n.exiting = n.queue.length > 0;
+    }
+  }
+  const dog = v.dog;
+  if (nt > 0.55) { dog.x = v.sleepAt.x; dog.y = v.sleepAt.y; dog.pose = 'sleep'; dog.moving = false; dog.mode = 'trot'; dog.wp = null; }
+  else if (dog.pose === 'sleep') { dog.pose = 'stand'; dog.t = 0.5; }
+}
+
 function villageInteract() {
-  const v = vil; if (!v || !v.near || v.leaveT > 0 || paused) return;
+  const v = vil; if (!v || !v.near || v.leaveT > 0 || v.skip || paused) return;
   const t = v.near;
   if (t.kind === 'dog') { v.dog.petT = 3; v.dog.pose = 'sit'; v.dog.f = hero.x >= v.dog.x ? 1 : -1; v.dog.moving = false; sfx('chirp'); sfxNear(v.dog, 'bark', 0.5); for (let i = 0; i < 4; i++) vfx(v, { x: v.dog.x + (Math.random() - 0.5) * 16, y: v.dog.y - 26, vx: (Math.random() - 0.5) * 20, vy: -30, life: 1, size: 3, color: '#ff7a9a' }); return; }
   if (t.kind === 'npc') { const n = t.ref; n.f = hero.x >= n.x ? 1 : -1; hero.facing = n.x >= hero.x ? 1 : -1; n.moving = false; }
@@ -901,8 +1073,9 @@ function openTalk(text, override) {
     if (n.shop === 'armour') btns.push(['shop', 'Browse armour']);
     if (n.shop === 'jewel') btns.push(['shop', 'Browse jewellery']);
     if (n.shop === 'smith') btns.push(['shop:smithBuy', 'Buy weapons'], ['shop:smithUp', 'Upgrade gear'], ['shop:smithSell', 'Sell gear']);
-    if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], ['respec', `Reset stat points (${respecCost()} gold)`]);
+    if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], ['wait', 'Wait for a time of day...'], ['respec', `Reset stat points (${respecCost()} gold)`]);
     if (n.special === 'guard') btns.push(['go', 'Head out to face the boss']);
+    if (n.special === 'shrine') btns.push(['shop:rebirth', hero.level >= levelCap() ? 'The Shrine of Return (rebirth)' : `The Shrine of Return (see what rebirth gives)`]);
     btns.push(['bye', 'Goodbye']);
     n.talking = true;
   } else if (t.kind === 'gate') {
@@ -914,9 +1087,11 @@ function openTalk(text, override) {
     body = body || ['NOTICE: The road beyond the gate is dangerous. Heroes are advised to rest, resupply and heal before departing.', 'WANTED: Brave souls to deal with the beast on the road. Reward: our eternal gratitude.', 'LOST: One red ball. If found, return to the children. -- Pip', 'FOR SALE: Lanterns. Inquire with Tobin at the General Store.', 'REMINDER: Biscuit the dog is not a guard dog. Please stop asking him to guard things.'][Math.floor(Math.random() * 5)];
     btns = [['bye', 'Close']];
   }
-  document.getElementById('talkName').innerHTML = `${escapeHtml(name)} <small>${escapeHtml(role)}</small>`;
+  const col = t.kind === 'npc' ? (t.ref.look.body || t.ref.look.dress || '#8a8aa0') : '#c9a86a';
+  const badge = t.kind === 'npc' ? `<span class="avatar" style="background:${col}">${escapeHtml(name.replace(/^(Old|Granny|Sgt\.)\s+/, '').charAt(0))}</span>` : '';
+  document.getElementById('talkName').innerHTML = `${badge}${escapeHtml(name)} <small>${escapeHtml(role)}</small>`;
   document.getElementById('talkText').textContent = body;
-  document.getElementById('talkBtns').innerHTML = (override || btns).map(([k, l], i) => `<button data-talk="${k}"><kbd>${i + 1}</kbd>${l}</button>`).join('');
+  document.getElementById('talkBtns').innerHTML = (override || btns).map(([k, l, off], i) => `<button data-talk="${k}" ${off ? 'disabled' : ''}><kbd>${i + 1}</kbd>${escapeHtml(l)}</button>`).join('');
   showMenu('talk');
 }
 document.getElementById('talk').addEventListener('click', e => {
@@ -925,11 +1100,18 @@ document.getElementById('talk').addEventListener('click', e => {
   const v = vil, t = v.talk;
   if (k === 'bye') { if (t && t.kind === 'npc') t.ref.talking = false; v.talk = null; showMenu(null); }
   else if (k === 'go') { v.talk = null; v.leaveT = 0.9; showMenu(null); }
+  else if (k === 'back') openTalk();
+  else if (k === 'wait') {
+    openTalk('Hours go by quickly in a warm room. When shall I wake you?', [...TIME_STOPS.map(([label, at]) => {
+      const d = timeUntil(at), now = d < 0.012 || d > 0.988;
+      return [`time:${at}`, `${label} (${campClockLabel(at)})${now ? ': it is about that now' : ''}`, now];
+    }), ['back', 'Never mind']]);
+  }
+  else if (k.startsWith('time:')) { v.talk = null; showMenu(null); startTimeSkip(parseFloat(k.slice(5))); }
   else if (k === 'shop') { v.shop = t.ref.shop; showMenu('shop'); }
-  else if (k.startsWith('shop:')) { v.shop = k.slice(5); showMenu('shop'); }
+  else if (k.startsWith('shop:')) { v.shop = k.slice(5); v.rbArm = false; showMenu('shop'); }
   else if (k === 'rest') {
-    hero.hp = hero.maxHp; hero.stamina = maxStamina(); sfx('potion'); saveGame(false);
-    openTalk('Sleep well, hero. You wake rested and fully healed, and your journey is safely written down.');
+    v.talk = null; showMenu(null); startTimeSkip(null);
   }
   else if (k === 'respec') {
     const n = spentPoints(), cost = respecCost();
@@ -947,6 +1129,7 @@ document.getElementById('talk').addEventListener('click', e => {
 
 function renderShop() {
   const v = vil; if (!v || !v.shop) return;
+  if (v.shop === 'rebirth') { renderRebirth(); return; }
   if (v.shop === 'smith' || v.shop === 'smithSell') { renderSellShop(); return; }
   if (v.shop === 'smithBuy' || v.shop === 'armour' || v.shop === 'jewel') { renderGearShop(v.shop); return; }
   if (v.shop === 'smithUp') { renderUpgradeShop(); return; }
@@ -961,7 +1144,9 @@ function renderShop() {
   if (alch) {
     const price = potionCost(), left = v.stock.potion | 0, have = hero.potions | 0;
     const can = hero.gold >= price && left > 0 && have < POTION_MAX;
-    html += row('potion', 'Healing Potion', `Restores ${Math.round(POTION_HEAL * 100)}% of your health. Press Q to drink. You carry ${have} of ${POTION_MAX}.`, price, left > 0 ? `${left} in stock` : 'Sold out', can, have >= POTION_MAX ? 'Full' : left <= 0 ? 'Sold out' : 'Buy');
+    html += row('potion', 'Healing Potion', `Restores ${Math.round(POTION_HEAL * 100)}% of your health. You carry ${have} of ${POTION_MAX}.`, price, left > 0 ? `${left} in stock` : 'Sold out', can, have >= POTION_MAX ? 'Full' : left <= 0 ? 'Sold out' : 'Buy');
+    const cp = cureCost(), cl = v.stock.cure | 0, ch = hero.cures | 0;
+    html += row('cure', 'Cure-All Potion', `Removes poison and chill, and every other ailment. Press R to switch potions, Q to drink. You carry ${ch} of ${POTION_MAX}.`, cp, cl > 0 ? `${cl} in stock` : 'Sold out', hero.gold >= cp && cl > 0 && ch < POTION_MAX, ch >= POTION_MAX ? 'Full' : cl <= 0 ? 'Sold out' : 'Buy');
   } else {
     const tier = (hero.lamp | 0) + 1, L = LAMPS[tier];
     if (L) html += row('lamp', L.name, `Widens the circle of light around you at night and in fog by +${L.bonus}. ${hero.lamp ? 'Replaces your current lantern.' : ''}`, L.cost, `Lantern ${tier} of ${LAMPS.length - 1}`, hero.gold >= L.cost, 'Buy');
@@ -1010,7 +1195,7 @@ function renderGearShop(kind) {
 function renderUpgradeShop() {
   document.getElementById('shopTitle').textContent = "BRANN'S FORGE: UPGRADE GEAR";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
-  const rows = [...GEAR_SLOTS.map(k => hero.equip[k]).filter(Boolean).map(it => ({ it, eq: true })), ...hero.inv.map(it => ({ it, eq: false }))].filter(r => Object.keys(r.it.stats).length);
+  const rows = [...activeSlots().map(k => hero.equip[k]).filter(Boolean).map(it => ({ it, eq: true })), ...hero.inv.map(it => ({ it, eq: false }))].filter(r => Object.keys(r.it.stats).length);
   let html = '', n = 0;
   for (const { it, eq } of rows) {
     const R = RARITIES[it.rarity], up = it.up | 0, max = upgradeMax(it), done = up >= max, cost = upgradeCost(it), can = !done && hero.gold >= cost;
@@ -1041,6 +1226,7 @@ function renderSellShop() {
 }
 document.getElementById('shop').addEventListener('click', e => {
   const id = e.target.closest('[data-buy]') && e.target.closest('[data-buy]').dataset.buy; if (!id || !vil) return;
+  if (id.startsWith('rb:')) { rebirthClick(id); return; }
   const say = (text, color) => popups.push({ text, x: VW / 2, y: 120, t: 1.6, screen: true, small: true, color });
   if (id === 'junk' || id.startsWith('sell:')) {
     const sold = id === 'junk' ? hero.inv.filter(i => i.rarity <= 1) : hero.inv.filter(i => i.id === id.slice(5));
@@ -1058,15 +1244,19 @@ document.getElementById('shop').addEventListener('click', e => {
     return;
   }
   if (id.startsWith('up:')) {
-    const it = GEAR_SLOTS.map(k => hero.equip[k]).concat(hero.inv).find(i => i && i.id === id.slice(3));
+    const it = activeSlots().map(k => hero.equip[k]).concat(hero.inv).find(i => i && i.id === id.slice(3));
     const cost = it ? upgradeCost(it) : 0;
     if (!it || !canUpgrade(it) || hero.gold < cost) { sfx('tired'); return; }
     hero.gold -= cost; upgradeItem(it);
-    if (GEAR_SLOTS.some(k => hero.equip[k] === it)) recalcGear();
+    if (activeSlots().some(k => hero.equip[k] === it)) recalcGear();
     say(`${it.name}: upgraded`, RARITIES[it.rarity].color); hero.goldPulse = 0.6; sfx('unlock'); Sound.sfxAt('hammer', 1); saveGame(true, true); renderShop();
     return;
   }
-  if (id === 'potion') {
+  if (id === 'cure') {
+    const price = cureCost();
+    if (hero.gold < price || (vil.stock.cure | 0) <= 0 || (hero.cures | 0) >= POTION_MAX) { sfx('tired'); return; }
+    hero.gold -= price; hero.cures = (hero.cures | 0) + 1; vil.stock.cure--; say('Bought a Cure-All Potion', '#4fd69c');
+  } else if (id === 'potion') {
     const price = potionCost();
     if (hero.gold < price || (vil.stock.potion | 0) <= 0 || (hero.potions | 0) >= POTION_MAX) { sfx('tired'); return; }
     hero.gold -= price; hero.potions = (hero.potions | 0) + 1; vil.stock.potion--; say('Bought a Healing Potion', '#7fd08a');
@@ -1096,6 +1286,7 @@ function drawVillage() {
   things.push({ y: v.ball.y, d: () => VPROP.ball(v.ball) });
   things.push({ y: hero.y, d: () => drawHero(hero) });
   things.sort((a, b) => a.y - b.y).forEach(o => o.d());
+  if (dev.hitboxes) drawVillageHitboxes(v);
   // particles
   for (const f of v.fx) {
     const a = Math.max(0, Math.min(1, f.life / f.max));
@@ -1134,43 +1325,84 @@ function drawVillage() {
     ctx.restore();
   }
   // fades: in on arrival, out when leaving for the boss
-  const out = v.leaveT > 0 ? 1 - Math.max(0, v.leaveT / 0.9) : 0, black = Math.max(v.fade, out);
-  if (black > 0) { ctx.fillStyle = `rgba(0,0,0,${black})`; ctx.fillRect(0, 0, VW, VH); }
-  drawVillageHUD(v);
+  const out = v.leaveT > 0 ? 1 - Math.max(0, v.leaveT / 0.9) : 0, sk = v.skip ? (v.skip.t < 0.6 ? v.skip.t / 0.6 : v.skip.t < SLEEP_LEN - 0.7 ? 1 : Math.max(0, 1 - (v.skip.t - (SLEEP_LEN - 0.7)) / 0.7)) : 0, black = Math.max(v.fade, out, sk);
+  if (black > 0) { ctx.fillStyle = `rgba(2,3,10,${black})`; ctx.fillRect(0, 0, VW, VH); }
+  if (v.skip && sk > 0.7) drawSleepScene(v.skip, sk);
+  if (!(v.skip && sk > 0.7)) drawVillageHUD(v);                                       // the dream has the whole screen
   drawPopups(true);
 }
 
+// the dream: the hero asleep in a bed, the sun and moon sweeping over, the clock running forward, z's rising
+function drawSleepScene(sk, a) {
+  const T = sk.t, p = clamp01((T - 0.6) / (SLEEP_WAKE - 0.6)), cx = VW / 2, cy = VH * 0.62;
+  const clk = (sk.from + sk.span * p) % 1, fade = clamp01((a - 0.7) / 0.3);
+  const day = dayCount + (sk.done ? 0 : Math.floor(sk.from + sk.span * p + 1e-9));
+  ctx.save(); ctx.globalAlpha = fade;
+  // the sun or moon travels along an arc as the hours pass: noon at the top, midnight below the horizon
+  const ax = cx, ay = VH * 0.5, rx = 300, ry = 170, ang = Math.PI * 2 * (clk - 0.25);
+  const nightNow = Math.sin(ang) < 0, ang2 = nightNow ? ang + Math.PI : ang;                                // by night the moon takes the same arc, rising where the sun set
+  const bx = ax + Math.cos(ang2) * rx, by = ay - Math.sin(ang2) * ry;
+  for (let i = 0; i < 26; i++) { const sx = (i * 197 + 41) % VW, sy = (i * 83 + 17) % (VH * 0.4), tw = 0.5 + 0.5 * Math.sin(tAnim * 2 + i * 1.7); ctx.fillStyle = `rgba(220,230,255,${(nightNow ? 0.8 : 0.25) * tw})`; ctx.fillRect(sx, sy, 2, 2); }
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(ax, ay, rx, ry, 0, Math.PI, 0); ctx.stroke();
+  if (by < ay + 10) {
+    if (nightNow) { ctx.fillStyle = '#e8eefc'; ctx.beginPath(); ctx.arc(bx, by, 15, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = 'rgba(2,3,10,0.9)'; ctx.beginPath(); ctx.arc(bx + 7, by - 3, 13, 0, Math.PI * 2); ctx.fill(); }
+    else { const g = ctx.createRadialGradient(bx, by, 4, bx, by, 38); g.addColorStop(0, 'rgba(255,230,140,0.9)'); g.addColorStop(1, 'rgba(255,200,80,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(bx, by, 38, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ffe27a'; ctx.beginPath(); ctx.arc(bx, by, 14, 0, Math.PI * 2); ctx.fill(); }
+  }
+  // the bed with the hero under a blanket, breathing slowly
+  const br = Math.sin(T * 2.6) * 1.6;
+  ctx.fillStyle = '#4a2f1b'; ctx.fillRect(cx - 120, cy + 20, 240, 10); ctx.fillRect(cx - 124, cy - 24, 10, 54); ctx.fillRect(cx + 114, cy - 6, 10, 36);
+  ctx.fillStyle = '#d9d2c0'; ctx.beginPath(); ctx.roundRect(cx - 114, cy - 6, 228, 26, 8); ctx.fill();
+  ctx.fillStyle = '#f2efe6'; ctx.beginPath(); ctx.roundRect(cx - 108, cy - 16, 52, 18, 8); ctx.fill();
+  ctx.fillStyle = '#f4d7b6'; ctx.beginPath(); ctx.arc(cx - 84, cy - 20 + br * 0.2, 12, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = '#2a1a10'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.moveTo(cx - 80, cy - 21); ctx.lineTo(cx - 74, cy - 21); ctx.stroke();
+  ctx.fillStyle = '#3d4a8a'; ctx.beginPath(); ctx.roundRect(cx - 66, cy - 22 - br, 176, 34 + br, 14); ctx.fill();
+  ctx.strokeStyle = 'rgba(255,255,255,0.14)'; ctx.lineWidth = 2; for (let i = 0; i < 5; i++) { ctx.beginPath(); ctx.moveTo(cx - 40 + i * 36, cy - 20 - br); ctx.lineTo(cx - 40 + i * 36, cy + 10); ctx.stroke(); }
+  ctx.textAlign = 'center';
+  for (let i = 0; i < 4; i++) { const q = (T * 0.55 + i / 4) % 1; ctx.globalAlpha = fade * Math.sin(q * Math.PI); ctx.fillStyle = '#cfe0ff'; ctx.font = `bold ${16 + i * 5}px Georgia, serif`; ctx.fillText('Z', cx - 70 + q * 46 + i * 6, cy - 44 - q * 70); }
+  ctx.globalAlpha = fade;
+  ctx.fillStyle = '#fff'; ctx.font = `bold 30px ${UI_FONT}`; ctx.fillText(campClockLabel(clk), cx, VH * 0.17);
+  ctx.fillStyle = 'rgba(255,255,255,0.6)'; ctx.font = `14px ${UI_FONT}`;
+  ctx.fillText(sk.rest ? 'Resting...' : `Sleeping until ${sk.label.toLowerCase()}...`, cx, VH * 0.17 + 24);
+  ctx.fillText(`Day ${day}`, cx, VH * 0.17 + 44);
+  ctx.restore(); ctx.textAlign = 'left';
+}
+
+// dev menu > Show hitboxes: what blocks you, how big people are to the collision, and how close you must stand to talk
+function drawVillageHitboxes(v) {
+  ctx.save(); ctx.lineWidth = 1.5;
+  ctx.strokeStyle = 'rgba(255,60,60,0.9)'; ctx.fillStyle = 'rgba(255,60,60,0.12)';
+  for (const s of v.solids) {
+    if (s.r !== undefined) { ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+    else { ctx.fillRect(s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0); ctx.strokeRect(s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0); }
+  }
+  ctx.strokeStyle = 'rgba(255,150,40,0.95)'; ctx.fillStyle = 'rgba(255,150,40,0.14)';                                  // walls for you only
+  for (const s of v.hsolids) { ctx.fillRect(s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0); ctx.strokeRect(s.x0, s.y0, s.x1 - s.x0, s.y1 - s.y0); }
+  ctx.strokeStyle = 'rgba(80,200,255,0.95)'; ctx.beginPath(); ctx.arc(hero.x, hero.y, 9, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  for (const n of v.npcs) if (!n.inside) { ctx.beginPath(); ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2); ctx.stroke(); }
+  for (const a of [...v.animals, ...v.hens]) { ctx.beginPath(); ctx.arc(a.x, a.y, a.r, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.strokeStyle = 'rgba(255,220,80,0.5)';
+  for (const n of v.npcs) if (!n.inside && (n.shop || n.special)) { ctx.beginPath(); ctx.arc(n.x, n.y, n.shop ? 72 : 64, 0, Math.PI * 2); ctx.stroke(); }
+  ctx.restore();
+}
+
 function drawVillageHUD(v) {
-  const W0 = 268, H0 = 118;
-  ctx.fillStyle = 'rgba(10,10,16,0.62)'; ctx.strokeStyle = 'rgba(120,120,160,0.28)'; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.roundRect(10, 10, W0, H0, 10); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 15px "Segoe UI", sans-serif'; ctx.textAlign = 'left';
-  ctx.fillText(hero.name, 22, 31);
-  ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.fillText(`Lv ${hero.level}`, 22 + ctx.measureText(hero.name).width + 44, 31);
-  ctx.textAlign = 'right'; ctx.fillStyle = '#9a98ad'; ctx.font = '11px "Segoe UI", sans-serif'; ctx.fillText(`Wave ${wave} cleared`, W0 + 2, 31); ctx.textAlign = 'left';
-  hudBar(22, 40, 244, 13, hero.hp / hero.maxHp, 'rgba(60,10,14,0.9)', '#e2565a', `${Math.ceil(hero.hp)} / ${hero.maxHp}`, false);
-  hudBar(22, 57, 244, 9, hero.stamina / maxStamina(), 'rgba(10,40,20,0.9)', '#5fd07a', null, false);
-  hudBar(22, 70, 244, 6, hero.xp / hero.xpNext, 'rgba(10,25,45,0.9)', '#6fb5ff', null, false);
-  const gp = Math.max(0, hero.goldPulse || 0);
-  ctx.save(); ctx.translate(30, 94); ctx.scale(1 + gp, 1 + gp);
-  ctx.fillStyle = '#f5c451'; ctx.strokeStyle = '#8a6a1c'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.arc(0, 0, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
-  ctx.fillStyle = '#fff3c0'; ctx.beginPath(); ctx.arc(-1.8, -1.8, 1.8, 0, Math.PI * 2); ctx.fill(); ctx.restore();
-  ctx.fillStyle = '#f5c451'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.textAlign = 'left'; ctx.fillText(hero.gold.toLocaleString(), 42, 99);
-  drawPotionHud(22, 117);
-  if (hero.points > 0 && Math.floor(tAnim * 2) % 2) { ctx.fillStyle = '#f5c451'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.fillText(`${hero.points} stat points — press M`, 22, 146); }
+  drawHeroCard(true);
+  drawVitals(true);
+  drawWaveChip(true);
   // clock chip
   const night = isNight(), x = VW - 164, y = 10;
-  ctx.fillStyle = 'rgba(10,10,16,0.62)'; ctx.strokeStyle = 'rgba(120,120,160,0.28)'; ctx.beginPath(); ctx.roundRect(x, y, 150, 40, 9); ctx.fill(); ctx.stroke();
+  hudPanel(x, y, 150, 42, { r: 11 });
   const ccx = x + 22, ccy = y + 20; ctx.fillStyle = night ? '#dfe6f5' : '#ffd36a'; ctx.beginPath(); ctx.arc(ccx, ccy, 8, 0, Math.PI * 2); ctx.fill();
   if (night) { ctx.fillStyle = 'rgba(10,10,16,0.9)'; ctx.beginPath(); ctx.arc(ccx + 3.5, ccy - 2.5, 7, 0, Math.PI * 2); ctx.fill(); }
-  ctx.fillStyle = '#fff'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.textAlign = 'left'; ctx.fillText(`Day ${dayCount}  ${clockLabel()}`, x + 40, y + 17);
-  ctx.fillStyle = '#9a98ad'; ctx.font = '11px "Segoe UI", sans-serif'; ctx.fillText(`${timePhase()} · Village`, x + 40, y + 31);
+  ctx.fillStyle = '#fff'; ctx.textAlign = 'left'; ctx.fillText(fitText(`Day ${dayCount}  ${clockLabel()}`, 98, 13, true, 10), x + 40, y + 18);
+  ctx.fillStyle = '#a3a1b8'; ctx.fillText(fitText(`${timePhase()} · Village`, 98, 11), x + 40, y + 32);
   // bottom line: what E does here
   if (v.near && !v.talk) {
     const t = v.near, label = t.kind === 'gate' ? 'E  Leave the village' : t.kind === 'dog' ? 'E  Pet Biscuit' : t.kind === 'board' ? 'E  Read the notice board' : `E  Talk to ${t.label}${t.tag ? ' · ' + t.tag : ''}`;
-    ctx.font = 'bold 13px "Segoe UI", sans-serif'; const w = ctx.measureText(label).width + 28;
-    ctx.fillStyle = 'rgba(10,10,16,0.72)'; ctx.strokeStyle = 'rgba(245,196,81,0.5)'; ctx.beginPath(); ctx.roundRect(VW / 2 - w / 2, VH - 46, w, 28, 8); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#f5c451'; ctx.textAlign = 'center'; ctx.fillText(label, VW / 2, VH - 27);
+    const lbl = fitText(label, VW - 120, 13, true, 10), w = ctx.measureText(lbl).width + 30;
+    hudPanel(VW / 2 - w / 2, VH - 100, w, 30, { r: 10, edge: 'rgba(245,196,81,0.55)' });
+    ctx.fillStyle = '#f5c451'; ctx.textAlign = 'center'; ctx.fillText(lbl, VW / 2, VH - 80);
   }
   ctx.textAlign = 'left';
 }

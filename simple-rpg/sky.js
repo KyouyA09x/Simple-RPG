@@ -242,6 +242,21 @@ function drawHeatHaze(power) {
   ctx.restore();
 }
 
+// Night, mist and vignettes are big soft gradients, so they are painted at a quarter of the size and stretched over the picture:
+// a gradient fill costs by the pixel, and a quarter-size one touches 1/16 of them. Two layers, because night multiplies and mist blends.
+const OVL = {};
+function ovLayer(k) {
+  const w = Math.ceil(VW / 4), h = Math.ceil(VH / 4); let o = OVL[k];
+  if (!o) { const c = document.createElement('canvas'); c.width = w; c.height = h; o = OVL[k] = { c, x: c.getContext('2d') }; }
+  o.x.setTransform(0.25, 0, 0, 0.25, 0, 0); o.x.clearRect(0, 0, VW, VH);
+  return o.x;
+}
+function ovBlit(k, mode) {
+  ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'low';
+  if (mode) ctx.globalCompositeOperation = mode;
+  ctx.drawImage(OVL[k].c, 0, 0, VW, VH); ctx.restore();
+}
+
 // Called after the world is drawn, before the HUD. Screen space (no camera transform).
 function drawSky() {
   const sky = skyNow(), p = weatherPower();
@@ -263,33 +278,36 @@ function drawSky() {
 
   // night / dawn / dusk darkness, lifted around the hero like a lantern
   if (sky.dark > 0.004) {
-    ctx.save();
-    ctx.globalCompositeOperation = 'multiply';
     const [r, g, bl] = sky.c;
     if (state === 'play' && hero && !hero.dead && gfx.glow) {
-      const hx = hero.x - cam.x, hy = hero.y - cam.y - 28, rad = lightRadius() + 70;
-      const grad = ctx.createRadialGradient(hx, hy, 20, hx, hy, rad);
+      const dc = ovLayer('dark'), hx = hero.x - cam.x, hy = hero.y - cam.y - 28, rad = lightRadius() + 70;
+      const grad = dc.createRadialGradient(hx, hy, 20, hx, hy, rad);
       const lit = Math.max(0, sky.dark - 0.30);
       grad.addColorStop(0, `rgba(255,236,200,${1 - lit})`);
       grad.addColorStop(0.55, `rgba(${r},${g},${bl},${sky.dark * 0.75})`);
       grad.addColorStop(1, `rgba(${r},${g},${bl},${sky.dark})`);
-      ctx.fillStyle = grad;
+      dc.fillStyle = grad; dc.fillRect(0, 0, VW, VH);
+      ovBlit('dark', 'multiply');
     } else {
-      ctx.fillStyle = `rgba(${r},${g},${bl},${sky.dark})`;
+      ctx.save(); ctx.globalCompositeOperation = 'multiply';
+      ctx.fillStyle = `rgba(${r},${g},${bl},${sky.dark})`; ctx.fillRect(0, 0, VW, VH);
+      ctx.restore();
     }
-    ctx.fillRect(0, 0, VW, VH);
-    ctx.restore();
   }
 
-  // fog-of-war: hide whatever is beyond the hero's sight (night, fog, storms...)
-  drawVision();
-
-  // storm/blizzard vignette
+  // fog-of-war (night, fog, storms...) and the storm/blizzard vignette share one quarter-size layer
   const vig = cur.vig + (nxt.vig - cur.vig) * p;
-  if (vig > 0.01) {
-    const g = ctx.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.95);
-    g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${vig})`);
-    ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
+  computeVision();
+  const mc = (visLayers.length || vig > 0.01) ? ovLayer('mist') : null;
+  if (mc) {
+    drawVision(mc);
+    if (vig > 0.01) {
+      const g = mc.createRadialGradient(VW / 2, VH / 2, VH * 0.3, VW / 2, VH / 2, VH * 0.95);
+      g.addColorStop(0, 'rgba(0,0,0,0)'); g.addColorStop(1, `rgba(0,0,0,${vig})`);
+      mc.fillStyle = g; mc.fillRect(0, 0, VW, VH);
+    }
+    ovBlit('mist');
+    if (visLayers.length) drawDarkEyes();
   }
 }
 

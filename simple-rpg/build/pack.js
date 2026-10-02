@@ -9,7 +9,7 @@ const { packager } = require('@electron/packager');
 const root = path.resolve(__dirname, '..');
 const stage = path.join(__dirname, '_out');                  // packager output and the zip; the app itself is moved to <project>/launcher
 const GAME_FILES = ['index.html', 'main.js', 'preload.js', 'package.json',
-  'sfx.js', 'postfx.js', 'sky.js', 'vision.js', 'biomes.js', 'props.js', 'terrain.js', 'critters.js', 'gear.js', 'villagers.js', 'village.js', 'camp.js', 'game.js'];
+  'sfx.js', 'postfx.js', 'sky.js', 'vision.js', 'biomes.js', 'props.js', 'terrain.js', 'critters.js', 'gear.js', 'rebirth.js', 'villagers.js', 'village.js', 'camp.js', 'variants.js', 'bosses.js', 'game.js'];
 // allow-list: everything else (including the finished "Stick RPG" folder and the staging folder) is never packaged
 const keep = new Set(['', ...GAME_FILES.map(f => '/' + f), '/icon', '/icon/stickrpg.ico']);
 
@@ -17,6 +17,8 @@ const keep = new Set(['', ...GAME_FILES.map(f => '/' + f), '/icon', '/icon/stick
 async function trimLocales({ buildPath }) {
   const dir = path.join(buildPath, 'locales');
   if (fs.existsSync(dir)) for (const f of fs.readdirSync(dir)) if (f !== 'en-US.pak') fs.rmSync(path.join(dir, f), { force: true });
+  // the DirectX shader compiler is only used by WebGPU, which the game does not use (WebGL goes through ANGLE): ~26 MB
+  for (const f of ['dxcompiler.dll', 'dxil.dll']) fs.rmSync(path.join(buildPath, f), { force: true });
 }
 
 const README = [
