@@ -9,8 +9,7 @@
   "scripts": {
     "start": "electron .",
     "selftest": "node build/selftest.js",
-    "pack": "node build/pack.js",
-    "savetest": "node build/savetest.js"
+    "pack": "node build/pack.js"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
