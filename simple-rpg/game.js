@@ -437,7 +437,7 @@ function renderLevelMenu() {
     ['Stamina', `${maxStamina()} · +${staminaRegen().toFixed(0)}/s`],
     ['Swing cost', `${hero.sword.cost} · flip ${FLIP_COST}`],
     ['Flip cooldown', `${flipCooldown().toFixed(2)}s`],
-    ...(rebirths() ? [['Rebirth', `${rebirths()} · level cap ${levelCap()}`], ['Dodge', pct(dodgeChance())], ['XP · gold', `×${rbXpMul().toFixed(2)} · ×${rbGoldMul().toFixed(2)}`]] : [['Level cap', `${levelCap()} (then rebirth at the shrine)`]]),
+    ...(rebirths() ? [['Rebirth', `${rebirths()} · level cap ${levelCap()}`], ['Rebirth bonus', `+${+((rbDmgMul() - 1) * 100).toFixed(1)}% damage · +${+(REBIRTH.hp * rebirths() * 100).toFixed(1)}% health`], ['Dodge', `${+(dodgeChance() * 100).toFixed(2)}%`], ['XP · gold', `×${rbXpMul().toFixed(2)} · ×${rbGoldMul().toFixed(2)}`]] : [['Level cap', `${levelCap()} (then rebirth at the shrine)`]]),
   ].map(([k, v]) => `<div class="sumrow"><span>${k}</span><b>${v}</b></div>`).join('');
 }
 document.getElementById('level').addEventListener('click', e => {
