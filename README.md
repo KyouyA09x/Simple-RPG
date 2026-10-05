@@ -35,25 +35,27 @@ Only one computer was tested, so the minimum and recommended columns are estimat
 
 ## How to launch
 
-There is no ready-made download on this page yet, so you run it from source or build it yourself. You need [Node.js](https://nodejs.org/) 22 or newer.
+### Download and play (Windows, easiest)
+
+1. Open the [Releases page](../../releases/latest) and download **Stick-RPG-windows.zip**.
+2. Unzip it anywhere and double-click **Stick RPG.exe**. Keep the whole unzipped folder together.
+
+That is all: **no Node.js, no Electron and no installer needed**, because the game engine is inside the folder. Windows may show "Windows protected your PC" because the exe is not signed; click **More info**, then **Run anyway**. Your saves go in a `saves` folder next to the exe and your settings in `data`; both survive updates, so copy them over when you update.
+
+### Build from source (for developers)
+
+You need [Node.js](https://nodejs.org/) 22 or newer.
 
 ```bash
 npm ci          # install Electron and the packager (about 400 MB)
 npm start       # run the game straight from the source folder
+npm run pack    # build launcher/Stick RPG.exe (a standalone Windows app)
 ```
-
-To make a standalone Windows app that you can copy anywhere:
-
-```bash
-npm run pack    # builds launcher/Stick RPG.exe
-```
-
-Then run `launcher/Stick RPG.exe`. No installer is needed; keep the whole `launcher` folder together. Your saves go in a `saves` folder next to the exe and your settings in a `data` folder, and both survive updates.
 
 Notes:
 - The game starts fullscreen. **F** toggles windowed mode, **Esc** opens the menu.
 - `npm run selftest` boots the packaged app, plays a few frames and checks the basics.
-- The repository also has a GitHub Actions workflow ("Build desktop app", run it from the Actions tab) that tries to build for Windows, macOS and Linux. It has not been fully tested yet.
+- Pushing a tag that starts with `v` (for example `v0.1.0`) runs the GitHub workflow that builds the Windows zip and publishes it as a Release.
 - The game can also be opened in a browser through any local web server (serve the folder and open `index.html`), but saves then live in the browser's storage and the desktop-only buttons are hidden.
 
 ## Controls

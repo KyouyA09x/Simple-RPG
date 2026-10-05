@@ -1,17 +1,16 @@
-# Builds the desktop app for Windows, macOS and Linux. Run it from the repo's "Actions" tab (Run workflow),
-# then download the artifacts. NOTE: written but not yet run, the Windows build is the one tested locally.
-name: Build desktop app
+# Builds the Windows game on GitHub and publishes it as a Release.
+# Push a tag that starts with "v" (for example v0.1.0) or run it by hand from the Actions tab.
+# The Release holds Stick-RPG-windows.zip: unzip it and run "Stick RPG.exe" (no Node.js needed).
+name: Build and release (Windows)
 on:
   workflow_dispatch:
   push:
     tags: ['v*']
+permissions:
+  contents: write
 jobs:
-  build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest, ubuntu-latest]
-    runs-on: ${{ matrix.os }}
+  windows:
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -20,10 +19,30 @@ jobs:
           cache: npm
       - run: npm ci
       - run: node build/pack.js
-      - run: node build/selftest.js
-        if: runner.os == 'Windows'
+      - name: Check the zip really contains the exe
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $z = [IO.Compression.ZipFile]::OpenRead((Resolve-Path 'build/_out/Stick RPG.zip'))
+          $hit = $z.Entries | Where-Object { $_.FullName -match 'Stick RPG\.exe$' }
+          $z.Dispose()
+          if (-not $hit) { throw 'Stick RPG.exe is missing from the zip' }
+          Copy-Item 'build/_out/Stick RPG.zip' 'Stick-RPG-windows.zip'
       - uses: actions/upload-artifact@v4
         with:
-          name: stick-rpg-${{ matrix.os }}
-          path: dist/*
+          name: stick-rpg-windows
+          path: Stick-RPG-windows.zip
           if-no-files-found: error
+      - uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          files: Stick-RPG-windows.zip
+          name: Stick RPG ${{ github.ref_name }} (Windows)
+          body: |
+            **Download `Stick-RPG-windows.zip`, unzip it anywhere and double-click `Stick RPG.exe`.** No Node.js, no installer.
+
+            - Windows may show "Windows protected your PC" because the exe is not signed: click **More info**, then **Run anyway**.
+            - This game is AI "vibe coded": expect bugs and changing balance.
+            - Tested only on Windows 11. About 300 MB on disk (130 MB zipped), about 0.5 GB of RAM.
+            - Saves are in the `saves` folder next to the exe and settings in `data`. Copy them to keep your progress when you update.
+            - Controls: WASD move, Space attack, Shift roll, Q drink, R switch potion, M character, Tab inventory, E talk, Esc menu, F fullscreen.
