@@ -2,7 +2,7 @@
 
 A single-player stickman action RPG for Windows. Fight waves of monsters across eight biomes, shop in a village before every boss, delve into dungeons, collect gear, and be reborn stronger. All art, animation and sound are drawn and synthesized by code.
 
-> **Version 0.3.0** · see the [update log](CHANGELOG.md)
+> **Version 0.3.0** · see the [update log](#update-log)
 
 > **AI "vibe coded" project.** Written almost entirely with an AI assistant (Claude) and tested mostly by running the game and automated checks. Expect bugs, changing balance, and no warranty. Keep a copy of your `saves` folder.
 
@@ -35,6 +35,23 @@ Windows may warn that the app is unsigned: click **More info**, then **Run anywa
 - **Village:** a new layout every visit with shops, an inn, an enchantress (runes and weapon essences), a church, a quest board and 14 villagers.
 - **Progression:** eight gear grades, upgrades, runes, and rebirth with permanent bonuses.
 - **Saving:** three slots, four difficulties, checkpoints, save export and import.
+
+## Update log
+
+## 0.3.0
+- **Dungeons:** a building (ruined cathedral, cave mouth, mausoleum, broken tower, well or stone gate) opens now and then after a wave. Three to five floors of sleeping elites and evolved creatures in mazes, rooms, ring halls and crypts, with sunlight or moonlight through the ceiling. The evolved boss waits alone on its own floor, and dungeon loot is always Polished or better.
+- **Ranged weapons:** bows and staves with their own attacks.
+- **Boss weapons:** each of the eight bosses can drop its own signature weapon.
+- **Looks:** katanas and whips come in many colours, and katana guards in several shapes.
+- **Creatures:** idle fidgets and a unique death scene for every creature.
+- **Drops:** runes and essences are rarer.
+- **Main menu:** the version number and an update log.
+- **Dev menu:** tools for dungeons, boss weapons and creatures.
+
+## 0.2.0
+- Runes and essences, biome creatures, a bigger village with a church and quest board, the Return Scroll and utility wheel, ailments.
+
+Older versions are in [CHANGELOG.md](CHANGELOG.md).
 
 ## Build from source
 

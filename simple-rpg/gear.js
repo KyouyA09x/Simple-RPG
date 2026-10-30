@@ -173,7 +173,7 @@ function rollStat(key, rarity, mode) {                              // mode: 'ma
 function scaleStat(k, v, m) { const S = GEAR_STATS[k]; v = Math.min(S.max * STAT_CEIL, v * m); return S.int ? Math.max(1, Math.round(v)) : Math.round(v * 1000) / 1000; }
 function rollItem(o = {}) {
   const slot = o.slot || gearRand(['weapon', 'weapon', 'armor', 'armor', 'helmet', 'ring', 'ring', 'necklace', 'necklace', 'helmet', 'artifact']);
-  const rarity = Number.isInteger(o.rarity) ? Math.max(0, Math.min(7, o.rarity)) : rollRarity(o.tier || 0, !!o.boss);
+  const rarity = Number.isInteger(o.rarity) ? Math.max(0, Math.min(7, o.rarity)) : Math.max(rollRarity(o.tier || 0, !!o.boss), typeof dun !== 'undefined' && dun ? 4 : 0);        // underground nothing below Polished drops
   // item level: around the hero's level when it dropped, a little lower or higher by chance, now and then well above it (boss pieces are never lower); a chosen level (dev menu, shop stock) is used as it is
   const heroLv = Math.max(1, Math.round(o.level || (typeof hero !== 'undefined' && hero ? hero.level : 1)));
   const ilvl = o.ilvl ? Math.max(1, Math.round(o.ilvl)) : Math.max(1, heroLv + (o.boss ? Math.floor(Math.random() * 5) : Math.floor(Math.random() * 6) - 3) + (Math.random() < (o.boss ? 0.14 : 0.07) ? 3 + Math.floor(Math.random() * 5) : 0)), lm = ilvlMul(ilvl);       // and a few pieces (7%, 14% from a boss) are 3 to 7 levels higher still
@@ -196,6 +196,7 @@ function rollItem(o = {}) {
   while (keys.length < RARITIES[rarity].lines && pool.length) keys.push(pool.splice(Math.floor(Math.random() * pool.length), 1)[0]);
   for (const k of keys.slice(0, Math.max(1, RARITIES[rarity].lines))) item.stats[k] = scaleStat(k, rollStat(k, rarity, o.roll), lm);
   if (rarity === 7) item.unique = UNIQUES[o.unique] ? o.unique : gearRand(Object.keys(UNIQUES));
+  if (sword && LOOKS[sword.id]) item.look = LOOKS[sword.id].roll();                   // a katana and a whip each come in their own colours
   item.name = makeName(item, sword, o.baseIdx);
   item.value = Math.max(1, Math.round(RARITIES[rarity].price * (0.8 + Math.random() * 0.4) * (1 + (sword ? sword.lvl * 0.06 : 0))));
   return item;
@@ -397,6 +398,7 @@ function sanitizeItem(raw) {
     }
     if (raw.unique && UNIQUES[raw.unique]) item.unique = raw.unique;
     if (slot === 'weapon' && raw.fx && typeof raw.fx === 'object' && WFX[raw.fx.k]) item.fx = { k: raw.fx.k, lv: Math.max(1, Math.min(WFX_LV, Math.floor(Number(raw.fx.lv)) || 1)) };
+    if (slot === 'weapon' && raw.look && typeof raw.look === 'object' && LOOKS[item.base]) { const tbl = LOOK_SIZES[item.base]; item.look = {}; for (const k in tbl) item.look[k] = Math.max(0, Math.min(tbl[k] - 1, Math.floor(Number(raw.look[k])) || 0)); }      // the colours of a katana or whip
     if (Array.isArray(raw.rn)) { const rn = raw.rn.filter(k => RUNES[k]).slice(0, RARITIES[rarity].sockets); if (rn.length) item.rn = rn; }
     item.ilvl = Math.max(1, Math.min(99, Math.round(Number(raw.ilvl) || (slot === 'weapon' ? item.sl : 0) || 1)));
     delete item.sl;
@@ -512,13 +514,63 @@ function rapierArt(bk = 1) {
 // Katana, traced from the reference icon (a long curved lavender blade, a small orange guard band, a pink wrapped handle with a round pommel) with its own thick dark outline.
 // Drawn pointing up: tip at y = 1, pommel at y = 37.0; the icon tilts it by 42.95 degrees, exactly as in the reference.
 const KATANA = { deg: 42.95, top: 1, bottom: 37.00, gy: 30.45, hx: 16 };
-function katanaArt(rim = false) {
+function katanaBase(rim = false) {
   const no = 'stroke="none"';
   return ICO.p('M13.73 1.12 L14.12 1.01 L14.75 1.51 L15.42 2.31 L15.94 3.32 L16.50 6.07 L16.98 10.64 L17.33 19.02 L17.20 27.50 L17.49 27.82 L17.43 28.47 L17.81 28.61 L18.22 29.23 L18.12 29.75 L17.76 30.08 L17.11 30.19 L16.93 36.29 L16.75 36.63 L16.17 37.00 L15.74 36.98 L15.27 36.75 L14.94 36.13 L15.20 30.12 L14.56 29.97 L14.15 29.34 L14.30 28.79 L14.57 28.54 L15.00 28.47 L14.98 27.73 L15.30 27.44 L15.33 18.12 L15.11 12.05 L14.79 7.75 L14.21 3.44 L13.67 1.42 L13.77 1.17 Z', '#222123', rim ? 'stroke="#8d8db3" stroke-width=".7" stroke-linejoin="round"' : no) +
     ICO.p('M14.55 2.36 L15.17 3.12 L15.56 4.26 L16.31 10.01 L16.72 19.25 L16.71 25.54 L16.55 27.52 L15.86 27.41 L15.98 20.61 L15.77 12.94 L15.24 6.16 L14.59 2.41 Z', '#9a9ab4', no) +
     ICO.p('M15.77 30.10 L16.55 30.12 L16.52 30.82 L16.39 30.94 L15.74 30.96 L15.81 30.14 Z M15.67 32.78 L16.41 32.59 L16.43 33.33 L15.79 33.17 L15.71 32.82 Z M15.59 35.03 L16.36 35.32 L16.33 36.10 L16.06 36.35 L15.80 36.34 L15.59 36.11 L15.63 35.07 Z', '#f46487', no) + ICO.p('M15.50 9.76 L15.54 9.90 L15.54 9.81 Z M16.45 13.31 L16.49 13.44 L16.50 13.35 Z M15.78 15.19 L15.82 15.32 L15.82 15.24 Z M15.80 15.84 L15.84 15.97 L15.84 15.89 Z M15.82 16.49 L15.86 16.62 L15.86 16.54 Z M15.84 17.23 L15.88 17.36 L15.88 17.27 Z M16.59 16.78 L16.63 16.91 L16.63 16.82 Z M15.85 17.97 L15.89 18.10 L15.90 18.01 Z M15.87 18.79 L15.91 18.92 L15.91 18.84 Z M16.62 18.25 L16.66 18.39 L16.67 18.30 Z M15.88 19.70 L15.92 19.83 L15.92 19.75 Z M16.64 19.08 L16.68 19.21 L16.68 19.12 Z M15.89 20.61 L15.93 20.74 L15.93 20.66 Z M16.65 19.90 L16.69 20.12 L16.69 19.95 Z M16.66 20.90 L16.70 21.03 L16.70 20.94 Z M15.89 21.69 L15.93 21.91 L15.94 21.74 Z M16.66 22.07 L16.70 22.29 L16.70 22.11 Z M15.90 22.86 L15.93 23.08 L15.94 22.91 Z M16.66 23.33 L16.69 23.63 L16.70 23.37 Z M15.88 24.38 L15.91 24.77 L15.93 24.43 Z M16.64 25.19 L16.67 25.49 L16.68 25.23 Z M15.86 26.24 L15.88 26.81 L15.90 26.29 Z M15.58 28.10 L15.69 28.49 L16.86 28.49 L15.65 28.53 L15.62 28.14 Z M14.76 29.19 L14.80 29.32 L14.80 29.24 Z M14.89 29.07 L17.49 29.16 L14.93 29.11 Z M14.88 29.41 L17.48 29.51 L14.92 29.46 Z M16.79 28.14 L16.82 28.44 L16.83 28.18 Z M17.53 29.29 L17.57 29.42 L17.57 29.34 Z M16.21 30.94 L16.39 30.94 L16.25 30.98 Z M15.71 31.74 L16.41 31.51 L16.49 31.60 L16.44 31.98 L15.78 32.09 L15.75 31.79 Z M16.11 32.62 L16.28 32.63 L16.15 32.67 Z M15.63 33.82 L16.28 33.97 L16.39 34.54 L15.74 34.38 L15.62 34.25 L15.67 33.86 Z M15.59 36.20 L15.76 36.29 L15.63 36.24 Z M16.11 36.30 L16.28 36.22 L16.15 36.35 Z', '#b74b65', no) +
     ICO.p('M14.80 29.24 L14.98 29.07 L17.57 29.25 L17.48 29.51 L14.88 29.41 L14.84 29.28 Z', '#f9c47a', no) + ICO.p('M15.62 28.14 L16.75 28.09 L16.82 28.44 L15.69 28.49 L15.66 28.19 Z M14.80 29.15 L14.93 29.11 L14.85 29.20 Z', '#f7a779', no);
 }
+// Looks: every katana and whip is made in its own colours. A katana: blade, wrap (handle and pommel), guard shape and metal, and the sheath. A whip: lash, grip and knob.
+const KAT_BLADE = [['lavender', '#9a9ab4'], ['steel', '#cfd6df'], ['frost', '#9fd8f2'], ['crimson', '#d9546a'], ['jade', '#7fcf9a'], ['obsidian', '#3b3b4a'], ['gold', '#e8c46c']];
+const KAT_WRAP = [['rose', '#f46487', '#b74b65'], ['crimson', '#d93a3a', '#8d2020'], ['indigo', '#5a74d6', '#2d3d8a'], ['forest', '#4fa86a', '#2c6a40'], ['ivory', '#f1ead6', '#b3a98a'], ['violet', '#a56ee0', '#6a3fa0'], ['amber', '#f3a640', '#a96a1c']];
+const KAT_GUARD = ['bar', 'disc', 'square', 'bloom'];
+const KAT_METAL = [['gold', '#f9c47a', '#f7a779'], ['silver', '#d6dde6', '#9aa6b6'], ['bronze', '#c98a4a', '#8f5a2a'], ['iron', '#59606e', '#343a46'], ['jade', '#7fd7b0', '#4aa77f']];
+const KAT_SHEATH = [['black', '#2a2a38'], ['wine', '#5a1f2a'], ['navy', '#1f3a5a'], ['green', '#2d4a30'], ['brown', '#5a3d22']];
+const WHIP_LASH = [['tan', '#c99a5b', '#7a5530'], ['black', '#4a4a56', '#22222a'], ['red', '#c4484a', '#7a2426'], ['green', '#6fa35a', '#3d6232'], ['blue', '#5f86c9', '#35508a'], ['violet', '#a070c9', '#64408a']];
+const WHIP_GRIP = [['leather', '#6d4a2a', '#3d2814'], ['ebony', '#3a3a44', '#1c1c22'], ['crimson', '#a33a3a', '#5c1c1c'], ['ivory', '#e8dfc4', '#a8a088']];
+const WHIP_KNOB = [['gold', '#e6b94a'], ['silver', '#d6dde6'], ['bronze', '#c98a4a']];
+const lookAt = (a, i) => a[i] || a[0];
+const lookPick = a => Math.floor(Math.random() * a.length);
+const katLook = l => ({ b: 0, w: 0, t: 0, m: 0, s: 0, ...(l || {}) });
+const whipLook = l => ({ l: 0, g: 0, k: 0, ...(l || {}) });
+const LOOKS = {
+  katana: { roll: () => ({ b: lookPick(KAT_BLADE), w: lookPick(KAT_WRAP), t: lookPick(KAT_GUARD), m: lookPick(KAT_METAL), s: lookPick(KAT_SHEATH) }),
+    text: l => { l = katLook(l); return `${lookAt(KAT_BLADE, l.b)[0]} blade · ${lookAt(KAT_WRAP, l.w)[0]} wrap · ${lookAt(KAT_METAL, l.m)[0]} ${KAT_GUARD[l.t] || 'bar'} guard · ${lookAt(KAT_SHEATH, l.s)[0]} sheath`; } },
+  whip: { roll: () => ({ l: lookPick(WHIP_LASH), g: lookPick(WHIP_GRIP), k: lookPick(WHIP_KNOB) }),
+    text: l => { l = whipLook(l); return `${lookAt(WHIP_LASH, l.l)[0]} lash · ${lookAt(WHIP_GRIP, l.g)[0]} grip · ${lookAt(WHIP_KNOB, l.k)[0]} knob`; } },
+};
+const LOOK_SIZES = { katana: { b: KAT_BLADE.length, w: KAT_WRAP.length, t: KAT_GUARD.length, m: KAT_METAL.length, s: KAT_SHEATH.length }, whip: { l: WHIP_LASH.length, g: WHIP_GRIP.length, k: WHIP_KNOB.length } };
+const heroLook = sw => { const w = typeof hero !== 'undefined' && hero && hero.equip && hero.equip.weapon; return w && w.base === sw.id ? w.look : null; };   // the look of the weapon in the hero's hand
+const whipColors = sw => { if (sw.id !== 'whip') return { lash: sw.color, grip: '#654' }; const l = whipLook(heroLook(sw)); return { lash: lookAt(WHIP_LASH, l.l)[1], grip: lookAt(WHIP_GRIP, l.g)[1] }; };
+const katanaSheath = () => lookAt(KAT_SHEATH, katLook(heroLook({ id: 'katana' })).s)[1];
+function katanaArt(rim = false, look) {
+  const L = katLook(look), bl = lookAt(KAT_BLADE, L.b), wr = lookAt(KAT_WRAP, L.w), mt = lookAt(KAT_METAL, L.m), sh = KAT_GUARD[L.t] || 'bar';
+  let s = katanaBase(rim);
+  const sub = (a, b) => { s = s.split(a).join(b); };
+  sub('#9a9ab4', bl[1]); sub('#f46487', wr[1]); sub('#b74b65', wr[2]); sub('#f9c47a', mt[1]); sub('#f7a779', mt[2]);
+  if (sh !== 'bar') {                                                // a different guard replaces the thin bar of the traced picture
+    s = s.replace(/<path d="M14\.80 29\.24[^>]*\/>/, '');
+    const g = sh === 'disc' ? ICO.p('M14 29.3 Q16.2 28.2 18.4 29.3 Q16.2 30.4 14 29.3 Z', mt[1])
+      : sh === 'square' ? ICO.r(14.1, 28.6, 4.2, 1.4, mt[1], 0.4)
+      : ICO.p('M13.9 29.3 Q14.3 28.5 15.2 28.7 Q16.2 28.1 17.2 28.7 Q18.1 28.5 18.5 29.3 Q18.1 30.1 17.2 29.9 Q16.2 30.5 15.2 29.9 Q14.3 30.1 13.9 29.3 Z', mt[1]);
+    s += g + ICO.l('M15 29.3 H17.4', mt[2], 0.5, 'stroke-linecap="round"');
+  }
+  return s;
+}
+const katanaIcon = look => ICO.rot(KATANA.deg, `<g transform="translate(0 ${16 - (KATANA.top + KATANA.bottom) / 2})">${katanaArt(true, look)}</g>`);
+// the whip, coiled: a long lash round in a spiral to a frayed cracker, and a grip with a knob
+function whipArt(look) {
+  const L = whipLook(look), la = lookAt(WHIP_LASH, L.l), gr = lookAt(WHIP_GRIP, L.g), kn = lookAt(WHIP_KNOB, L.k), rd = 'stroke-linecap="round"';
+  const path = 'M28.2 16.6 C28.8 8 22 2.6 15 2.8 C7.2 3 2.4 9 2.8 15.8 C3.2 23 9.2 28.4 16.4 27.6 C21.6 27 24.8 23.6 24.2 20.4 C23.6 17.8 19.8 17.8 17.2 19.6 C14.2 21.6 10.6 21 9.4 17.8 C8.4 14.8 10 11.8 13 11.2';
+  const strand = d => ICO.l(d, '#17171f', 2.1, rd) + ICO.l(d, la[1], 1, rd);
+  return ICO.l(path, '#17171f', 4.2, rd) + ICO.l(path, la[1], 2.8, rd) + ICO.l(path, la[2], 0.8, 'stroke-linecap="butt" stroke-dasharray="1.2 1.6"') + ICO.l('M27.4 16 C27.6 8.6 21.6 3.8 15 3.9', 'rgba(255,255,255,.28)', 0.6, rd) +
+    strand('M13 11.2 Q15.4 8 19.2 8.6') + strand('M13.2 11.8 Q16.4 9.8 19 11.4') + strand('M12.6 10.8 Q14.2 7.6 17.4 6.6') +
+    ICO.p('M26.6 17.4 L30.6 18.4 L26.8 30 Q25.4 31 23.6 30.2 Z', gr[1]) + ICO.p('M30.6 18.4 L26.8 30 Q25.4 31 23.6 30.2 L24.8 26 L29.6 18.2 Z', gr[2], 'opacity=".55"') +
+    ICO.l('M27.6 21 L29.4 21.6 M26.8 23.8 L28.6 24.4 M26 26.6 L27.8 27.2', gr[2], 0.7, rd) + ICO.c(28.6, 17, 2.2, kn[1]) + ICO.l('M23.9 29.9 Q25.3 30.8 26.6 29.8', kn[1], 1.1, rd);
+}
+const whipIcon = look => whipArt(look);
+const ICON_LOOK = { katana: katanaIcon, whip: whipIcon };
 // the scabbard: glossy black with silver fittings and a tied cord (drawn beside the sword in its icon, and at the hero's hip in the game)
 function scabbardArt() {
   const rim = 'stroke="#8d97ab" stroke-width=".7"';                                         // a light rim so the black lacquer reads on a dark background
@@ -536,7 +588,7 @@ const BLADE_SPEC = {
   great: { yb: 19, ty0: 0.8, gy: 24.4, hx: 16, s: 1.1, lk: 1.3, make: bk => swordArt({ ...SWORD_STYLES.great, bk }) },
   dagger: { yb: 19, ty0: 6.5, gy: 23.6, hx: 16, s: 1, lk: 1.3, make: bk => daggerArt(bk) },
   rapier: { yb: 19, ty0: 1.2, gy: 24.7, hx: 16, s: 0.95, lk: 1.35, make: bk => rapierArt(bk) },
-  katana: { fit: true, ty0: KATANA.top, maxY: KATANA.bottom + 1, gy: KATANA.gy, hx: KATANA.hx, lk: 1.5, wk: 1.55, make: () => katanaArt() },     // the traced picture is not stretched: it is scaled evenly so its tip reaches the sword's length
+  katana: { fit: true, ty0: KATANA.top, maxY: KATANA.bottom + 1, gy: KATANA.gy, hx: KATANA.hx, lk: 1.5, wk: 1.55, make: (bk, look) => katanaArt(false, look) },     // the traced picture is not stretched: it is scaled evenly so its tip reaches the sword's length
 };
 // mix every colour in a piece of art towards one colour: a signature weapon is a known weapon in the colours of its boss
 const blendHex = (c, to, k) => { const f = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); }, a = f(c), b = f(to); return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * k).toString(16).padStart(2, '0')).join(''); };
@@ -557,7 +609,7 @@ const WEAPON_ART = {
   great:  ICO.rot(45, swordArt(SWORD_STYLES.great), 1.26),
   dagger: ICO.rot(0, daggerArt()),                                   // as an icon it is shown as a crossed pair (see slotSvg)
   rapier: ICO.rot(40, rapierArt(), 1.28),
-  katana: ICO.rot(KATANA.deg, `<g transform="translate(0 ${16 - (KATANA.top + KATANA.bottom) / 2})">${katanaArt(true)}</g>`),
+  katana: katanaIcon(),
   spear:  ICO.rot(40,
     ICO.r(15.1, 8, 1.8, 22.5, ICO.wood, 0.5) + ICO.l('M16.9 9 V30', ICO.woodD, 0.5) +
     ICO.p('M16 0.8 L19.6 7.8 L16 10.4 L12.4 7.8 Z', '#dfe6ef') + ICO.p('M16 0.8 L19.6 7.8 L16 10.4 Z', '#9aa8ba') + ICO.l('M16 2 V9', 'rgba(0,0,0,.25)', 0.6) +
@@ -585,9 +637,7 @@ const WEAPON_ART = {
   staff:   staffArt('#7fd0ff'),
   arcane:  staffArt('#c36bff', '#5a3a80', ICO.gold),
   archmage: staffArt('#ffd24a', '#e8e0c8', ICO.gold),
-  whip:   ICO.p('M3 27.5 L8.4 22 L10.6 24 L5 29.4 Q3 29.6 3 27.5 Z', ICO.leatherD) + ICO.l('M4.2 28 L9.6 23', '#8d6a42', 0.6) + ICO.r(7.6, 21.2, 3.8, 2.4, ICO.goldD, 0.6) +
-    ICO.l('M10 22 C16 25.8 24 22.5 21 16.6 C18.2 11.4 23.2 8.4 28 5.4', '#2c1b0c', 3.4, 'stroke-linecap="round"') + ICO.l('M10 22 C16 25.8 24 22.5 21 16.6 C18.2 11.4 23.2 8.4 28 5.4', '#c99a5b', 2, 'stroke-linecap="round"') +
-    ICO.l('M12.4 23.6 L13.6 22.6 M17 24.2 L18.4 23.4 M22.4 20.6 L23.8 20 M21.4 15.2 L22.8 14.4 M24 9.8 L25.4 9.2', '#7a5530', 0.7) + ICO.c(28.4, 5.2, 1.5, '#e8d9b8'),
+  whip:   whipIcon(),
   fist:   ICO.p('M8.5 12.5 Q8.5 10.5 10.6 10.5 H21.4 Q23.6 10.5 23.6 12.5 V21 Q23.6 23 21.6 23 H10.6 Q8.5 23 8.5 21 Z', '#a9b5c4') +
     ICO.p('M8.5 12.5 Q8.5 10.5 10.6 10.5 H21.4 Q23.6 10.5 23.6 12.5 V15 H8.5 Z', '#d3dbe6') + ICO.c(11.2, 9.6, 2.3, '#d3dbe6') + ICO.c(14.6, 8.9, 2.4, '#d3dbe6') + ICO.c(18.2, 8.9, 2.4, '#d3dbe6') + ICO.c(21.4, 9.6, 2.2, '#d3dbe6') +
     ICO.l('M13 15 V21 M16.5 15 V21 M20 15 V21', '#5d6a7a', 0.7) + ICO.p('M8.5 15.5 Q4 14.5 3.6 18 Q3.6 21.5 8.5 20.6 Z', '#c3ccd8') + ICO.l('M5.6 17 Q6.6 18.8 8 18.6', '#5d6a7a', 0.6) +
@@ -640,7 +690,7 @@ const armorIndex = it => {
 const splitArt = art => { const m = /<!--rot:(-?[\d.]+):([\d.]+)-->$/.exec(art); return { body: m ? art.slice(0, m.index) : art, deg: m ? +m[1] : 0, k: m ? +m[2] : 1 }; };
 const iconBody = (slot, item) => {
   if (slot === 'weapon') {
-    const { body, deg, k } = splitArt(WEAPON_ART[item.base] || WEAPON_ART.iron);
+    const { body, deg, k } = splitArt((item.look && ICON_LOOK[item.base] ? ICON_LOOK[item.base](item.look) : WEAPON_ART[item.base]) || WEAPON_ART.iron);
     return item.base === 'dagger' || item.base === 'pilferer' ? `<g transform="rotate(-30 16 16)">${body}</g><g transform="rotate(30 16 16)">${body}</g>` : `<g transform="translate(16 16) rotate(${deg}) scale(1 ${k}) translate(-16 -16)">${body}</g>`;
   }
   if (slot !== 'armor') { const A = SLOT_ART[slot]; return item.rarity === 7 ? A.secret : A.list[baseIndex(slot, item)]; }
@@ -775,7 +825,8 @@ function weaponSprite(sw) {
     let sc, bk, tipY, H, minY;
     if (bs.fit) { sc = D / (bs.gy - bs.ty0); bk = 1; tipY = bs.ty0; minY = Math.floor(tipY) - 1; H = bs.maxY - minY; }
     else { sc = bs.s; const Lb = bs.yb - bs.ty0; bk = Math.max(1, (D / sc - (bs.gy - bs.yb)) / Lb); tipY = bs.yb - Lb * bk; minY = Math.floor(tipY) - 1; H = 31 - minY; }
-    const img = artImage('b:' + sw.id, bs.make(bk), minY, H);
+    const look = sw.id === 'katana' ? heroLook(sw) : null;
+    const img = (look && artImage('b:' + sw.id + JSON.stringify(katLook(look)), bs.make(bk, look), minY, H)) || artImage('b:' + sw.id, bs.make(bk), minY, H);      // while a look's picture loads, the plain one stands in
     return img ? { img, g: { hx: bs.hx, gy: bs.gy }, blade: true, s: sc, wk: bs.wk || 1, minY, H, tipY } : null;
   }
   const img = artImage('w:' + sw.id, splitArt(WEAPON_ART[sw.id] || WEAPON_ART.iron).body);
@@ -802,7 +853,7 @@ function weaponLine(item) {
   const sw = SWORDS.find(s => s.id === item.base); if (!sw) return '';
   const fx = [sw.burn && 'burn', sw.slow && 'slow', sw.stun && 'stuns', sw.pull && 'pulls in', sw.back && 'hits behind', sw.critBonus && `+${Math.round(sw.critBonus * 100)}% crit`, sw.lifesteal && 'life steal'].filter(Boolean).join(', ');
   const own = item.fx ? `<div class="srow"><span style="color:${WFX[item.fx.k].color}">${WFX[item.fx.k].name} ${ROMAN[item.fx.lv]}</span><b>${wfxText(item.fx.k, item.fx.lv, sw.dmg + Math.round(item.stats.dmg || 0)).split(' (')[0]}</b></div>` : '';
-  return own + `<div class="srow"><span>Weapon damage</span><b>${sw.dmg + Math.round(item.stats.dmg || 0)}</b></div>` +
+  return own + (item.look && LOOKS[sw.id] ? `<div class="srow"><span>Look</span><b>${LOOKS[sw.id].text(item.look)}</b></div>` : '') + `<div class="srow"><span>Weapon damage</span><b>${sw.dmg + Math.round(item.stats.dmg || 0)}</b></div>` +
     (sw.note ? `<div class="srow"><span>Signature</span><b>${sw.note}</b></div>` : '') + `<div class="srow"><span>${sw.ranged ? 'Range' : 'Reach'} · swing · cost</span><b>${sw.ranged ? sw.range : Math.round(15 + (sw.kind === 'fist' ? 12 : sw.kind === 'whip' ? sw.len : weaponLength(sw)))} · ${sw.time}s · ${sw.cost}</b></div>` + (fx ? `<div class="srow"><span>Effect</span><b>${fx}</b></div>` : '');
 }
 // Several pieces at once: "Select several" turns the backpack into a tick-list; quick buttons pick everything up to a grade; then discard them, or sell them when you are in the village.

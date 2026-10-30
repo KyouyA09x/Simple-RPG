@@ -432,7 +432,7 @@ function latestSlot() {
 }
 
 // --- Menus ---
-const OVERLAYS = ['title', 'single', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'console', 'controls', 'talk', 'shop', 'inv'];
+const OVERLAYS = ['title', 'changelog', 'single', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'console', 'controls', 'talk', 'shop', 'inv'];
 let paused = false, openMenu = null, settingsReturn = 'title';
 function showMenu(which) {
   const wasMenu = openMenu;
@@ -452,6 +452,8 @@ function showMenu(which) {
   if (which === 'console') { renderConsole(); document.getElementById('conIn').value = ''; conHistPos = conHistory.length; }
   if (which === 'menu') renderMenuInfo();
   if (which === 'load') renderLoad();
+  if (which === 'changelog') document.getElementById('clBody').innerHTML = CHANGELOG.map(c => `<h3>Version ${c.v}</h3><ul>${c.notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')}</ul>`).join('');
+  { const vt = document.getElementById('verTag'); vt.textContent = 'Version ' + GAME_VERSION; vt.classList.toggle('show', state === 'title' && ['title', 'single', 'changelog', 'newgame', 'load'].includes(which)); }
   if (which === 'newgame') { ngSlot = SLOTS.find(i => !readSlot(i)) ?? 1; renderNewGame(); }
   if (which === 'single') document.getElementById('btnContinue').style.display = latestSlot() ? 'block' : 'none';
   Sound.muffle(paused && which !== 'talk' && which !== 'shop');   // talking and shopping keep the music clear
@@ -463,6 +465,7 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
   sfx('click');
   if (a === 'resume' || a === 'close') showMenu(null);
   if (a === 'settings') { settingsReturn = openMenu; showMenu('settings'); }
+  if (a === 'changelog') showMenu('changelog');
   if (a === 'controls') showMenu('controls');
   if (a === 'controlsBack') showMenu('settings');
   if (a === 'bindreset') { settings.binds = defaultBinds(); bindCap = null; persistSettings(); renderHelp(); renderControls(); bindMsg('Controls reset to the defaults.'); }
@@ -623,7 +626,7 @@ function handleInput(code, e) {                                            // on
   if (is('fullscreen') && !rep) { toggleFullscreen(); return; }
   if (wheelOpen) { stop(); if (code === 'Escape') closeWheel(); return; }              // while the wheel is up, nothing else listens (no stray swings)
   if (state === 'title') {
-    if (code === 'Escape' && openMenu !== 'title') showMenu(openMenu === 'settings' ? settingsReturn : openMenu === 'controls' ? 'settings' : openMenu === 'newgame' || openMenu === 'load' ? 'single' : 'title');
+    if (code === 'Escape' && openMenu !== 'title') showMenu(openMenu === 'settings' ? settingsReturn : openMenu === 'controls' ? 'settings' : openMenu === 'newgame' || openMenu === 'load' ? 'single' : 'title');   // (the update log goes back to the title)
     return;
   }
   if (openMenu === 'controls') { if (code === 'Escape') showMenu('settings'); return; }
@@ -1913,8 +1916,9 @@ function drawSword(J, sw, glow) {
       const a = J.atk, tw = tAnim;
       const { ext, crack, ang } = whipPose(J, a);
       const ddx = f * Math.cos(ang), ddy = Math.sin(ang), amp = (a < 0 ? 2.5 : 7) * (1 - crack * 0.85);
-      shaft(-5, 6, DARK, 4);
-      ctx.strokeStyle = sw.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(h.x, h.y);
+      const wc = whipColors(sw);
+      shaft(-5, 6, wc.grip, 4);
+      ctx.strokeStyle = wc.lash; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(h.x, h.y);
       let q = h;
       for (let i = 1; i <= 12; i++) {
         const s = i / 12, w = Math.sin(s * 8 - tw * (a < 0 ? 3 : 14)) * amp * s;
@@ -2058,7 +2062,7 @@ function drawScabbard(J, f) {
   ctx.save(); ctx.translate(J.hip.x, J.hip.y); ctx.rotate(ang); ctx.lineCap = 'round';
   const ax = f * 2.5, ay = -2.6, bx = -f * 24, by = 9;                                       // the mouth at the belt, the tip behind and below
   ctx.strokeStyle = ARMOR_INK; ctx.lineWidth = 5.6; line(ax, ay, bx, by);
-  ctx.strokeStyle = '#2a2a38'; ctx.lineWidth = 3.8; line(ax, ay, bx, by);
+  ctx.strokeStyle = katanaSheath(); ctx.lineWidth = 3.8; line(ax, ay, bx, by);
   ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 0.8; line(ax - f * 0.5, ay - 1, bx + f * 2, by - 1);
   const t = (u, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; line(ax + (bx - ax) * u, ay + (by - ay) * u, ax + (bx - ax) * (u + 0.06), ay + (by - ay) * (u + 0.06)); };
   t(0.02, 4.2, '#aab3bf'); t(0.94, 4.2, '#aab3bf'); t(0.38, 4.4, '#0d0d12');             // the silver mouth and tip, the cord's knot
@@ -3259,7 +3263,7 @@ function renderDev() {
     ${dun ? '' : `    <h3>WORLD</h3><div class="dev-grid">
       ${BIOMES.map((b, i) => btn('biome', b.name, `data-t="${i}"`)).join('')}${btn('biome', 'Random biome', 'data-t="rand"')}${btn('camp', 'Play campfire scene')}${btn('village', 'Visit the village')}${btn('church', 'Visit the church')}</div>`}
     <h3>DUNGEON</h3><div class="dev-grid">
-      ${dun ? `${btn('dunleave', 'Leave the dungeon')}${Array.from({ length: dun.floors }, (_, i) => btn('dunfloor', `Floor ${i + 1}`, `data-t="${i}" ${i === dun.idx ? 'class="on"' : ''}`)).join('')}${btn('dungo', 'Go to the way up', 'data-t="up"')}${btn('dungo', 'Go to the stairs down', 'data-t="down"')}${btn('dungo', 'Go to the nearest chest', 'data-t="chest"')}${btn('dungo', 'Go to the boss', 'data-t="boss"')}${btn('dunwake', 'Wake everything')}${btn('dunchests', 'Open every chest')}${btn('dunseal', 'Break the boss\'s seal')}${btn('dunreveal', 'Reveal the floor')}` : `${btn('dungeon', 'Enter a dungeon')}${btn('dundoor', 'Open a stone door beside me')}`}</div>
+      ${dun ? `${btn('dunleave', 'Leave the dungeon')}${Array.from({ length: dun.floors }, (_, i) => btn('dunfloor', `Floor ${i + 1}`, `data-t="${i}" ${i === dun.idx ? 'class="on"' : ''}`)).join('')}${btn('dungo', 'Go to the way up', 'data-t="up"')}${btn('dungo', 'Go to the stairs down', 'data-t="down"')}${btn('dungo', 'Go to the nearest chest', 'data-t="chest"')}${btn('dungo', 'Go to the boss', 'data-t="boss"')}${btn('dunwake', 'Wake everything')}${btn('dunchests', 'Open every chest')}${btn('dunseal', 'Break the boss\'s seal')}${btn('dunreveal', 'Reveal the floor')}` : `${btn('dungeon', 'Enter a dungeon')}${Object.keys(DUN_DOORS).map(k => btn('dundoor', DUN_DOORS[k].name, `data-t="${k}"`)).join('')}`}</div>
     ${dun ? '' : `<h3>TIME &amp; WEATHER</h3><div class="dev-grid">
       ${[['Dawn', 0.28], ['Noon', 0.5], ['Dusk', 0.75], ['Night', 0.95]].map(([n, v]) => btn('time', n, `data-t="${v}"`)).join('')}
       ${btn('freeze', dev.freezeTime ? 'Time frozen' : 'Freeze time', dev.freezeTime ? 'class="on"' : '')}</div>
@@ -3358,7 +3362,7 @@ document.getElementById('devBody').addEventListener('click', e => {
   if (act === 'village') { showMenu(null); enterVillage(); return; }
   if (act === 'dungeon') { showMenu(null); if (state === 'play' && !dun) enterDungeon(); return; }
   if (act === 'church') { showMenu(null); if (state === 'play' && !dun) { enterVillage(); if (vil) { vil.fade = 0; enterChurch(); vil.fade = 0; } } return; }
-  if (act === 'dundoor') { dunDoor = { x: Math.max(160, Math.min(WW - 160, hero.x + 170)), y: Math.max(230, Math.min(WH - 120, hero.y + 20)), t: 24, max: 24, p: 0 }; dunRolled = true; waveTimer = Math.max(waveTimer, 26); said('A stone door opens beside you'); }
+  if (act === 'dundoor') { const design = DUN_DOORS[t] ? t : DUN_DOOR_PICKS[Math.floor(Math.random() * DUN_DOOR_PICKS.length)]; dunDoor = { x: Math.max(200, Math.min(WW - 200, hero.x + 200)), y: Math.max(300, Math.min(WH - 120, hero.y + 40)), t: 24, max: 24, p: 0, design }; dunRolled = true; waveTimer = Math.max(waveTimer, 26); said(`${DUN_DOORS[design].name} opens beside you`); }
   if (act === 'dunleave') { showMenu(null); exitDungeon(); return; }
   if (dun && act === 'dunfloor') { dun.fade = 0; switchFloor(+t, +t > dun.idx); showMenu(null); return; }
   if (dun && act === 'dunwake') { for (const m of enemies) wakeMob(m, 'chain'); said('Everything is awake'); }

@@ -1,11 +1,13 @@
 # Update log
 
 ## 0.3.0
-- **Dungeons:** a stone door opens now and then after a wave. Three to five floors of sleeping elites and evolved creatures, chests, and an evolved boss guarding a sealed treasure room.
+- **Dungeons:** a building (ruined cathedral, cave mouth, mausoleum, broken tower, well or stone gate) opens now and then after a wave. Three to five floors of sleeping elites and evolved creatures in mazes, rooms, ring halls and crypts, with sunlight or moonlight through the ceiling. The evolved boss waits alone on its own floor, and dungeon loot is always Polished or better.
 - **Ranged weapons:** bows and staves with their own attacks.
 - **Boss weapons:** each of the eight bosses can drop its own signature weapon.
+- **Looks:** katanas and whips come in many colours, and katana guards in several shapes.
 - **Creatures:** idle fidgets and a unique death scene for every creature.
 - **Drops:** runes and essences are rarer.
+- **Main menu:** the version number and an update log.
 - **Dev menu:** tools for dungeons, boss weapons and creatures.
 
 ## 0.2.0
