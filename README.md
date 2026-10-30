@@ -65,8 +65,8 @@ Notes:
 | **W A S D** / arrows | Move |
 | **Space** | Attack |
 | **Shift** | Roll (invulnerable for a moment; costs stamina) |
-| **Q** | Drink the selected potion |
-| **R** | Switch potion kind |
+| **Q** | Use the equipped utility (healing potion or Return Scroll) |
+| **R** (hold) | Utility wheel: aim at an icon and let go to equip it |
 | **X** | Swap to the spare weapon (once unlocked) |
 | **M** | Character window (stats) |
 | **Tab** | Inventory window |

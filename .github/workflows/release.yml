@@ -49,4 +49,4 @@ jobs:
             - This game is AI "vibe coded": expect bugs and changing balance.
             - Tested only on Windows 11. About 300 MB on disk (130 MB zipped), about 0.5 GB of RAM.
             - Saves are in the `saves` folder next to the exe and settings in `data`. Copy them to keep your progress when you update.
-            - Controls: WASD move, Space attack, Shift roll, Q drink, R switch potion, M character, Tab inventory, E talk, Esc menu, F fullscreen.
+            - Controls: WASD move, Space attack, Shift roll, Q use the equipped item, hold R to switch it (potion or Return Scroll), M character, hold Tab for the menu wheel, E talk, Esc menu, F fullscreen.

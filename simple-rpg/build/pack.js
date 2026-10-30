@@ -27,7 +27,7 @@ const README = [
   'Run "Stick RPG.exe" to play. No installation needed; keep this whole folder together.',
   'Your saves are in the "saves" folder next to the exe, and settings in "data"; both survive updates, and you can back them up by copying the folders.',
   'Settings > Load Game can also export a save to a file.',
-  'Controls: WASD/arrows move, Space attack, Shift flip, Q potion, E talk, M character and inventory, Esc pause, F fullscreen. The game starts fullscreen.',
+  'Controls: WASD/arrows move, Space attack, Shift flip, Q use item (hold R to switch), E talk, M character and inventory, Esc pause, F fullscreen. The game starts fullscreen.',
   '',
 ].join('\r\n');
 
