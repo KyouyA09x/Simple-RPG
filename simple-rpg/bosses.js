@@ -1,34 +1,35 @@
 // Boss variants: one boss per biome, each with its own look and its own set of attacks.
 // A boss is data (BOSSES) plus a small attack engine: it walks, picks an attack from its kit, telegraphs it, fires it, and goes
-// back to walking. At half health it enrages (faster, more of everything). The Minotaur King keeps its original brain
-// (updateMinotaurBoss in game.js); every other boss runs updateKitBoss below.
+// back to walking. At half health it enrages (faster, more of everything). Every boss, the Minotaur King included, runs updateKitBoss below;
+// the shared attacks are in ATK here, the signature ones (and the creatures' basic attacks) in mobs.js.
 
 const BOSS_BY_BIOME = { forest: 'minotaur', jungle: 'goblinKing', swamp: 'slimeQueen', ruins: 'lich', snow: 'frostTitan', volcano: 'magma', desert: 'pharaoh', highlands: 'stormWarden' };
 
 // hp/speed/dmg are multipliers on the standard boss numbers; attacks: weight of each attack; p2: extra weight once enraged
 const BOSSES = {
-  minotaur:   { names: ['Minotaur King', 'Minotaur Emperor'], hp: 1, speed: 1, dmg: 1, r: 34, color: '#ffdca0', intro: 'The ground shakes under heavy hooves.',
+  minotaur:   { names: ['Minotaur King', 'Minotaur Emperor'], ail: 'bleed', hp: 1, speed: 1, dmg: 1, r: 34, move: 'chase', color: '#ffdca0', intro: 'The ground shakes under heavy hooves.',
+    attacks: { slam: 3, charge: 3, sweep: 3, rockfall: 2 }, p2: { rockfall: 1, charge: 1 }, summon: { type: 'goblin', n: 3, p2: 4 },
     theme: { epithet: 'of the Minotaur King', pref: ['dmg'] } },
-  goblinKing: { names: ['Goblin King'], hp: 0.85, speed: 1.25, dmg: 0.9, r: 30, move: 'chase', color: '#9be36f', intro: 'A crown glints in a swarm of knives.',
-    attacks: { bombs: 3, summon: 2, charge: 2 }, p2: { summon: 2, bombs: 1 }, summon: { type: 'goblin', n: 4, p2: 7 }, bomb: 'powder',
+  goblinKing: { names: ['Goblin King'], ail: 'bleed', hp: 0.85, speed: 1.25, dmg: 0.9, r: 30, move: 'chase', color: '#9be36f', intro: 'A crown glints in a swarm of knives.',
+    attacks: { bombs: 3, summon: 2, knifeFan: 3, dashStab: 3 }, p2: { summon: 2, bombs: 1, knifeFan: 1 }, summon: { type: 'goblin', n: 4, p2: 7 }, bomb: 'powder',
     theme: { epithet: 'of the Goblin King', pref: ['gold'] } },
-  slimeQueen: { names: ['Slime Queen'], hp: 1.15, speed: 0.6, dmg: 1, r: 36, move: 'chase', color: '#7fe07f', intro: 'The swamp itself rises and wobbles.',
-    attacks: { pools: 3, summon: 2, charge: 1 }, p2: { pools: 2, summon: 1 }, summon: { type: 'slime', n: 3, p2: 5 }, pool: 'acid',
+  slimeQueen: { names: ['Slime Queen'], ail: 'weak', hp: 1.15, speed: 0.6, dmg: 1, r: 36, move: 'chase', color: '#7fe07f', intro: 'The swamp itself rises and wobbles.',
+    attacks: { pools: 2, summon: 2, bounce: 3, ooze: 2 }, p2: { ooze: 2, bounce: 1 }, summon: { type: 'slime', n: 3, p2: 5 }, pool: 'acid',
     theme: { epithet: 'of the Slime Queen', pref: ['hp'] } },
-  lich:       { names: ['Lich Archer'], hp: 0.8, speed: 0.9, dmg: 1, r: 30, move: 'kite', color: '#a6f0b0', intro: 'Bone fingers draw a bowstring of cold light.',
-    attacks: { volley: 4, blink: 2, summon: 1 }, p2: { volley: 2, blink: 1 }, summon: { type: 'archer', n: 2, p2: 3 },
+  lich:       { names: ['Lich Archer'], ail: 'curse', hp: 0.8, speed: 0.9, dmg: 1, r: 30, move: 'kite', color: '#a6f0b0', intro: 'Bone fingers draw a bowstring of cold light.',
+    attacks: { volley: 3, blink: 2, summon: 1, arrowRain: 3, ring: 2 }, p2: { volley: 2, blink: 1, ring: 1 }, summon: { type: 'archer', n: 2, p2: 3 },
     theme: { epithet: 'of the Lich Archer', pref: ['crit'] } },
-  frostTitan: { names: ['Frost Titan'], hp: 1.3, speed: 0.6, dmg: 1.05, r: 38, move: 'chase', color: '#bfeaff', intro: 'The air freezes in front of a walking glacier.', chill: true,
-    attacks: { slam: 3, nova: 3, strikes: 2 }, p2: { strikes: 2, nova: 1 }, strike: 'icicle',
+  frostTitan: { names: ['Frost Titan'], ail: 'freeze', hp: 1.3, speed: 0.6, dmg: 1.05, r: 38, move: 'chase', color: '#bfeaff', intro: 'The air freezes in front of a walking glacier.', chill: true,
+    attacks: { slam: 2, nova: 2, strikes: 2, breath: 3, shatter: 2 }, p2: { strikes: 2, breath: 1, shatter: 1 }, strike: 'icicle',
     theme: { epithet: 'of the Frost Titan', pref: ['cdr'] } },
-  magma:      { names: ['Magma Colossus'], hp: 1.35, speed: 0.5, dmg: 1.1, r: 40, move: 'chase', color: '#ffb060', intro: 'Stone cracks and the cracks glow.',
-    attacks: { slam: 3, pools: 2, bombs: 2 }, p2: { bombs: 2, pools: 1 }, pool: 'lava', bomb: 'lava',
+  magma:      { names: ['Magma Colossus'], ail: 'burn', hp: 1.35, speed: 0.5, dmg: 1.1, r: 40, move: 'chase', color: '#ffb060', intro: 'Stone cracks and the cracks glow.',
+    attacks: { slam: 2, pools: 1, bombs: 2, fissure: 3, overheat: 2 }, p2: { bombs: 2, overheat: 1, fissure: 1 }, pool: 'lava', bomb: 'lava',
     theme: { epithet: 'of the Magma Colossus', pref: ['critDmg'] } },
-  pharaoh:    { names: ['Sand Pharaoh'], hp: 1, speed: 0.8, dmg: 1, r: 34, move: 'chase', color: '#ffe08a', intro: 'Linen wraps and a rattle of gold from the dunes.',
-    attacks: { nova: 3, charge: 2, summon: 2 }, p2: { summon: 2, nova: 1 }, summon: { type: 'goblin', n: 3, p2: 5 }, sand: true,
+  pharaoh:    { names: ['Sand Pharaoh'], ail: 'blind', hp: 1, speed: 0.8, dmg: 1, r: 34, move: 'chase', color: '#ffe08a', intro: 'Linen wraps and a rattle of gold from the dunes.',
+    attacks: { nova: 2, charge: 2, summon: 2, spikeRing: 3, sandWall: 3 }, p2: { summon: 2, spikeRing: 1, sandWall: 1 }, summon: { type: 'goblin', n: 3, p2: 5 }, sand: true,
     theme: { epithet: 'of the Sand Pharaoh', pref: ['stamina'] } },
-  stormWarden:{ names: ['Storm Warden'], hp: 1.1, speed: 0.75, dmg: 1, r: 36, move: 'chase', color: '#fff3a0', intro: 'Thunder walks on two legs.',
-    attacks: { strikes: 4, slam: 2, charge: 2 }, p2: { strikes: 3 }, strike: 'lightning',
+  stormWarden:{ names: ['Storm Warden'], ail: 'freeze', hp: 1.1, speed: 0.75, dmg: 1, r: 36, move: 'chase', color: '#fff3a0', intro: 'Thunder walks on two legs.',
+    attacks: { strikes: 3, slam: 2, charge: 2, chain: 3, tempest: 2 }, p2: { chain: 2, tempest: 1 }, strike: 'lightning',
     theme: { epithet: 'of the Storm Warden', pref: ['speed'] } },
 };
 
@@ -96,6 +97,7 @@ function pickAttack(m, dist) {
     if (k === 'charge') w[k] *= dist > 160 ? 2 : 0.5;
     if (k === 'volley') w[k] *= dist > 110 ? 1 : 0.2;
     if (k === 'blink') w[k] *= dist < 240 ? 2 : 0.3;
+    w[k] *= atkWeight(k, dist);
     if (k === m.lastAtk) w[k] *= 0.35;
   }
   let tot = 0; for (const k in w) tot += w[k];
@@ -113,6 +115,7 @@ function updateKitBoss(m, dt, dx, dy, dist, spd) {
     if (def.summon) ATK.summon.fire(m);
   }
   m.appearT = Math.max(0, (m.appearT || 0) - dt);
+  if (kitStates(m, dt, dx, dy, dist)) { m.x = Math.max(20, Math.min(WW - 20, m.x)); m.y = Math.max(60, Math.min(WH - 10, m.y)); return; }
   if (m.state === 'walk') {
     if (m.appearT <= 0) {
       if (def.move === 'kite') {                                    // keeps its distance, like an archer should
@@ -122,7 +125,7 @@ function updateKitBoss(m, dt, dx, dy, dist, spd) {
     }
     m.facing = Math.sign(dx) || m.facing;
     if (m.stateT <= 0 && !hero.dead && m.appearT <= 0) {
-      const id = pickAttack(m, dist);
+      const id = pickAttack(m, dist); sfx('warn');
       m.state = 'atk'; m.atk = id; m.atkT = ATK[id].wind * (m.phase2 ? 0.85 : 1); m.atkWind = m.atkT; m.lastAtk = id;
       m.chargeDx = dx / dist; m.chargeDy = dy / dist; m.atkLog[id] = (m.atkLog[id] || 0) + 1;
     }
@@ -131,21 +134,23 @@ function updateKitBoss(m, dt, dx, dy, dist, spd) {
     if (m.atk === 'charge') { m.chargeDx = dx / dist; m.chargeDy = dy / dist; }
     m.atkT -= dt;
     if (m.atkT <= 0) {
-      ATK[m.atk].fire(m);
+      ATK[m.atk].fire(m); m.fireT = FIRE_T;
       if (m.state === 'atk') { m.state = 'walk'; m.stateT = (m.atk === 'blink' ? 0.35 : 1.5 + Math.random() * 0.9) * (m.phase2 ? 0.75 : 1); }
     }
   } else if (m.state === 'charge') {
     m.x += m.chargeDx * 440 * dt; m.y += m.chargeDy * 440 * dt; m.walkT += dt * 18;
     if (gfx.particles && Math.random() < 0.5) burst(m.x, m.y, '#a98', 1, 40, 4, -10);
     if (m.stateT <= 0) {
-      if (--m.charges > 0) { m.state = 'atk'; m.atk = 'charge'; m.atkT = 0.35; m.atkWind = 0.35; }
-      else { m.state = 'walk'; m.stateT = 1.6 + Math.random(); }
+      if (--m.charges > 0) { m.state = 'atk'; m.atk = 'charge'; m.atkT = 0.35; m.atkWind = 0.35; m.lastAtk = 'charge'; }
+      else { m.state = 'walk'; m.stateT = 1.6 + Math.random(); m.fireT = (FIRE_T - FIRE_RISE) * 0.4; }
     }
   }
   m.x = Math.max(20, Math.min(WW - 20, m.x)); m.y = Math.max(60, Math.min(WH - 10, m.y));
 }
 
 // ---------------------------------------------------------------- hazards on the ground
+const HAZ_AIL = { lava: 'burn', arrow: 'curse', spike: 'blind', icicle: 'freeze', lightning: 'freeze' };            // what standing in a boss's strike can do to you
+const hazAil = k => { const a = HAZ_AIL[k]; if (a && !hero.dead && Math.random() < 0.5 * ailChance) addAilment(a); };
 function updateHazards(dt) {
   if (!hazards.length) return;
   for (const h of hazards) {
@@ -154,7 +159,7 @@ function updateHazards(dt) {
       if (h.fuse <= 0) {
         h.done = true; sfx('boom'); shake(7);
         burst(h.x, h.y - 10, h.kind === 'lava' ? '#ff8a30' : '#ffd070', 22, 240, 3, 60, true);
-        if (!hero.dead && Math.hypot(hero.x - h.x, (hero.y - h.y) * 1.5) < h.r) damageHero(h.dmg);
+        if (!hero.dead && Math.hypot(hero.x - h.x, (hero.y - h.y) * 1.5) < h.r && damageHero(h.dmg) > 0) hazAil(h.kind);
       }
     } else if (h.k === 'pool') {
       h.life -= dt; h.born += dt; h.tick -= dt;
@@ -162,10 +167,12 @@ function updateHazards(dt) {
       else if (h.tick <= 0 && h.born > 0.5 && !hero.dead && Math.hypot((hero.x - h.x) / 1, (hero.y - h.y) * 1.8) < h.r) {
         h.tick = 0.5;
         const dealt = damageHero(h.dmg, false);
-        if (dealt > 0 && h.kind === 'acid') addPoison();
+        if (dealt > 0 && h.kind === 'acid') addPoison(); else if (dealt > 0 && h.kind === 'lava') hazAil('lava');
       }
+    } else if (h.k === 'arc') {
+      h.life -= dt; if (h.life <= 0) h.done = true;
     } else if (h.k === 'strike') {
-      if (h.delay > 0) { h.delay -= dt; if (h.delay <= 0) { h.boltT = 0.28; sfx(h.kind === 'icicle' ? 'crackle' : 'thunder'); shake(5); burst(h.x, h.y - 10, h.kind === 'icicle' ? '#cfeaff' : '#fff6a0', 14, 200, 2.4, 80, true); if (!hero.dead && Math.hypot(hero.x - h.x, (hero.y - h.y) * 1.5) < h.r) damageHero(h.dmg); } }
+      if (h.delay > 0) { h.delay -= dt; if (h.delay <= 0) { h.boltT = 0.28; sfx(strikeSfx(h.kind)); shake(5); burst(h.x, h.y - 10, strikeCol(h.kind), 14, 200, 2.4, 80, true); if (!hero.dead && Math.hypot(hero.x - h.x, (hero.y - h.y) * 1.5) < h.r && damageHero(h.dmg) > 0) hazAil(h.kind); } }
       else { h.boltT -= dt; if (h.boltT <= 0) h.done = true; }
     }
   }
@@ -189,6 +196,10 @@ function drawHazards() {
       ctx.fillStyle = `rgba(255,255,255,${0.25 * a})`;
       for (let i = 0; i < 4; i++) { const t = tAnim * 1.4 + i * 1.7 + h.x; ctx.beginPath(); ctx.arc(h.x + Math.cos(t) * h.r * 0.5, h.y + Math.sin(t * 1.3) * h.r * 0.2, 2 + (i % 2), 0, Math.PI * 2); ctx.fill(); }
       if (h.born < 0.5) { ctx.strokeStyle = 'rgba(255,255,255,0.4)'; ctx.setLineDash([5, 5]); ctx.beginPath(); ctx.ellipse(h.x, h.y, h.r, h.r / 1.8, 0, 0, Math.PI * 2); ctx.stroke(); ctx.setLineDash([]); }
+    } else if (h.k === 'arc') {
+      drawArcHazard(h);
+    } else if (h.k === 'strike' && !(h.kind === 'icicle' || h.kind === 'lightning')) {
+      drawStrikeX(h);
     } else if (h.k === 'strike') {
       const ice = h.kind === 'icicle';
       if (h.delay > 0) {
@@ -209,7 +220,9 @@ function drawHazards() {
 
 // ground markers for what the boss is winding up (slam and nova size, a charge's line, a volley's aim)
 function drawBossTelegraph(m) {
-  if (m.state !== 'atk' || !m.atk || m.dieT !== undefined) return;
+  if (m.dieT !== undefined) return;
+  if (m.state === 'chan') { drawMoreTelegraph(m, 1, m.def ? m.def.color : '#f88'); return; }
+  if (m.state !== 'atk' || !m.atk) return;
   const p = 1 - Math.max(0, m.atkT) / (m.atkWind || 1), c = m.def ? m.def.color : '#f88';
   ctx.save(); ctx.lineWidth = 2;
   if (m.atk === 'slam' || m.atk === 'nova') {
@@ -220,7 +233,7 @@ function drawBossTelegraph(m) {
     ctx.strokeStyle = `rgba(255,90,90,${0.3 + 0.5 * p})`; ctx.setLineDash([8, 6]); line(m.x, m.y, m.x + m.chargeDx * 440 * 0.55, m.y + m.chargeDy * 440 * 0.55); ctx.setLineDash([]);
   } else if (m.atk === 'volley') {
     ctx.strokeStyle = `rgba(160,255,190,${0.2 + 0.5 * p})`; ctx.setLineDash([4, 6]); line(m.x, m.y - 70, hero.x, hero.y - 35); ctx.setLineDash([]);
-  }
+  } else drawMoreTelegraph(m, p, c);
   ctx.restore();
 }
 
@@ -232,10 +245,10 @@ function drawCrown(x, y, w, col = '#fd4') {
   ctx.fillStyle = '#e22'; ctx.beginPath(); ctx.arc(x, y - w * 0.35, w * 0.16, 0, Math.PI * 2); ctx.fill();
 }
 function drawGiant(m, S) {
-  const { x, y, facing: f } = m, sc = S.scale || 2, wind = m.state === 'atk';
+  const { x, y, facing: f } = m, sc = S.scale || 2, sp = swingPos(m), wind = sp < -0.1, spread = m.state === 'chan' && (m.chanAtk === 'overheat' || m.chanAtk === 'tempest'), breathing = (m.state === 'chan' && m.chanAtk === 'breath') || (m.state === 'atk' && m.atk === 'breath');
   drawShadow(x, y, 26 * sc);
   ctx.save(); ctx.translate(x, y); ctx.scale(sc * (1 + Math.sin(tAnim * 2.4) * 0.012), sc * (1 + Math.sin(tAnim * 2.4 + 1) * 0.02)); ctx.translate(-x, -y);
-  const sw = Math.sin(m.walkT) * 0.5, bx = x + (wind ? Math.sin(performance.now() / 22) * 1.4 : 0), col = statusTint(m, S.body);
+  const sw = Math.sin(m.walkT) * 0.5, bx = x + f * sp * 7 + (wind ? Math.sin(performance.now() / 22) * 1.4 * -sp : 0), col = statusTint(m, S.body);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round';
   ctx.strokeStyle = S.dark; ctx.lineWidth = 9; line(bx - 7, y - 26, bx - 8 + Math.sin(sw) * 9, y); line(bx + 7, y - 26, bx + 8 - Math.sin(sw) * 9, y);
   ctx.fillStyle = S.dark; ctx.fillRect(bx - 8 + Math.sin(sw) * 9 - 6, y - 4, 12, 5); ctx.fillRect(bx + 8 - Math.sin(sw) * 9 - 6, y - 4, 12, 5);
@@ -244,16 +257,19 @@ function drawGiant(m, S) {
   if (S.kind === 'pharaoh') { ctx.strokeStyle = 'rgba(255,255,255,0.45)'; ctx.lineWidth = 1.4; for (let i = 0; i < 7; i++) line(bx - 18 + i * 1.2, y - 70 + i * 6, bx + 18 - i * 1.2, y - 66 + i * 6); ctx.fillStyle = '#3a7fd0'; ctx.fillRect(bx - 14, y - 72, 28, 5); ctx.fillStyle = '#ffd24a'; ctx.fillRect(bx - 12, y - 72, 24, 2); }
   if (S.kind === 'magma') { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = `rgba(255,${120 + Math.sin(tAnim * 3) * 30},30,0.9)`; ctx.lineWidth = 2.2; for (const [a, b, c2, d2] of [[-10, -62, -2, -50], [-2, -50, 6, -56], [6, -56, 12, -42], [-12, -44, -4, -34], [2, -38, 10, -28], [-6, -70, 2, -62]]) line(bx + a, y + b, bx + c2, y + d2); ctx.restore(); }
   if (S.kind === 'frost') { ctx.fillStyle = '#e8f8ff'; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(bx + sd * 14, y - 70); ctx.lineTo(bx + sd * 22, y - 96); ctx.lineTo(bx + sd * 25, y - 68); ctx.closePath(); ctx.fill(); ctx.stroke(); } ctx.beginPath(); ctx.moveTo(bx - 4, y - 74); ctx.lineTo(bx, y - 98); ctx.lineTo(bx + 5, y - 74); ctx.closePath(); ctx.fill(); }
-  const up = wind ? -28 : 0, ay = y - 62;
+  const up = spread ? 0 : sp < 0 ? 34 * sp : 22 * sp, ay = y - 62;                       // arms rise as it winds up and slam down as it lets go; a spinning attack holds them out wide
+  const lx = spread ? bx - 54 : bx - 28 - sw * 5, rx = spread ? bx + 54 : bx + 28 + sw * 5, hy0 = spread ? y - 64 + Math.sin(tAnim * 9) * 3 : y - 32 + up;
   ctx.strokeStyle = col; ctx.lineWidth = 9;
-  line(bx - 16, ay, bx - 28 - sw * 5, y - 34 + up); line(bx + 16, ay, bx + 28 + sw * 5, y - 34 + up);
-  ctx.fillStyle = S.fist || S.dark; ctx.beginPath(); ctx.arc(bx - 28 - sw * 5, y - 32 + up, 7, 0, Math.PI * 2); ctx.arc(bx + 28 + sw * 5, y - 32 + up, 7, 0, Math.PI * 2); ctx.fill();
-  if (S.kind === 'pharaoh') { ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 3; line(bx + 30 + sw * 5, y - 32 + up, bx + 32 + sw * 5, y - 100 + up); ctx.beginPath(); ctx.ellipse(bx + 32 + sw * 5, y - 106 + up, 5, 7, 0, 0, Math.PI * 2); ctx.stroke(); }
-  const hx = bx + f * 3, hy = y - 84;
+  line(bx - 16, ay, lx, hy0 - 2); line(bx + 16, ay, rx, hy0 - 2);
+  ctx.fillStyle = S.fist || S.dark; ctx.beginPath(); ctx.arc(lx, hy0, 7, 0, Math.PI * 2); ctx.arc(rx, hy0, 7, 0, Math.PI * 2); ctx.fill();
+  if (spread && gfx.glow) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = withAlpha(S.fist || '#fff', 0.5); ctx.beginPath(); ctx.arc(lx, hy0, 14, 0, Math.PI * 2); ctx.arc(rx, hy0, 14, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+  if (S.kind === 'pharaoh') { ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 3; line(rx + 2, hy0, rx + 4, hy0 - 68); ctx.beginPath(); ctx.ellipse(rx + 4, hy0 - 74, 5, 7, 0, 0, Math.PI * 2); ctx.stroke(); }
+  const hx = bx + f * 3 + (breathing && m.state === 'chan' ? f * 6 : 0), hy = y - 84 + (sp < 0 ? sp * 6 : 0);          // the head rears back, then thrusts out
   ctx.fillStyle = col; ctx.strokeStyle = S.dark; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, 12, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
   if (S.kind === 'magma') { ctx.fillStyle = '#2a1e1e'; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(hx + sd * 6, hy - 9); ctx.lineTo(hx + sd * 16, hy - 24); ctx.lineTo(hx + sd * 12, hy - 6); ctx.fill(); } }
   if (S.kind === 'pharaoh') { ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.moveTo(hx - 14, hy - 4); ctx.lineTo(hx - 10, hy - 16); ctx.lineTo(hx + 10, hy - 16); ctx.lineTo(hx + 14, hy - 4); ctx.lineTo(hx + 12, hy + 14); ctx.lineTo(hx - 12, hy + 14); ctx.closePath(); ctx.globalAlpha = 0.55; ctx.fill(); ctx.globalAlpha = 1; ctx.fillStyle = '#3a7fd0'; for (let i = -1; i <= 1; i++) ctx.fillRect(hx + i * 6 - 1.5, hy - 15, 3, 9); }
   ctx.fillStyle = S.eye; ctx.shadowColor = S.eye; ctx.shadowBlur = gfx.glow ? 8 : 0; ctx.beginPath(); ctx.arc(hx + f * 5, hy - 1, 2.4, 0, Math.PI * 2); ctx.arc(hx - f * 2, hy - 1, 2.1, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+  if (breathing) { const open = m.state === 'chan' ? 1 : -sp; ctx.fillStyle = '#12304a'; ctx.beginPath(); ctx.ellipse(hx + f * 7, hy + 6, 5 * open + 1, 4 * open + 1, 0, 0, Math.PI * 2); ctx.fill(); }
   if (S.kind === 'storm' && wind) { ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.strokeStyle = 'rgba(255,240,140,0.9)'; ctx.lineWidth = 2; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(bx + sd * 30, y - 60 + up); for (let i = 1; i <= 5; i++) ctx.lineTo(bx + sd * (30 + Math.sin(performance.now() / 40 + i * 3) * 9), y - 60 + up - i * 12); ctx.stroke(); } ctx.restore(); }
   if (S.kind === 'storm') { ctx.strokeStyle = '#e8f0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(hx - 8, hy + 8); ctx.quadraticCurveTo(hx, hy + 24, hx + 8, hy + 8); ctx.stroke(); }
   ctx.restore();
@@ -266,7 +282,7 @@ const GIANT_STYLE = {
 };
 function drawBossArt(m) {
   const k = m.kind, fade = m.alpha ?? 1;
-  ctx.save();
+  ctx.save(); drawBossAura(m, swingPos(m));
   if (k === 'lich') { const out = m.state === 'atk' && m.atk === 'blink' ? Math.max(0, m.atkT / (m.atkWind || 1)) : 1, inn = m.appearT > 0 ? 1 - m.appearT / 0.35 : 1; ctx.globalAlpha *= Math.max(0.05, Math.min(out, inn)); }
   if (k === 'minotaur' || !k) drawMinotaur(m, 2, m.summoned ? '#8b2a1e' : '#5a2e1a', true);
   else if (GIANT_STYLE[k]) drawGiant(m, GIANT_STYLE[k]);
@@ -274,11 +290,11 @@ function drawBossArt(m) {
     drawScaled(m, 2.5, () => { drawGoblin(m); drawCrown(m.x + m.facing * 3, m.y - 44 - Math.abs(Math.sin(m.walkT)) * 2, 7); });
     ctx.fillStyle = '#3a2a1a'; ctx.beginPath(); ctx.arc(m.x - m.facing * 26, m.y - 62, 11, 0, Math.PI * 2); ctx.fill(); ctx.fillStyle = '#ffd070'; ctx.fillRect(m.x - m.facing * 26 - 3, m.y - 74, 6, 4);   // a sack of bombs on his back
   } else if (k === 'slimeQueen') {
-    const big = { ...m, size: 1, hopZ: Math.abs(Math.sin(tAnim * 2)) * 4, state: m.state === 'charge' ? 'hop' : 'walk', stateT: 0.25, land: 0 };
+    const big = { ...m, size: 1, hopZ: m.state === 'leap' ? m.hopZ : Math.abs(Math.sin(tAnim * 2)) * 4, state: m.state === 'leap' || m.state === 'charge' ? 'hop' : m.state === 'atk' && m.atk === 'bounce' ? 'crouch' : 'walk', stateT: 0.25, land: 0 };
     drawScaled(m, 2.9, () => { drawSlime(big); drawCrown(m.x, m.y - 25, 8); });
     ctx.fillStyle = 'rgba(160,255,160,0.5)'; for (let i = 0; i < 5; i++) { const a = tAnim * 0.9 + i * 1.26; ctx.beginPath(); ctx.arc(m.x + Math.cos(a) * 70, m.y - 40 + Math.sin(a * 1.4) * 22, 5, 0, Math.PI * 2); ctx.fill(); }   // slimelets circling her
   } else if (k === 'lich') {
-    const aim = { ...m, state: m.state === 'atk' && m.atk === 'volley' ? 'aim' : 'walk', stateT: m.atkT, moving: m.moving };
+    const aim = { ...m, state: m.state === 'atk' && ['volley', 'ring', 'arrowRain'].includes(m.atk) ? 'aim' : 'walk', stateT: (1 + swingPos(m)) * 0.7, moving: m.moving };
     drawScaled(m, 1.75, () => {
       drawArcher(aim);
       ctx.fillStyle = '#241833'; ctx.strokeStyle = '#6a3fa0'; ctx.lineWidth = 1;                               // robe and hood over the bones

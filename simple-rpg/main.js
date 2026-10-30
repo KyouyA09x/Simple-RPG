@@ -7,6 +7,7 @@ const fs = require('fs');
 const os = require('os');
 
 const SELFTEST = !!process.env.STICKRPG_SELFTEST;
+const HIDDEN_TEST = SELFTEST && !process.env.STICKRPG_SHOW;      // tests run without a visible window (set STICKRPG_SHOW=1 to watch one)
 
 // Everything the game writes lives next to the game, in its own folders:
 //   <game folder>\saves   the save files (slot1.json ...)
@@ -92,13 +93,14 @@ function createWindow() {
     width: st.width || 1280, height: st.height || 720, x: st.x, y: st.y, minWidth: 800, minHeight: 450,
     backgroundColor: '#000000', title: 'Stick RPG', autoHideMenuBar: true, show: false,
     icon: path.join(__dirname, 'icon', 'stickrpg.ico'),
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false },
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true, spellcheck: false, backgroundThrottling: !HIDDEN_TEST },
   });
   mainWin = win;
   if (st.maximized) win.maximize();
   const goFullscreen = () => win.webContents.executeJavaScript("document.documentElement.requestFullscreen().then(() => navigator.keyboard && navigator.keyboard.lock && navigator.keyboard.lock(['Escape'])).then(() => true).catch(e => String(e))", true).catch(() => null);
   win.once('ready-to-show', () => {
-    win.show(); win.focus();
+    if (HIDDEN_TEST) { win.setSkipTaskbar(true); win.setOpacity(0); win.setIgnoreMouseEvents(true); win.showInactive(); }   // tests: fully transparent and click-through, so it renders (frames, screenshots) without appearing or taking focus
+    else { win.show(); win.focus(); }
     if (!SELFTEST) setTimeout(async () => { for (let i = 0; i < 4; i++) { const r = await goFullscreen(); if (r === true) break; await new Promise(res => setTimeout(res, 500)); } }, 400);   // starts fullscreen (the page's own fullscreen, so F and the Settings button toggle it)
   });
   win.on('close', () => saveState(win));

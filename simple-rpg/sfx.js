@@ -1,19 +1,24 @@
 // Sound: synthesized sound effects + procedural background music (Web Audio, no audio files).
 const Sound = (() => {
-  let actx = null, master, sfxBus, musicBus, musicFilter, ambBus, callBus, meter = null;
+  let actx = null, master, sfxBus, musicBus, musicFilter, ambBus, callBus, meter = null, musicEcho = null, onTheme = null, outMeter = null;
   const vol = { sfx: 0.8, music: 0.5, amb: 0.6 };
 
   function ctx() {
     if (!actx) {
       try { actx = new (window.AudioContext || window.webkitAudioContext)(); } catch { return null; }
-      const comp = actx.createDynamicsCompressor();
+      const comp = actx.createDynamicsCompressor();                  // a gentle limiter: the default compressor (threshold -24 dB, ratio 12) squashed everything to the same loudness, so the volume sliders hardly changed anything
+      comp.threshold.value = -3; comp.knee.value = 4; comp.ratio.value = 20; comp.attack.value = 0.003; comp.release.value = 0.12;
       comp.connect(actx.destination);
+      outMeter = actx.createAnalyser(); outMeter.fftSize = 2048; comp.connect(outMeter);          // what actually reaches the speakers
       master = actx.createGain(); master.connect(comp);
       meter = actx.createAnalyser(); meter.fftSize = 2048; master.connect(meter);       // read-only tap, used by level() to check how loud things are
       sfxBus = actx.createGain(); sfxBus.connect(master);
       musicFilter = actx.createBiquadFilter(); musicFilter.type = 'lowpass'; musicFilter.frequency.value = 20000;
       musicFilter.connect(master);
       musicBus = actx.createGain(); musicBus.connect(musicFilter);
+      musicEcho = actx.createDelay(1.2); musicEcho.delayTime.value = 0.3;                          // a soft echo behind the music gives it room (its time follows the tempo of each theme)
+      { const fb = actx.createGain(), wet = actx.createGain(), lp = actx.createBiquadFilter(); fb.gain.value = 0.38; wet.gain.value = 0.34; lp.type = 'lowpass'; lp.frequency.value = 2600;
+        musicBus.connect(musicEcho); musicEcho.connect(lp); lp.connect(fb); fb.connect(musicEcho); lp.connect(wet); wet.connect(musicFilter); }
       ambBus = actx.createGain(); ambBus.connect(musicFilter);
       callBus = actx.createGain(); callBus.gain.value = 2.8; callBus.connect(ambBus);        // creature calls were ~10 dB too quiet to hear       // ambience is muffled with the music when paused
       applyVolume();
@@ -23,10 +28,14 @@ const Sound = (() => {
   }
   function applyVolume() {
     if (!actx) return;
-    sfxBus.gain.value = vol.sfx;
-    musicBus.gain.value = vol.music * 0.55;
-    ambBus.gain.value = vol.amb;
+    const t = actx.currentTime;                                          // a short glide to the new level (no clicks), replacing whatever fade was still scheduled
+    for (const [bus, g] of [[sfxBus, curveGain(vol.sfx, 0.8, 0.8)], [musicBus, musicGain()], [ambBus, curveGain(vol.amb, 0.6, 0.6)]]) {
+      bus.gain.cancelScheduledValues(t); bus.gain.setValueAtTime(Math.max(0.0001, bus.gain.value), t); bus.gain.linearRampToValueAtTime(Math.max(0.0001, g), t + 0.06);
+    }
   }
+  // sliders feel even: a slider at half is clearly quieter, at the top clearly louder. `ref` is the slider position that gets `at` (the level the game was balanced at).
+  const curveGain = (v, ref, at) => at * Math.pow(Math.max(0, v) / ref, 1.3);
+  const musicGain = () => curveGain(vol.music, 0.5, 0.85);
   function setVolume(sfx, music, amb = vol.amb) { vol.sfx = sfx; vol.music = music; vol.amb = amb; applyVolume(); }
 
   const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
@@ -105,6 +114,62 @@ const Sound = (() => {
     slash:   () => { noise(0.35, 0.3, 5000); tone(1200, 0.4, 'sawtooth', 0.08, 200); },
     thunder: () => { noise(1.4, 0.22, 420); tone(46, 1.6, 'sine', 0.18, 28); noise(0.25, 0.12, 5000, 0.05); },
     boom:    () => { tone(55, 1.2, 'sine', 0.4, 30); noise(1.0, 0.3, 250); },
+    // weapons: one swing sound and one hit sound per kind
+    swingSpear:  () => { noise(0.14, 0.1, 2600, 0, sfxBus, null, 'bandpass'); tone(1500, 0.12, 'sine', 0.04, 700); },
+    swingRapier: () => { tone(2600, 0.1, 'sine', 0.05, 1300); noise(0.08, 0.05, 6500, 0, sfxBus, null, 'highpass'); },
+    swingKatana: () => { noise(0.16, 0.12, 4200, 0, sfxBus, null, 'bandpass'); tone(3400, 0.05, 'triangle', 0.04, 2400); tone(1800, 0.16, 'triangle', 0.035, 600, 0.03); },
+    swingAxe:    () => { noise(0.22, 0.17, 1400); tone(170, 0.22, 'sawtooth', 0.06, 80); },
+    swingHammer: () => { noise(0.34, 0.2, 700); tone(110, 0.32, 'sine', 0.16, 50); },
+    swingScythe: () => { noise(0.32, 0.13, 2200, 0, sfxBus, null, 'bandpass'); tone(620, 0.3, 'triangle', 0.04, 300); },
+    swingWhip:   () => { noise(0.1, 0.08, 1800, 0, sfxBus, null, 'bandpass'); noise(0.07, 0.3, 5200, 0.1, sfxBus, null, 'highpass'); tone(2100, 0.07, 'sawtooth', 0.07, 380, 0.1); },
+    swingFist:   () => { noise(0.07, 0.1, 1300); tone(210, 0.08, 'sine', 0.06, 120); },
+    hitSlash:    () => { tone(260, 0.1, 'square', 0.1, 120); noise(0.1, 0.16, 3200, 0, sfxBus, null, 'bandpass'); },
+    hitPierce:   () => { tone(1100, 0.08, 'square', 0.09, 320); noise(0.06, 0.1, 3000, 0, sfxBus, null, 'bandpass'); tone(150, 0.1, 'sine', 0.1, 70, 0.02); },
+    hitHeavy:    () => { tone(150, 0.2, 'sawtooth', 0.14, 50); noise(0.16, 0.2, 800); },
+    hitBlunt:    () => { tone(85, 0.34, 'sine', 0.36, 38); noise(0.2, 0.3, 420); tone(300, 0.06, 'square', 0.06, 120); },
+    hitFist:     () => { tone(130, 0.13, 'sine', 0.26, 60); noise(0.08, 0.2, 600); },
+    hitWhip:     () => { tone(1500, 0.06, 'sawtooth', 0.08, 500); noise(0.08, 0.14, 4200, 0, sfxBus, null, 'highpass'); },
+    // interface, village and combat extras
+    tick:        () => { tone(1500, 0.03, 'square', 0.05); tone(2200, 0.03, 'square', 0.03, null, 0.025); },
+    sellAll:     () => { for (let i = 0; i < 7; i++) { tone(1318 + i * 70, 0.08, 'triangle', 0.09, null, i * 0.055); noise(0.03, 0.05, 6500, i * 0.055, sfxBus, null, 'highpass'); } },
+    discard:     () => { noise(0.2, 0.14, 1300); tone(250, 0.18, 'sawtooth', 0.06, 70); },
+    anvil:       () => { tone(980, 0.3, 'square', 0.1, 880); tone(1960, 0.22, 'triangle', 0.06); noise(0.05, 0.13, 5200, 0, sfxBus, null, 'highpass'); tone(130, 0.16, 'sine', 0.16, 70); },
+    gulp:        () => { tone(260, 0.08, 'sine', 0.12, 170); tone(240, 0.09, 'sine', 0.12, 150, 0.1); tone(300, 0.07, 'sine', 0.1, 200, 0.2); },
+    bell:        () => { tone(523, 1.5, 'sine', 0.12); tone(1047, 1.1, 'sine', 0.06); tone(785, 1.3, 'sine', 0.05, null, 0.02); },
+    wake:        () => [392, 523, 659, 784].forEach((f, i) => tone(f, 0.55, 'sine', 0.08, null, i * 0.13)),
+    chime:       () => [880, 1318].forEach((f, i) => tone(f, 0.32, 'triangle', 0.07, null, i * 0.07)),
+    swingWhirl:  () => { noise(0.55, 0.15, 1600, 0, sfxBus, null, 'bandpass'); tone(420, 0.5, 'triangle', 0.05, 900); tone(900, 0.4, 'triangle', 0.04, 380, 0.16); },
+    quake:       () => { tone(48, 0.9, 'sine', 0.42, 28); noise(0.7, 0.3, 220); tone(900, 0.08, 'square', 0.05, 200); noise(0.25, 0.18, 3000, 0.05); },
+    hitMetal:    () => { tone(900, 0.1, 'square', 0.09, 480); tone(1800, 0.07, 'triangle', 0.05, 900); noise(0.08, 0.14, 6500, 0, sfxBus, null, 'highpass'); noise(0.07, 0.1, 1200); },
+    heartbeat:   () => { tone(62, 0.12, 'sine', 0.3, 40); tone(54, 0.14, 'sine', 0.22, 36, 0.17); },
+    // windows, tabs and refusals
+    menuOpen:    () => { tone(330, 0.08, 'triangle', 0.08, 520); tone(660, 0.1, 'sine', 0.06, null, 0.05); },
+    menuClose:   () => { tone(520, 0.08, 'triangle', 0.07, 300); tone(330, 0.07, 'sine', 0.04, 220, 0.04); },
+    tab:         () => { tone(900, 0.04, 'square', 0.05, 700); noise(0.03, 0.05, 3000, 0, sfxBus, null, 'bandpass'); },
+    select:      () => { tone(1100, 0.05, 'triangle', 0.07, 1400); },
+    denied:      () => { tone(150, 0.12, 'square', 0.1, 110); tone(120, 0.14, 'square', 0.08, 90, 0.07); },
+    ask:         () => { tone(392, 0.16, 'triangle', 0.09); tone(311, 0.26, 'triangle', 0.09, null, 0.12); },
+    // gear: each kind of piece sounds like itself
+    bag:         () => { noise(0.14, 0.09, 1200, 0, sfxBus, null, 'bandpass'); tone(200, 0.08, 'sine', 0.05, 120); },
+    mail:        () => { noise(0.18, 0.12, 4200, 0, sfxBus, null, 'highpass'); tone(700, 0.1, 'square', 0.04, 400); noise(0.1, 0.1, 1800, 0.08, sfxBus, null, 'bandpass'); },
+    ring:        () => { tone(2600, 0.14, 'sine', 0.06); tone(3900, 0.1, 'sine', 0.035, null, 0.03); },
+    weaponEquip: () => { noise(0.22, 0.12, 5200, 0, sfxBus, null, 'highpass'); tone(1800, 0.2, 'triangle', 0.05, 2600); tone(260, 0.09, 'square', 0.06, 160, 0.14); },
+    unequip:     () => { noise(0.1, 0.08, 1500, 0, sfxBus, null, 'bandpass'); tone(500, 0.07, 'triangle', 0.05, 300); },
+    // runes
+    socket:      () => { tone(1700, 0.05, 'square', 0.06); tone(2400, 0.2, 'sine', 0.06, null, 0.04); noise(0.04, 0.08, 3500, 0, sfxBus, null, 'highpass'); },
+    unsocket:    () => { tone(700, 0.08, 'sine', 0.07, 1500); noise(0.04, 0.06, 2500); },
+    runeUp:      () => { [523, 659, 784, 1047, 1319, 1568].forEach((f, i) => { tone(f, 0.4, 'sine', 0.07, null, i * 0.07); tone(f * 2, 0.3, 'sine', 0.03, null, i * 0.07 + 0.02); }); },
+    runeFail:    () => { tone(300, 0.35, 'sawtooth', 0.07, 90); noise(0.25, 0.1, 900, 0.05); tone(1600, 0.08, 'square', 0.04, 300); },
+    forgeFail:   () => { tone(240, 0.3, 'sawtooth', 0.09, 70); noise(0.2, 0.15, 1100); tone(1500, 0.06, 'square', 0.05, 500, 0.02); },
+    point:       () => { tone(784, 0.07, 'triangle', 0.09); tone(1175, 0.1, 'triangle', 0.09, null, 0.06); tone(1568, 0.12, 'sine', 0.05, null, 0.12); },
+    // the village
+    shopBell:    () => { tone(1568, 0.5, 'sine', 0.07); tone(2093, 0.4, 'sine', 0.045, null, 0.12); },
+    gate:        () => { tone(95, 0.5, 'sawtooth', 0.07, 70); noise(0.45, 0.06, 500, 0.05); tone(200, 0.2, 'triangle', 0.05, 120, 0.35); },
+    paper:       () => { noise(0.25, 0.07, 3500, 0, sfxBus, null, 'bandpass'); noise(0.1, 0.05, 2500, 0.18, sfxBus, null, 'bandpass'); },
+    treat:       () => { tone(900, 0.05, 'triangle', 0.07); tone(1200, 0.07, 'triangle', 0.07, null, 0.06); noise(0.08, 0.05, 2500, 0.1); },
+    gift:        () => { [659, 784, 988, 1319].forEach((f, i) => tone(f, 0.3, 'triangle', 0.08, null, i * 0.08)); tone(2637, 0.4, 'sine', 0.04, null, 0.3); },
+    // a boss gathers an attack
+    warn:        () => { tone(180, 0.28, 'sawtooth', 0.06, 340); tone(190, 0.28, 'square', 0.03, 360, 0.02); },
   };
   function sfx(name) { if (vol.sfx > 0 && SFX[name]) SFX[name](); }
 
@@ -120,7 +185,11 @@ const Sound = (() => {
     cluck:  g => { tone(900, 0.05, 'square', 0.07 * g, 600); tone(760, 0.05, 'square', 0.06 * g, 500, 0.07); },
     giggle: g => { for (let i = 0; i < 4; i++) tone(900 + Math.random() * 300, 0.06, 'sine', 0.075 * g, null, i * 0.08); },
     door:   g => tone(140, 0.15, 'square', 0.1 * g, 90),
+    hello:  g => { tone(520, 0.07, 'sine', 0.09 * g, 700); tone(780, 0.1, 'sine', 0.08 * g, null, 0.07); },
+    murmur: g => { tone(250, 0.06, 'triangle', 0.06 * g, 300); tone(300, 0.07, 'triangle', 0.05 * g, 260, 0.09); },
+    laugh:  g => { for (let i = 0; i < 3; i++) tone(500 + i * 60, 0.07, 'triangle', 0.07 * g, 600, i * 0.1); },
   };
+  function voice(p) { if (vol.sfx <= 0) return; for (let i = 0; i < 3; i++) tone(p * (0.9 + Math.random() * 0.35), 0.06, 'triangle', 0.07, null, i * 0.075); }          // a few quick blips in a person's own pitch while they talk
   function sfxAt(name, g = 1) { if (vol.sfx > 0 && g > 0.05 && POS[name]) POS[name](Math.min(1, g)); }
 
   // --- Music: 16-step bars, 4-bar loops, one theme per area ---
@@ -139,15 +208,51 @@ const Sound = (() => {
     highlands:{ bpm: 92, root: 62, chords: [[0,4,7],[-3,0,4],[-5,-1,2],[-7,-3,0]], arp: 'x.x...x.x.x...x.', bass: 'x.......x.......', drums: 'k.......s.......', hat: false, pad: 0.05, lead: 0.05, leadType: 'triangle', seed: 59 },
     village: { bpm: 96, root: 60, chords: [[0,4,7],[-3,0,4],[-5,-1,2],[-7,-3,0]], arp: 'x.x.x.x.x.x.x.x.', bass: 'x...x...x...x...', drums: null, pad: 0.045, lead: 0.07, leadType: 'triangle', seed: 67 },
     gameover:{ bpm: 60,  root: 57, chords: [[0,3,7],[-4,0,3],[-7,-3,0],[-5,-1,2]], arp: 'x...............', bass: 'x...............', drums: null, pad: 0.06, lead: 0, seed: 2 },
+    // more boss themes (each boss fight takes the next one), a rebirth theme and a lullaby for the inn
+    boss2:   { bpm: 144, root: 47, chords: [[0,3,7],[1,5,8],[-4,0,3],[-2,2,5]], arp: 'x.xxx.xxx.xxx.xx', bass: 'x.xx.xx.x.xx.xx.', drums: 'k.s.k.s.kks.k.s.', hat: true, pad: 0.035, lead: 0.05, leadType: 'sawtooth', seed: 71 },
+    boss3:   { bpm: 160, root: 45, chords: [[0,3,6],[-2,1,5],[-4,-1,3],[-5,-2,2]], arp: 'xxxxxxxxxxxxxxxx', bass: 'x.x.x.x.x.x.xxxx', drums: 'kks.kks.kks.kkss', hat: true, pad: 0.03, lead: 0.055, leadType: 'square', seed: 79 },
+    rebirth: { bpm: 76,  root: 57, chords: [[0,4,7],[-3,0,4],[-5,-1,2],[0,4,9]], arp: 'x..x..x..x..x...', bass: 'x.......x.......', drums: null, pad: 0.06, lead: 0.045, leadType: 'sine', bell: true, seed: 83 },
+    inn:     { bpm: 62,  root: 53, chords: [[0,4,7],[-5,-1,2],[-3,0,4],[-7,-3,0]], arp: 'x...x...x...x...', bass: 'x.......x.......', drums: null, pad: 0.05, lead: 0.04, leadType: 'triangle', bell: true, seed: 89 },
   };
-  // precompute a repeating lead motif per theme (seeded, stays on chord tones)
-  for (const th of Object.values(THEMES)) {
+  THEMES.shop = { bpm: 104, root: 59, chords: [[0,4,7],[5,9,12],[-3,0,4],[-5,-1,2]], arp: 'x.x.x.x.x.x.x.x.', bass: 'x...x...x...x...', drums: 'k...s...k...s...', hat: true, pad: 0.03, lead: 0.06, leadType: 'triangle', seed: 97 };
+  THEMES.boss4 = { bpm: 138, root: 43, chords: [[0,3,7],[3,7,10],[-2,2,5],[1,5,8]], arp: 'x.xxx.xx.xxx.xxx', bass: 'x.x.xx.xx.x.xx.x', drums: 'k.ssk.s.k.ssk.sk', hat: true, pad: 0.035, lead: 0.05, leadType: 'sawtooth', seed: 101 };
+  THEMES.boss5 = { bpm: 168, root: 46, chords: [[0,4,7],[1,5,8],[-1,3,6],[-4,0,3]], arp: 'xxxxxxxxxxxxxxxx', bass: 'xx.xxx.xxx.xxx.x', drums: 'ks.sks.sksksks.s', hat: true, pad: 0.03, lead: 0.055, leadType: 'square', seed: 103 };
+  // every area's music has a night version: slower, softer, no drums, sparser notes, a bell-like lead (it takes over when night falls)
+  for (const n of ['forest', 'desert', 'snow', 'volcano', 'swamp', 'jungle', 'ruins', 'highlands', 'village']) {
+    const b = THEMES[n];
+    THEMES[n + '_night'] = { ...b, bpm: Math.round(b.bpm * 0.78), root: b.root - 2, drums: null, hat: false, pad: b.pad * 1.35, lead: Math.max(0.03, b.lead * 0.8), leadType: 'sine', bell: true, seed: b.seed + 100, arp: b.arp.replace(/x/g, (m, i) => (i % 2 ? '.' : 'x')) };
+  }
+  const BOSS_THEMES = ['boss', 'boss2', 'boss3', 'boss4', 'boss5'];
+  // Every theme has a tune of its own: a scale, a rhythm and a melody that walks that scale, lands on the chord on the strong beats, and comes round again (the second half is the first with a new ending)
+  const SCALES = { major: [0, 2, 4, 5, 7, 9, 11], pent: [0, 2, 4, 7, 9], minor: [0, 2, 3, 5, 7, 8, 10], phryg: [0, 1, 4, 5, 7, 8, 10], lydian: [0, 2, 4, 6, 7, 9, 11], phrygn: [0, 1, 3, 5, 7, 8, 10], dorian: [0, 2, 3, 5, 7, 9, 10], hminor: [0, 2, 3, 5, 7, 8, 11] };
+  const STYLE = {
+    title: ['minor', 'x...x.x.x...x...', 1.1], forest: ['pent', 'x.xx.x.xx.x.x.x.', 1], desert: ['phrygn', 'x..x.x..x.x..x.x', 1], snow: ['minor', 'x...x...x.x.x...', 1.5], volcano: ['minor', 'xx.xx.x.xx.xx.xx', 1.1],
+    boss: ['minor', 'x.xxx.xxx.xxx.xx', 1.1], boss2: ['phrygn', 'xx.xx.xx.xx.xxx.', 1.1], boss3: ['minor', 'x.xx.xxx.xx.xxxx', 1.1], boss4: ['phrygn', 'xxx.xx.xxx.xx.xx', 1.1], boss5: ['phryg', 'xx.xxx.xxx.xxx.x', 1.1],
+    camp: ['pent', 'x.....x...x.....', 1.3], swamp: ['dorian', 'x....x....x.x...', 1.3], jungle: ['major', 'x.xx.xx.x.xx.x.x', 1], ruins: ['minor', 'x.......x...x...', 1.4], highlands: ['major', 'x.x...x.x.x.x...', 1.2],
+    village: ['major', 'x.x.xx.xx.x.xx..', 1], shop: ['major', 'x.xx.x.xx.xx.x.x', 1], inn: ['pent', 'x...x.x...x.x...', 1.3], rebirth: ['lydian', 'x..x..x.x..x..x.', 0.9],
+  };
+  for (const [name, th] of Object.entries(THEMES)) {
+    const base = name.replace(/_night$/, ''), st = STYLE[base]; if (!st) { th.mel = null; continue; }
+    const night = /_night$/.test(name), sc = SCALES[st[0]], rhythm = night ? st[1].replace(/x/g, (m, i) => (i % 2 ? '.' : 'x')) : st[1];
     let s = th.seed;
     const r = () => (s = (s * 16807) % 2147483647) / 2147483647;
-    th.motif = Array.from({ length: 32 }, (_, i) => (i % 2 === 0 && r() < 0.7) ? Math.floor(r() * 4) : (r() < 0.2 ? Math.floor(r() * 4) : -1));
+    const pool = [...sc, ...sc.map(n => n + 12)];                                              // two octaves of the scale, as semitones above the root
+    const tones = bar => th.chords[bar].map(n => ((n % 12) + 12) % 12);
+    const near = (target, bar) => { const ct = tones(bar); let best = pool[0], bd = 99; for (const p of pool) for (const c of ct) { const d = Math.abs(p - c - 12 * Math.round((p - c) / 12)); if (d < bd || (d === bd && Math.abs(p - target) < Math.abs(best - target))) { bd = d; best = p; } } return best; };
+    const mel = new Array(64).fill(-1); let idx = 4;
+    for (let half = 0; half < 2; half++) for (let i = 0; i < 32; i++) {
+      const bar = Math.floor(i / 16) + half * 2, step = i % 16;
+      if (half === 1 && i < 24) { mel[half * 32 + i] = mel[i]; continue; }                    // the second half repeats the first, with a different ending
+      if (rhythm[step] !== 'x') continue;
+      idx = Math.max(0, Math.min(pool.length - 1, idx + [-3, -2, -1, 1, 1, 2, 3][Math.floor(r() * 7)]));
+      let note = pool[idx]; if (step % 4 === 0) { note = near(note, bar); idx = pool.indexOf(note); }
+      mel[half * 32 + i] = note;
+    }
+    const lastBar = th.chords.length - 1; if (th.chords.length === 4) mel[63] = -1;
+    th.mel = mel; th.melScale = st[2] || 1;
   }
 
-  let cur = null, step = 0, nextT = 0, timer = null;
+  let cur = null, themeKey = null, bossN = 0, step = 0, nextT = 0, timer = null;
   function playStep(th, i, t, sp) {
     const bar = Math.floor(i / 16) % th.chords.length, s = i % 16;
     const ch = th.chords[bar].map(n => n + th.root);
@@ -159,11 +264,15 @@ const Sound = (() => {
     if (th.bass[s] === 'x') tone(mtof(ch[0] - 24), sp * 1.8, 'triangle', 0.22, null, 0, musicBus, t);
     if (th.arp[s] === 'x') {
       const n = ch[(i >> (th.arp === 'xxxxxxxxxxxxxxxx' ? 0 : 1)) % 3] + 12;
-      tone(mtof(n), sp * (th.bell ? 3 : 0.9), th.bell ? 'sine' : 'square', th.bell ? 0.07 : 0.035, null, 0, musicBus, t);
+      tone(mtof(n), sp * (th.bell ? 3 : 0.9), th.bell ? 'sine' : 'square', th.bell ? 0.07 : 0.045, null, 0, musicBus, t);
     }
-    if (th.lead && bar % 2 === 1) {
-      const m = th.motif[(i % 32)];
-      if (m >= 0) tone(mtof(ch[m % 3] + 24 + (m === 3 ? 12 : 0)), sp * 1.8, th.leadType, th.lead, null, 0, musicBus, t, 0.01);
+    if (th.lead && th.mel) {
+      const m = th.mel[i % 64];
+      if (m >= 0) {                                                                            // the tune: louder than the backing, with a slightly detuned twin for body and a long tail on bell themes
+        const f = mtof(th.root + 12 + m), v = th.lead * 2.6 * th.melScale, d = sp * (th.bell ? 3.6 : 2.1);
+        tone(f, d, th.leadType, v, null, 0, musicBus, t, 0.012);
+        tone(f * (th.bell ? 2 : 1.006), d, th.bell ? 'sine' : th.leadType, v * (th.bell ? 0.28 : 0.45), null, 0, musicBus, t, 0.012);
+      }
     }
     if (th.drums) {
       const d = th.drums[s];
@@ -174,19 +283,30 @@ const Sound = (() => {
   }
   function schedule() {
     if (!cur || !actx || vol.music <= 0) return;
-    const th = THEMES[cur], sp = 60 / th.bpm / 4;
+    const th = THEMES[themeKey], sp = 60 / th.bpm / 4;
     if (nextT < actx.currentTime - 0.2) nextT = actx.currentTime + 0.05;   // tab was throttled
     while (nextT < actx.currentTime + 0.15) { playStep(th, step, nextT, sp); nextT += sp; step++; }
   }
-  function music(name) {
-    if (cur === name) return;
-    cur = name;
+  let night = false;
+  function music(name, force) {
+    if (cur === name && !force) return;
+    const changed = cur !== name, hadTheme = !!(timer && themeKey); cur = name;
+    themeKey = name === 'boss' ? BOSS_THEMES[bossN++ % BOSS_THEMES.length] : (night && THEMES[name + '_night'] ? name + '_night' : name);      // `current` stays 'boss' for the code that asks
     const a = ctx(); if (!a) return;
-    musicBus.gain.cancelScheduledValues(a.currentTime);
-    musicBus.gain.setValueAtTime(0.0001, a.currentTime);
-    musicBus.gain.linearRampToValueAtTime(vol.music * 0.55, a.currentTime + 1.2);  // fade in the new theme
-    step = 0; nextT = a.currentTime + 0.1;
+    const now = a.currentTime, fadeOut = hadTheme && vol.music > 0;                       // the old theme fades out quickly, then the new one fades in (no hard cut)
+    musicBus.gain.cancelScheduledValues(now);
+    if (fadeOut) { musicBus.gain.setValueAtTime(Math.max(0.0001, musicBus.gain.value), now); musicBus.gain.linearRampToValueAtTime(0.0001, now + 0.3); }
+    const t0 = now + (fadeOut ? 0.35 : 0.1);
+    musicBus.gain.setValueAtTime(0.0001, t0); musicBus.gain.linearRampToValueAtTime(Math.max(0.0001, musicGain()), t0 + 1.2);
+    step = 0; nextT = t0;
+    if (THEMES[themeKey]) musicEcho.delayTime.setTargetAtTime(Math.min(1, 60 / THEMES[themeKey].bpm * 0.75), a.currentTime, 0.2);
     if (!timer) timer = setInterval(schedule, 25);
+    if (onTheme) { try { onTheme(name, themeKey, changed); } catch {} }
+  }
+  function setNight(on) {                                                     // night falls or day breaks: the area's music changes to its other version
+    if (night === on) return;
+    night = on;
+    if (cur && THEMES[cur + '_night']) music(cur, true);
   }
   function muffle(on) {                // paused = music heard "through a wall"
     if (!actx) return;
@@ -296,5 +416,12 @@ const Sound = (() => {
     const db = x => x > 1e-5 ? 20 * Math.log10(x) : -100;
     return { peak: db(pk), rms: db(Math.sqrt(sum / b.length)) };
   }
-  return { ctx, level, call: n => { if (CALLS[n]) CALLS[n](); }, sfx, sfxAt, music, muffle, setVolume, step: footstep, setScene, get current() { return cur; } };
+  function levelOut() {                                                  // the same, after the limiter
+    if (!outMeter) return null;
+    const b = new Float32Array(outMeter.fftSize); outMeter.getFloatTimeDomainData(b);
+    let pk = 0, sum = 0; for (const v of b) { const a = Math.abs(v); if (a > pk) pk = a; sum += v * v; }
+    const db = x => x > 1e-5 ? 20 * Math.log10(x) : -100;
+    return { peak: db(pk), rms: db(Math.sqrt(sum / b.length)) };
+  }
+  return { ctx, level, levelOut, voice, setOnTheme: fn => { onTheme = fn; }, themeInfo: n => THEMES[n], call: n => { if (CALLS[n]) CALLS[n](); }, sfx, sfxAt, has: n => !!SFX[n], themes: () => Object.keys(THEMES), music, setNight, muffle, setVolume, step: footstep, setScene, get current() { return cur; } };
 })();

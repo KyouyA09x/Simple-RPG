@@ -64,7 +64,56 @@ function addPoison(src) {
   p.stacks = Math.min(POISON_STACKS, p.stacks + 1); p.t = POISON_TIME;
   sfx('poison'); popups.push({ text: `Poisoned ×${p.stacks}`, x: hero.x, y: hero.y - 90, t: 0.9, color: '#6fe36f' });
 }
-function clearPoison() { if (hero) hero.poison = null; }
+function clearPoison() { if (hero) { hero.poison = null; hero.ail = {}; } }          // clears every ailment
+
+// ---------------------------------------------------------------- the other ailments (#15): bleed, burn, freeze, weaken, blind, curse. A Healing Potion cures every one of them.
+const AILS = {
+  bleed:  { name: 'Bleeding', color: '#e0405a', time: 6, stacks: 3, info: 'Loses health for a while' },
+  burn:   { name: 'Burning',  color: '#ff8a30', time: 4, info: 'Loses health quickly' },
+  freeze: { name: 'Frozen',   color: '#9fe4ff', time: 1.1, info: 'Cannot move or attack for a moment' },
+  weak:   { name: 'Weakened', color: '#c9a86a', time: 9, info: 'Deals 30% less damage' },
+  blind:  { name: 'Blinded',  color: '#d6d6e6', time: 6, info: 'Can only see what is close' },
+  curse:  { name: 'Cursed',   color: '#b06aff', time: 10, info: 'Heals half as much and does not regenerate' },
+};
+const AIL_KEYS = Object.keys(AILS);
+let ailChance = 1;                                                              // 0 to 1: how often hits cause ailments (the tests turn it off)
+const ailT = k => (hero && hero.ail && hero.ail[k] && hero.ail[k].t > 0) ? hero.ail[k].t : 0;
+function addAilment(kind, t) {
+  if (!hero || hero.dead || dev.god || !AILS[kind]) return;
+  if (kind === 'freeze' && (hero.freezeImm || 0) > 0) return;                  // just thawed: not frozen again at once
+  const A = AILS[kind], ail = hero.ail || (hero.ail = {}), a = ail[kind] || (ail[kind] = { t: 0, stacks: 0, pop: 0, max: 1 });
+  a.stacks = A.stacks ? Math.min(A.stacks, a.stacks + 1) : 1; a.t = Math.max(a.t, t || A.time); a.max = a.t;
+  popups.push({ text: A.name + (a.stacks > 1 ? ` ×${a.stacks}` : ''), x: hero.x, y: hero.y - 92, t: 0.9, color: A.color });
+  sfx(kind === 'burn' ? 'lava' : kind === 'freeze' ? 'chill' : kind === 'curse' ? 'runeFail' : kind === 'blind' ? 'whoosh' : 'poison');
+}
+const AIL_ON_HIT = { goblin: ['bleed', 0.16], minotaur: ['bleed', 0.14], ogre: ['weak', 0.22], slime: ['weak', 0.08], archer: ['curse', 0.07],
+  wolf: ['bleed', 0.2], panther: ['bleed', 0.22], scorpion: ['blind', 0.25], fireimp: ['burn', 0.3], skeleton: ['curse', 0.1], harpy: ['weak', 0.25],
+  treant: ['weak', 0.15], mummy: ['blind', 0.2], frostwolf: ['chill', 0.25], magmaslime: ['burn', 0.25], wisp: ['curse', 0.35], cursedKnight: ['curse', 0.2], golem: ['weak', 0.2] };       // what a creature's hit can do to you
+const AIL_BIOME = { volcano: ['burn', 0.12], snow: ['freeze', 0.06], desert: ['blind', 0.10], ruins: ['curse', 0.10], jungle: ['bleed', 0.10], highlands: ['weak', 0.10] };
+function rollAilment(src) {
+  if (!hero || hero.dead || !src) return;
+  const ramp = (wave < 10 ? 0.5 : 1) * ailChance * (src.evo ? 2 : 1);                // an evolved creature's ailments are twice as likely                                             // the first set is gentle
+  if (src.type === 'boss') { if (src.def && src.def.ail && Math.random() < 0.3 * ailChance) addAilment(src.def.ail); return; }
+  const a = AIL_ON_HIT[src.type]; if (a && Math.random() < a[1] * ramp) { if (a[0] === 'chill') { hero.chillT = 2.5; popups.push({ text: 'Chilled', x: hero.x, y: hero.y - 90, t: 0.9, color: '#6fd0ff' }); } else addAilment(a[0]); }
+  const b = AIL_BIOME[BIOMES[zone % BIOMES.length].key]; if (b && Math.random() < b[1] * ramp) addAilment(b[0]);
+}
+// ticks the ailments; true when one of them killed the hero
+function tickAilments(dt) {
+  hero.freezeImm = Math.max(0, (hero.freezeImm || 0) - dt);
+  const A = hero.ail; if (!A) return false;
+  for (const k of Object.keys(A)) { A[k].t -= dt; if (A[k].t <= 0) { delete A[k]; if (k === 'freeze') hero.freezeImm = 3; } }
+  let dps = 0;
+  if (A.bleed) dps += Math.max(1, hero.maxHp * 0.012) * A.bleed.stacks;
+  if (A.burn) dps += Math.max(1, hero.maxHp * 0.02);
+  if (A.curse || A.bleed) hero.hpRegenT = Math.max(hero.hpRegenT || 0, 0.5);
+  if (dps > 0 && !dev.god) {
+    hero.hp = Math.max(0, hero.hp - dps * dt);
+    const a = A.burn || A.bleed; a.pop = (a.pop || 0) + dt;
+    if (a.pop >= 1) { a.pop = 0; popups.push({ text: `-${Math.round(dps)}`, x: hero.x + 14, y: hero.y - 72, t: 0.7, color: A.burn ? '#ff9a50' : '#ff6a7a', small: true }); }
+    if (gfx.particles && Math.random() < dt * 9) particles.push({ x: hero.x + (Math.random() - 0.5) * 16, y: hero.y - 20 - Math.random() * 40, vx: 0, vy: A.burn ? -50 : 20, life: 0.6, max: 0.6, size: 2.2, color: A.burn ? '#ff8a30' : '#e0405a', add: !!A.burn });
+  }
+  return hero.hp <= 0;
+}
 // returns true if the poison killed the hero
 function tickPoison(dt) {
   const p = hero.poison; if (!p) return false;
@@ -81,7 +130,8 @@ function tickPoison(dt) {
 }
 
 // ---------------------------------------------------------------- how a variant looks
-const TELL_Y = { goblin: 64, minotaur: 108, slime: 52, archer: 80, ogre: 138 };
+const TELL_Y = { goblin: 64, minotaur: 108, slime: 52, archer: 80, ogre: 138, wolf: 50, panther: 60, scorpion: 48, icesprite: 74, fireimp: 66, bogLurker: 72, skeleton: 62, harpy: 88,
+  treant: 100, mummy: 60, frostwolf: 52, magmaslime: 44, wisp: 50, sporeshroom: 56, cursedKnight: 72, golem: 104 };
 function drawVariantTells(m) {
   if (!m.mut || !m.mut.length || m.dieT !== undefined) return;
   const x = m.x, y = m.y, sc = m.scale || 1, rr = (16 + (m.r || 12) * 0.55) / (m.scale ? sc * 0.8 : 1), t = tAnim;

@@ -27,10 +27,11 @@ const invSlotsFor = (r = rebirths()) => Math.min(REBIRTH.slotsMax, 24 + REBIRTH.
 const dropLuck = (r = rebirths()) => Math.min(REBIRTH.luckMax, 1 + REBIRTH.luck * r);
 const rarityLuck = (r = rebirths()) => Math.min(REBIRTH.rarityMax, REBIRTH.rarity * r);
 // Level stats are a small edge. The single Critical stat (crit rate and crit damage together) is hard-capped at 10 points and never grows with rebirth; what grows is how many
-// points Vitality and Strength can take (20 at first, +4 per rebirth, at most 80). Gear is still the build.
+// points Vitality, Strength and Stamina can take (20 at first, +4 per rebirth, at most 80). Gear is still the build.
 const CRIT_POINTS_MAX = 10, drCap = () => 0.10, speedCap = () => 0.06;
 const vitMax = (r = rebirths()) => Math.min(80, 20 + 4 * r);
 const strMax = (r = rebirths()) => Math.min(80, 20 + 4 * r);
+const staMax = (r = rebirths()) => Math.min(80, 20 + 4 * r);
 
 function applyRebirthPerks() { INV_MAX = invSlotsFor(); }
 // max HP from rebirth is tracked on its own (hero.rbHp), the way gear HP is, so it follows every change to the base
@@ -57,7 +58,7 @@ function keptGear() {
 }
 const rebirthLost = () => {
   const k = keptGear(), keepIds = new Set([...Object.values(k.worn), ...k.bag].map(i => i.id));
-  const all = [...activeSlots().map(s => hero.equip[s]), ...hero.inv].filter(Boolean);
+  const all = [...Object.values(hero.equip), ...hero.inv].filter(Boolean);                       // every worn piece, even in a slot that is locked right now
   return all.filter(i => !keepIds.has(i.id) && !(i.slot === 'weapon' && i.base === 'wood' && !i.stats.dmg && i.rarity === 1 && Object.keys(i.stats).length === 0));
 };
 
@@ -66,9 +67,11 @@ function doRebirth() {
   const { worn, bag } = keptGear(), next = rebirths() + 1;
   hero.rebirth = next; applyRebirthPerks();
   hero.level = 1; hero.xp = 0; hero.xpNext = xpNeed(1); hero.stats = newStats(); hero.points = rbStartPoints(next);
-  hero.gold = 0; hero.potions = 0; hero.cures = 0; hero.potionSel = 'heal'; hero.maxHp = 100; hero.rbHp = 0; hero.gearHp = 0;               // the lantern (hero.lamp) is kept on purpose
+  hero.gold = 0; hero.potions = 0; hero.recalls = 0; hero.recallT = 0; hero.quests.active = []; hero.potionSel = 'heal'; hero.ail = {}; hero.maxHp = 100; hero.rbHp = 0; hero.gearHp = 0;               // the lantern (hero.lamp) is kept on purpose
+  const gone = essTotal() + RUNE_KEYS.reduce((a, k) => a + runeCount(k), 0) + rebirthLost().reduce((a, i) => a + (i.rn || []).length, 0);
+  hero.runes = {}; hero.ess = {};                                                                                    // runes are lost with the old life: the pouch empties and the runes in lost gear go with it (kept Mythical and Secret pieces keep theirs)
   hero.inv = bag.slice(0, INV_MAX);
-  hero.equip = { weapon: starterWeapon('wood'), armor: null, helmet: null, ring1: null, ring2: null, necklace: null, ring3: null, weapon2: null, ...worn };
+  hero.equip = { weapon: starterWeapon('wood'), armor: null, helmet: null, ring1: null, ring2: null, necklace: null, artifact: null, ring3: null, weapon2: null, ...worn };
   hero.gear = zeroGear();
   recalcGear();
   hero.hp = hero.maxHp; hero.stamina = maxStamina();
@@ -77,6 +80,7 @@ function doRebirth() {
   loadSlot(currentSlot);                                                                            // start the new life from the save, so what is shown is exactly what was saved
   sfx('rebirth');
   startRebirthFx(next);
+  if (gone) popups.push({ text: `${gone} magic item${gone === 1 ? '' : 's'} lost to the rebirth`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#cfa8ff' });
   return true;
 }
 
@@ -99,7 +103,7 @@ function renderRebirth() {
     row('Starting stat points', `${rbStartPoints(N)}${pointsPerLevel(N) > POINTS_PER_LEVEL ? ` (and ${pointsPerLevel(N)} per level)` : ''}`),
     row('Backpack', `${invSlotsFor(R)} → ${invSlotsFor(N)} slots`),
     row('Gear drop luck', `×${dropLuck(N).toFixed(2)} drop chance · +${pctS(rarityLuck(N))} better grades`),
-    row('Vitality and Strength', `each takes up to ${vitMax(N)} points (now ${vitMax(R)})`),
+    row('Vitality, Strength and Stamina', `each takes up to ${vitMax(N)} points (now ${vitMax(R)})`),
   ];
   if (N === REBIRTH.ringAt) gains.push(row('<span style="color:#fd4">Milestone</span>', 'a third ring slot'));
   if (N === REBIRTH.swapAt) gains.push(row('<span style="color:#fd4">Milestone</span>', 'a spare weapon slot (press X to swap)'));
@@ -111,7 +115,10 @@ function renderRebirth() {
   else action = `<div class="item"><div class="im"><b>Begin the rebirth</b><small>${ready ? 'You will be asked once more before anything changes.' : `Reach level ${cap} first. You can still read this at any time.`}</small></div><button data-buy="rb:arm" ${ready ? '' : 'disabled'}><kbd>1</kbd>Begin</button></div>`;
   html += action;
   html += `<h3>You keep</h3><div class="summary">${row('Mythical and Secret gear', keptNames.length ? keptNames.join(', ') : 'none right now')}${row('Lantern', escapeHtml(lamp ? lamp.name : 'none'))}${row('Rebirth bonuses', 'all of them')}${row('Backpack slots', 'all unlocked ones')}</div>`;
-  html += `<h3>You lose</h3><div class="summary">${row('Level and stat points', `level ${hero.level} → 1`)}${row('Gold', hero.gold.toLocaleString())}${row('Potions', String((hero.potions | 0) + (hero.cures | 0)))}${row('Other gear', `${lost.length} piece${lost.length === 1 ? '' : 's'}`)}${row('Progress', `wave ${wave} → 1, back to the first land`)}</div>`;
+  html += `<h3>You lose</h3><div class="summary">${row('Level and stat points', `level ${hero.level} → 1`)}${row('Gold', hero.gold.toLocaleString())}${row('Potions', String((hero.potions | 0)))}${row('Other gear', `${lost.length} piece${lost.length === 1 ? '' : 's'}`)}${row('Progress', `wave ${wave} → 1, back to the first land`)}</div>`;
+  const sock = lost.reduce((a, i) => a + (i.rn || []).length, 0), pouch = RUNE_KEYS.reduce((a, k) => a + runeCount(k), 0);
+  const ess = essTotal();
+  if (pouch + sock + ess) html += `<div class="hint">Runes and essences are lost too: ${pouch} runes${ess ? ` and ${ess} essences` : ''} in your pouch${sock ? ` and ${sock} socketed in gear you lose` : ''}. Runes socketed in the Mythical and Secret pieces you keep stay with them.</div>`;
   html += `<div class="hint">Gear and gold are both lost, so spend your gold and sell what you do not need before you begin.</div>`;
   html += `<h3>You gain (rebirth ${N})</h3><div class="summary">${gains.join('')}</div>`;
   document.getElementById('shopBody').innerHTML = html;
@@ -149,6 +156,7 @@ function startRebirthFx(n) {
     ['Stat points to spend', `${rbStartPoints(R)}`],
   ];
   rebirthFx = { t: 0, n, rows, line: RB_LINES[(n - 1) % RB_LINES.length], cues: {} };
+  Sound.music('rebirth');
 }
 function updateRebirthFx(dt) {
   const fx = rebirthFx; if (!fx) return;
@@ -157,7 +165,8 @@ function updateRebirthFx(dt) {
   if (!fx.cues.b && fx.t > 3.8) { fx.cues.b = true; sfx('unlock'); }
   if (fx.t >= RB_LEN) {
     rebirthFx = null;
-    popups.push({ text: `${hero.points} stat points to spend (M)`, x: VW / 2, y: 190, t: 3, screen: true, small: true, color: '#fd4' });
+    Sound.music(state === 'village' ? 'village' : BIOMES[zone % BIOMES.length].music);
+    popups.push({ text: `${hero.points} stat points to spend (${keyLabel('character')})`, x: VW / 2, y: 190, t: 3, screen: true, small: true, color: '#fd4' });
   }
 }
 function skipRebirthFx() { if (rebirthFx && rebirthFx.t < RB_FADE_AT && rebirthFx.t > 1.5) { rebirthFx.t = RB_FADE_AT; return true; } return !!rebirthFx; }
@@ -194,7 +203,7 @@ function drawRebirthFx() {
   if (hp > 0) {
     ctx.globalAlpha = out * hp;
     if (glow) { const hg = ctx.createRadialGradient(cx, cy - 20, 0, cx, cy - 20, 150); hg.addColorStop(0, 'rgba(235,225,255,0.55)'); hg.addColorStop(1, 'rgba(235,225,255,0)'); ctx.fillStyle = hg; ctx.fillRect(cx - 160, cy - 180, 320, 320); }
-    stickSilhouette(cx, cy + 62, 0, 2.3, false, '#f6f0ff');
+    stickHero(cx, cy + 62, { sc: 2.3, walking: false, lit: 1, t: tAnim, raise: true, lift: 1, hover: 8 * hp, glowCol: '#d7c8ff' });
   }
   // the first flash and the ring that leaves the shrine
   const flash = 1 - ssm(0, 1.6, t);

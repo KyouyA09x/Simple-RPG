@@ -109,10 +109,31 @@
   .slot .btns { display: flex; gap: 5px; }
   .title-panel { background: rgba(14,14,20,.82); min-width: 280px; }
   .dev-panel { border-color: #7a5a2a; }
+  .con { width: min(720px, 100%); box-sizing: border-box; background: rgba(8,8,12,.9); border: 1px solid #7a5a2a; border-radius: 8px; padding: 10px 14px; font: 14px Consolas, 'Courier New', monospace; color: #d8e6d8; box-shadow: 0 12px 40px rgba(0,0,0,.6); }
+  #conLog { max-height: 170px; overflow-y: auto; margin-bottom: 6px; white-space: pre-wrap; word-break: break-word; }
+  #conLog div { margin: 1px 0; }
+  #conLog .echo { color: #9aa; } #conLog .ok { color: #8f8; } #conLog .err { color: #f88; }
+  .con-row { display: flex; align-items: center; gap: 8px; margin: 0; cursor: text; }
+  .con-row span { color: var(--gold, #f5c451); white-space: nowrap; }
+  #conIn { flex: 1; min-width: 0; width: auto; margin: 0; padding: 0; background: transparent; border: 0; outline: 0; box-shadow: none; color: #fff; font: inherit; }
   .dev-grid { display: flex; flex-wrap: wrap; gap: 6px; }
   .dev-grid button { width: auto; margin: 0; padding: 6px 10px; font-size: 13px; }
   .dev-grid button.on { background: #6d4a1e; border-color: var(--gold); }
   .dev-grid input { width: 68px; }
+  #bindList { max-height: 44vh; overflow-y: auto; padding-right: 6px; margin: 6px 0 10px; }
+  .bindrow { display: flex; justify-content: space-between; align-items: center; gap: 14px; padding: 6px 0; border-bottom: 1px solid var(--line-soft, #2c2c3a); }
+  .bname { font-size: 14px; flex: none; min-width: 170px; text-align: left; } .bname small { color: var(--ink-dim, #9aa); }
+  .bchips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .chip { display: inline-flex; border: 1px solid var(--line, #3a3a4c); border-radius: 8px; overflow: hidden; background: #14141c; }
+  #bindList button { display: inline-block; width: auto; margin: 0; padding: 5px 10px; font-size: 13px; }
+  .chip button { background: transparent; border: 0; border-radius: 0; box-shadow: none; }
+  .chip .bx { color: #f88; padding: 5px 8px; border-left: 1px solid var(--line-soft, #2c2c3a); }
+  .chip.cap, .badd.cap { border-color: var(--gold, #f5c451); box-shadow: 0 0 0 1px var(--gold, #f5c451); }
+  .dev-pick { align-items: center; }
+  .dev-qty { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-dim, #aab); }
+  .dev-qty input { width: 52px; }
+  .dev-pick select { background: #14141c; color: var(--ink, #e8e8f0); border: 1px solid var(--line, #3a3a4c); border-radius: 8px; padding: 7px 9px; font-size: 13px; max-width: 230px; }
+  .dev-ico { display: inline-flex; width: 52px; height: 52px; align-items: center; justify-content: center; border: 1px solid var(--line-soft, #2c2c3a); border-radius: 10px; background: #14141c; }
 
   /* ---- village: dialogue and shop ---- */
   .overlay.clear.talk { padding-bottom: 4%; }
@@ -141,7 +162,10 @@
   .eqslot { display: flex; align-items: center; gap: 9px; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 8px; padding: 5px 9px; cursor: pointer; min-height: 40px; }
   .eqslot:not([data-eq]) { cursor: default; opacity: .75; }
   .eqslot.sel, .cell.sel { outline: 2px solid var(--focus); outline-offset: 1px; }
-  .eqslot .ico { width: 28px; flex: none; } .eqtxt { min-width: 0; font-size: 13px; line-height: 1.25; }
+  .eqslot .ico svg, .cell svg, .item .ic svg { max-width: 100%; height: auto; }
+  .eqslot .ico { width: 44px; flex: none; display: flex; justify-content: center; }
+  .dico { float: right; width: 92px; height: 92px; margin: 0 0 6px 10px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line-soft); border-radius: 12px; }
+  .dico svg { width: 72px; height: 72px; } .eqtxt { min-width: 0; font-size: 13px; line-height: 1.25; }
   .eqtxt small { display: block; color: var(--ink-dim); font-size: 10px; letter-spacing: 1px; text-transform: uppercase; } .eqtxt em { color: #5a5a6c; }
   .eqtxt b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .invgrid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; }
@@ -235,7 +259,7 @@
   .talk-panel { padding: 16px 24px 12px; border-radius: 18px; }
   .talk-panel::before { left: 0; right: auto; top: 14px; bottom: 14px; width: 3px; height: auto; border-radius: 0 3px 3px 0; background: linear-gradient(180deg, var(--gold), var(--accent)); }
   .talk-name { font-size: 17px; letter-spacing: .6px; display: flex; align-items: center; }
-  .talk-text { font-size: 15.5px; line-height: 1.6; }
+  .talk-text { font-size: 15.5px; line-height: 1.6; white-space: pre-line; }
   .talk-panel button { text-align: left; }
   .avatar { width: 30px; height: 30px; box-shadow: 0 0 0 2px rgba(255,255,255,.12), 0 4px 10px rgba(0,0,0,.4); }
   .slot { background: linear-gradient(180deg, var(--panel-3), var(--panel-2)); border: 1px solid rgba(255,255,255,.07); border-radius: 12px; padding: 9px 12px; }
@@ -261,8 +285,8 @@
   .hero-panel .invcols { grid-template-columns: 1fr 1.2fr 1.05fr; gap: 1.2em; }
   .hero-panel .eqslot { padding: .3em .7em; min-height: 2.6em; gap: .7em; }
   .hero-panel .equipgrid { gap: .35em; }
-  .hero-panel .eqslot .ico { width: 2.1em; display: flex; justify-content: center; }
-  .hero-panel .eqslot svg, .hero-panel .cell svg { width: 1.9em; height: 1.9em; }
+  .hero-panel .eqslot .ico { width: 3.1em; display: flex; justify-content: center; }
+  .hero-panel .eqslot svg, .hero-panel .cell svg { width: 2.9em; height: 2.9em; }
   .hero-panel .eqtxt { font-size: 1.08em; } .hero-panel .eqtxt small { font-size: .68em; }
   .hero-panel .invgrid { gap: .4em; } .hero-panel .cell { aspect-ratio: 1.45; }
   .hero-panel .invdetail { font-size: 1.02em; min-height: 12em; padding: .8em 1em; }
@@ -276,6 +300,281 @@
   .cmpnote b { font-weight: 600; }
   .cmpbar { display: flex; gap: .4em; margin: .1em 0 .6em; flex-wrap: wrap; }
   .hero-panel .cmpbar button { margin: 0; width: auto; padding: .3em .8em; font-size: .85em; border-radius: 999px; }
+
+  /* ---- the inventory: three columns that scroll on their own, so long text can never stretch the window ---- */
+  .hero-panel .hp-body.inv-body { display: flex; flex-direction: column; overflow: hidden; padding: 0; }
+  .inv-body .invcols { flex: 1; min-height: 0; grid-template-columns: .95fr 1.25fr 1.05fr; align-items: stretch; }
+  .invcol { min-width: 0; min-height: 0; overflow-y: auto; overflow-x: hidden; padding-right: 6px; }
+  .invcol::-webkit-scrollbar { width: 6px } .invcol::-webkit-scrollbar-thumb { background: #4a3a2c; border-radius: 6px }
+  .totals { display: grid; grid-template-columns: 1fr 1fr; column-gap: 1em; }
+  .totals .srow { padding: .15em 0; font-size: .92em; } .totals .srow small { font-size: .85em; }
+  .invbar { margin-bottom: .4em; }
+  .multirow { display: flex; flex-wrap: wrap; gap: .35em; align-items: center; margin: 0 0 .35em; }
+  .hero-panel .multirow button { width: auto; margin: 0; padding: .3em .75em; font-size: .82em; border-radius: 999px; }
+  .multirow .cnt { font-size: .86em; color: var(--gold); margin-right: auto; }
+  .multirow button.sell, .sellbar button.sell { background: linear-gradient(180deg, #4a9a58, #2f6f3d); border-color: #7fd08a; color: #f4fff6; }
+  .cell { position: relative; overflow: hidden; }
+  .cell i { position: absolute; font-style: normal; font: 700 .62em/1 var(--font); text-shadow: 0 1px 2px #000; pointer-events: none; }
+  .cell .lv { left: 4px; bottom: 3px; color: #fff; opacity: .9; } .cell .upn { right: 4px; bottom: 3px; color: #8ff; }
+  .cell .chk { right: 3px; top: 3px; width: 1.15em; height: 1.15em; border: 1.5px solid rgba(255,255,255,.55); border-radius: 4px; background: rgba(0,0,0,.4); text-align: center; line-height: 1.1em; font-size: .72em; color: #222; }
+  .cell.tick { outline: 2px solid var(--gold); outline-offset: 1px; } .cell.tick .chk { background: var(--gold); border-color: var(--gold); }
+  .dname { overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .dsub { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .srow span { min-width: 0; } .srow b { text-align: right; min-width: 0; }
+  .cmpnote { margin: .5em 0 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dbtns button small { opacity: .7; font-size: .8em; }
+  .item .im b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .sellbar { display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; z-index: 2; padding: 2px 0 8px; background: #1b1b27; }
+  .panel .item button.tickbox { width: 26px; height: 26px; padding: 0; border-radius: 7px; flex: none; background: #14141c; border: 1.5px solid #5a5a76; font-weight: 800; line-height: 1; color: #222; }
+  .panel .item button.tickbox.on { background: var(--gold); border-color: var(--gold); }
+  .item.ticked { border-color: rgba(245,196,81,.55); }
+
+  /* ================================================================ wood-and-vine theme: carved planks, brass studs, leaf-green ribbons, parchment-warm ink, a little jungle on every window ================================================================ */
+  :root {
+    --wood-hi: #8a6540; --wood-1: #6a4a32; --wood-2: #4a3322; --wood-3: #33231a; --wood-edge: #1a100a; --brass: #efc86c; --brass-d: #9a742c;
+    --leaf: #6dbb5c; --leaf-d: #3d7a35; --berry: #e0524f; --teal: #4cc7b5; --sky: #6fb5ff;
+    --bg: #120c08; --panel: #281b13; --panel-2: #3a291d; --panel-3: #4a362a; --line: #1a100a; --line-soft: rgba(0,0,0,.4);
+    --ink: #fbf0d4; --ink-dim: #cdb68c; --accent: #8bd36a; --accent-2: #4cc7b5; --accent-dim: #3d7a35; --gold: #f4c64f; --danger: #e0524f; --focus: #ffe08a;
+    --vine: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 74'><path d='M2 8 C28 16 36 38 62 40 S104 46 132 66' fill='none' stroke='%233a7435' stroke-width='3.6' stroke-linecap='round'/><g fill='%236dbb5c' stroke='%23305d2c' stroke-width='1'><path d='M22 16 q4 -14 22 -12 q-2 14 -22 12z'/><path d='M34 30 q-10 -4 -10 -18 q14 2 10 18z' fill='%2358a84b'/><path d='M50 38 q6 -14 24 -10 q-4 14 -24 10z'/><path d='M62 42 q-8 8 -22 4 q6 -12 22 -4z' fill='%2358a84b'/><path d='M84 46 q8 -12 24 -6 q-6 12 -24 6z'/><path d='M96 50 q-4 10 -18 12 q0 -12 18 -12z' fill='%2358a84b'/><path d='M116 56 q8 -10 22 -2 q-8 10 -22 2z'/></g><g fill='%23e0524f' stroke='%237a1f22' stroke-width='1'><circle cx='70' cy='54' r='4'/><circle cx='78' cy='58' r='3.4'/><circle cx='72' cy='62' r='3'/></g><circle cx='69' cy='52.5' r='1.1' fill='%23fff' opacity='.7'/></svg>");
+    --bottle-r: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 40'><rect x='11' y='1' width='8' height='6' rx='2' fill='%23c9a36a' stroke='%232a1a10'/><path d='M12 7h6v6l7 12a8 8 0 0 1-7 13h-6a8 8 0 0 1-7-13l7-12z' fill='%23e0524f' stroke='%232a1a10' stroke-width='1.6'/><path d='M9 28a8 8 0 0 0 6 8' fill='none' stroke='%23fff' stroke-opacity='.45' stroke-width='2'/></svg>");
+    --bottle-g: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 30 40'><rect x='11' y='1' width='8' height='6' rx='2' fill='%23c9a36a' stroke='%232a1a10'/><path d='M12 7h6v6l7 12a8 8 0 0 1-7 13h-6a8 8 0 0 1-7-13l7-12z' fill='%235fd07a' stroke='%232a1a10' stroke-width='1.6'/><path d='M9 28a8 8 0 0 0 6 8' fill='none' stroke='%23fff' stroke-opacity='.45' stroke-width='2'/></svg>");
+    --leaf-ico: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M2 14C2 6 8 2 14 2c0 8-4 12-12 12z' fill='%236dbb5c' stroke='%23305d2c' stroke-width='1.2'/><path d='M2 14L10 6' stroke='%23305d2c' stroke-width='1' fill='none'/></svg>");
+  }
+  #help b, kbd { background: linear-gradient(#6b4a33, #48311f); color: #ffe9b0; border: 1px solid var(--wood-edge); border-bottom-width: 2px; }
+  #help { color: #a8957a; }
+  .overlay { background: radial-gradient(ellipse at 50% 30%, rgba(38,72,40,.5), rgba(10,7,4,.9) 74%); backdrop-filter: blur(6px) saturate(1.1); }
+  .overlay.clear { background: transparent; backdrop-filter: none; }
+  /* the plank: a wooden frame with brass nails, a dark warm inside, faint plank seams */
+  .panel { border: 8px solid transparent; border-radius: 20px; padding: 22px 26px; color: var(--ink);
+    background:
+      radial-gradient(circle at 5px 5px, #fbe3a0 0 1.6px, var(--brass-d) 2.4px, transparent 3.4px) 0 0 / 16px 16px no-repeat border-box,
+      radial-gradient(circle at 11px 5px, #fbe3a0 0 1.6px, var(--brass-d) 2.4px, transparent 3.4px) 100% 0 / 16px 16px no-repeat border-box,
+      radial-gradient(circle at 5px 11px, #fbe3a0 0 1.6px, var(--brass-d) 2.4px, transparent 3.4px) 0 100% / 16px 16px no-repeat border-box,
+      radial-gradient(circle at 11px 11px, #fbe3a0 0 1.6px, var(--brass-d) 2.4px, transparent 3.4px) 100% 100% / 16px 16px no-repeat border-box,
+      repeating-linear-gradient(90deg, transparent 0 62px, rgba(0,0,0,.14) 62px 63px) padding-box,
+      linear-gradient(180deg, #3d2b1f, #271a12) padding-box,
+      linear-gradient(180deg, var(--wood-hi), var(--wood-2) 45%, #70502f) border-box;
+    box-shadow: 0 0 0 2px var(--wood-edge), 0 24px 60px rgba(0,0,0,.7), inset 0 0 46px rgba(0,0,0,.4); }
+  .panel::before { content: ''; position: absolute; left: -4px; top: -4px; right: auto; width: 150px; height: 74px; border-radius: 0; background: var(--vine) no-repeat 0 0 / contain; opacity: 1; pointer-events: none; z-index: 2; }
+  .panel::after { content: ''; position: absolute; right: -4px; top: -4px; width: 150px; height: 74px; background: var(--vine) no-repeat 0 0 / contain; transform: scaleX(-1); pointer-events: none; z-index: 2; }
+  .panel::-webkit-scrollbar-thumb, .hp-body::-webkit-scrollbar-thumb, .shop-body::-webkit-scrollbar-thumb, .invcol::-webkit-scrollbar-thumb { background: var(--wood-hi); border: 2px solid var(--panel); border-radius: 8px; background-clip: padding-box; }
+  /* title ribbon, a green plank with a bottle on each side */
+  .panel h2 { position: relative; display: block; width: fit-content; max-width: 90%; margin: -2px auto 16px; align-self: center; padding: 7px 46px 8px; font-size: 20px; font-weight: 800; letter-spacing: 3px; text-transform: uppercase;
+    color: #fff8de; -webkit-background-clip: border-box; background-clip: border-box; text-shadow: 0 2px 0 #2d5a27, 0 0 10px rgba(0,0,0,.25);
+    background: linear-gradient(180deg, #8fd16d, #4f9742 55%, #3f8036); border: 2px solid #2b5524; border-radius: 12px;
+    box-shadow: 0 3px 0 #264a20, 0 9px 16px rgba(0,0,0,.45), 0 1px 0 rgba(255,255,255,.4) inset; }
+  .panel h2::before, .panel h2::after { content: ''; position: absolute; top: 50%; width: 26px; height: 34px; background: no-repeat center / contain; background-image: var(--bottle-r); transform: translateY(-50%) rotate(-12deg); filter: drop-shadow(0 2px 2px rgba(0,0,0,.4)); }
+  .panel h2::before { left: 8px; } .panel h2::after { right: 8px; background-image: var(--bottle-g); transform: translateY(-50%) rotate(12deg); }
+  .title-panel h2 { margin-bottom: 12px; }
+  h3 { color: #e8cf94; border-bottom: 1px dashed rgba(232,207,148,.28); letter-spacing: 2px; }
+  h3::before { width: 13px; height: 13px; border-radius: 0; background: var(--leaf-ico) no-repeat center / contain; box-shadow: none; }
+  .hint { color: #c4ae86; } .hint em { color: var(--gold); }
+  /* wooden buttons */
+  .panel button { background: linear-gradient(180deg, #7d5b3e, #5b402c 55%, #4a3323); color: #fff3d6; border: 2px solid #24160e; border-radius: 12px; font-weight: 700; letter-spacing: .5px; text-shadow: 0 1px 0 rgba(0,0,0,.55);
+    box-shadow: 0 3px 0 #24160e, 0 7px 12px rgba(0,0,0,.32), 0 1px 0 rgba(255,236,190,.28) inset; padding: 10px 12px; }
+  .panel button:hover:not(:disabled) { background: linear-gradient(180deg, #92693f, #6c4b30 55%, #583b29); border-color: #24160e; transform: translateY(-2px); box-shadow: 0 5px 0 #24160e, 0 10px 16px rgba(0,0,0,.4), 0 1px 0 rgba(255,236,190,.35) inset, 0 0 0 1px rgba(255,214,120,.25); }
+  .panel button:active:not(:disabled) { transform: translateY(2px); box-shadow: 0 1px 0 #24160e, 0 2px 4px rgba(0,0,0,.4), 0 1px 0 rgba(255,236,190,.2) inset; }
+  .panel button:disabled { opacity: .45; }
+  .panel button[data-act=continue], .panel button[data-act=startNew], .panel button[data-buy="rb:arm"]:not(:disabled), .panel button.sell { background: linear-gradient(180deg, #8fd16d, #4f9742 55%, #3f8036); border-color: #234a1d; color: #fffbea; text-shadow: 0 1px 0 #1f4219; box-shadow: 0 3px 0 #234a1d, 0 7px 12px rgba(0,0,0,.32), 0 1px 0 rgba(255,255,255,.4) inset; }
+  .panel button[data-act=continue]:hover:not(:disabled), .panel button[data-act=startNew]:hover:not(:disabled), .panel button[data-buy="rb:arm"]:hover:not(:disabled), .panel button.sell:hover:not(:disabled) { background: linear-gradient(180deg, #a3e082, #5aa74c 55%, #46903b); box-shadow: 0 5px 0 #234a1d, 0 10px 16px rgba(0,0,0,.4), 0 1px 0 rgba(255,255,255,.45) inset; }
+  .panel button[data-buy="rb:go"], button.danger { background: linear-gradient(180deg, #ee6c62, #c1433f 55%, #a23434); border-color: #4e1717; color: #fff3ee; text-shadow: 0 1px 0 #5a1c1c; box-shadow: 0 3px 0 #4e1717, 0 7px 12px rgba(0,0,0,.32), 0 1px 0 rgba(255,255,255,.35) inset; }
+  button.danger:hover:not(:disabled) { background: linear-gradient(180deg, #f77f74, #cf4e49 55%, #b03c3c); border-color: #4e1717; }
+  /* on / off and choice buttons: dark slots, the chosen one lights up */
+  .opts button { background: linear-gradient(180deg, #2a1c13, #36261b); color: var(--ink-dim); border: 2px solid #17100a; border-radius: 10px; box-shadow: inset 0 2px 5px rgba(0,0,0,.6); text-shadow: none; padding: 6px 12px; }
+  .opts button:hover:not(:disabled) { background: linear-gradient(180deg, #34241a, #43301f); transform: none; box-shadow: inset 0 2px 5px rgba(0,0,0,.5); color: var(--ink); }
+  .opts button.on { background: linear-gradient(180deg, #8fd16d, #4f9742); color: #fffbea; border-color: #234a1d; text-shadow: 0 1px 0 #1f4219; box-shadow: 0 0 12px rgba(109,187,92,.55), 0 1px 0 rgba(255,255,255,.4) inset; }
+  .panel .tabs button.on { background: linear-gradient(180deg, #8fd16d, #4f9742); color: #fffbea; box-shadow: 0 3px 0 #234a1d, 0 1px 0 rgba(255,255,255,.4) inset; border-color: #234a1d; }
+  select, input[type=text] { background: #1f150e; color: var(--ink); border: 2px solid #120b07; border-radius: 10px; box-shadow: inset 0 2px 5px rgba(0,0,0,.6); }
+  select:focus, input:focus { outline: 2px solid var(--focus); outline-offset: 1px; }
+  input[type=range] { accent-color: var(--leaf); }
+  /* plank cards */
+  .lvhead { background: linear-gradient(180deg, #4d392a, #3b2a1f); border: 2px solid #1d120b; border-radius: 12px; box-shadow: 0 1px 0 rgba(255,230,180,.14) inset, 0 3px 8px rgba(0,0,0,.3); }
+  .pts { background: #231710; border: 2px solid var(--brass-d); color: var(--gold); border-radius: 999px; }
+  .stat, .item, .slot, .summary, .eqslot, .invdetail, .bindrow, .chip, .sellbar, .talk-panel .talk-text { --c: var(--accent); }
+  .stat, .item, .slot, .eqslot, .invdetail, .summary { background: linear-gradient(180deg, #4b372a, #392a20); border: 2px solid #1d120b; box-shadow: 0 1px 0 rgba(255,230,180,.13) inset, 0 3px 8px rgba(0,0,0,.28); }
+  .stat { border-left: 5px solid var(--c); }
+  .stat:hover, .item:hover { border-color: #1d120b; box-shadow: 0 1px 0 rgba(255,230,180,.16) inset, 0 8px 18px rgba(0,0,0,.4), 0 0 0 1px rgba(255,214,120,.25); }
+  .slot.on { background: linear-gradient(180deg, #4b6b3a, #36502b); border-color: #1d3015; }
+  .item .ic, .dico, .dev-ico { background: radial-gradient(circle at 50% 30%, #4a372a, #261a12); border: 2px solid rgba(0,0,0,.5); }
+  .sellbar { background: #33241a; }
+  .cell { background: linear-gradient(180deg, #3d2d22, #2c2018); border-width: 2px; }
+  .cell.empty { opacity: .5; }
+  .eqslot[data-eq]:hover, .cell:not(.empty):hover { filter: brightness(1.15); }
+  .meter { background: #1d140d; box-shadow: 0 1px 3px rgba(0,0,0,.7) inset; }
+  .sumrow, .srow { border-bottom-color: rgba(255,230,180,.09); }
+  .srow span, .sumrow span, .stat small, .slot small, .item small, .dsub { color: var(--ink-dim); }
+  .price { color: var(--gold); text-shadow: 0 0 10px rgba(244,198,79,.35); }
+  /* Ysolde's enchanting sanctum: a night-violet panel, glowing tiles, a drifting starfield */
+  .shop-panel.enchant { position: relative; background: radial-gradient(ellipse at 18% 0%, rgba(150,110,255,.28), transparent 55%), radial-gradient(ellipse at 90% 100%, rgba(63,242,224,.12), transparent 50%), linear-gradient(180deg, #241c4a, #171232); border-color: #7a5cc8; box-shadow: 0 0 0 1px rgba(200,170,255,.25), 0 0 44px rgba(130,90,255,.35), 0 18px 60px rgba(0,0,0,.6); }
+  .shop-panel.enchant::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; opacity: .55; background-image: radial-gradient(1.2px 1.2px at 12% 22%, #fff 50%, transparent 52%), radial-gradient(1px 1px at 33% 71%, #cfc0ff 50%, transparent 52%), radial-gradient(1.4px 1.4px at 58% 14%, #fff 50%, transparent 52%), radial-gradient(1px 1px at 76% 58%, #bff 50%, transparent 52%), radial-gradient(1.2px 1.2px at 90% 84%, #fff 50%, transparent 52%), radial-gradient(1px 1px at 46% 90%, #cfc0ff 50%, transparent 52%); animation: enchTwinkle 5s ease-in-out infinite alternate; }
+  @keyframes enchTwinkle { from { opacity: .25; } to { opacity: .7; } }
+  .shop-panel.enchant { --arcane: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 150 74'><path d='M2 8 C28 16 36 38 62 40 S104 46 132 66' fill='none' stroke='%237a5cc8' stroke-width='3' stroke-linecap='round'/><g stroke='%232a1d5c' stroke-width='1'><path d='M24 15 l5 -9 l5 9 l-5 9z' fill='%23c36bff'/><path d='M44 33 l4 -7 l4 7 l-4 7z' fill='%233ff2e0'/><path d='M70 42 l5 -9 l5 9 l-5 9z' fill='%23ffd24a'/><path d='M96 50 l4 -7 l4 7 l-4 7z' fill='%236fb5ff'/><path d='M118 58 l4 -7 l4 7 l-4 7z' fill='%23ff9a4a'/></g><g fill='%23fff' opacity='.85'><circle cx='38' cy='14' r='1.4'/><circle cx='86' cy='34' r='1.2'/><circle cx='108' cy='44' r='1.2'/></g></svg>");
+    --rune-a: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 38 38'><path d='M16 2 L28 9 V23 L16 30 L4 23 V9 Z' fill='%23262432' stroke='%23c36bff' stroke-width='1.8'/><path d='M16 6 V26 M10 12 L16 6 L22 12' fill='none' stroke='%23ff9a4a' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'/></svg>");
+    --rune-b: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='-3 -3 38 38'><path d='M16 2 L28 9 V23 L16 30 L4 23 V9 Z' fill='%23262432' stroke='%233ff2e0' stroke-width='1.8'/><path d='M9 8 L23 24 M23 8 L9 24 M16 5 V27' fill='none' stroke='%233ff2e0' stroke-width='2.4' stroke-linecap='round'/></svg>"); }
+  .shop-panel.enchant::before { background: var(--arcane) no-repeat 0 0 / contain; }
+  .shop-panel.enchant h2 { background: linear-gradient(180deg, #8f6af0, #5a3fb0 55%, #43308f); border-color: #24184f; color: #fff4ff; text-shadow: 0 2px 0 #2a1d68, 0 0 14px rgba(220,190,255,.7); letter-spacing: 2px; box-shadow: 0 3px 0 #1c1340, 0 9px 18px rgba(0,0,0,.5), 0 0 20px rgba(150,110,255,.5), 0 1px 0 rgba(255,255,255,.35) inset; }
+  .shop-panel.enchant h2::before, .shop-panel.enchant h2::after { background-image: var(--rune-a); transform: translateY(-50%); filter: drop-shadow(0 0 6px rgba(200,150,255,.9)); animation: runeBob 3s ease-in-out infinite; } .shop-panel.enchant h2::after { background-image: var(--rune-b); animation-delay: -1.5s; }
+  .ench { display: flex; flex-direction: column; flex: 1; min-height: 0; width: 100%; position: relative; z-index: 1; }
+  .ench .upg { flex: 1; min-height: 0; }
+  .etabs { display: flex; gap: 8px; align-items: center; margin: 0 0 12px; flex: none; }
+  .etabs button { margin: 0; padding: 8px 16px; font-size: 14px; min-height: 0; background: #2a2152; border: 1px solid #4a3c86; border-radius: 10px; color: #cbbdf0; } .etabs button i { font-style: normal; color: #c9a8ff; margin-right: 4px; }
+  .etabs button:hover { background: #352a66; } .etabs button.on { background: linear-gradient(180deg, #5a3fb0, #3f2c84); border-color: #c9a8ff; color: #fff; box-shadow: 0 0 14px rgba(170,130,255,.5); }
+  .etabs .ehave { margin-left: auto; font-size: 12px; color: #a99ccf; white-space: nowrap; }
+  .shop-panel.enchant .utile { background: #2a2152; border-color: #4a3c86; } .shop-panel.enchant .utile:hover { background: #352a66; }
+  .shop-panel.enchant .utile.on { border-color: #d9c2ff; background: #3a2d72; box-shadow: 0 0 0 2px rgba(200,170,255,.35), 0 0 18px rgba(170,130,255,.45); }
+  .shop-panel.enchant .utile .uic { background: radial-gradient(circle at 50% 40%, #2c2358, #120e26); box-shadow: 0 0 12px color-mix(in srgb, var(--rc) 55%, transparent); }
+  .shop-panel.enchant .upg-detail { background: linear-gradient(180deg, #2a2158, #1c1640); border-color: #5a47a4; box-shadow: inset 0 0 30px rgba(120,90,220,.18); }
+  .shop-panel.enchant .upg-detail .ubuy { background: #1f1948; }
+  .shop-panel.enchant .upg-detail .uic.big { background: radial-gradient(circle at 50% 40%, #33286a, #120e26); box-shadow: 0 0 20px color-mix(in srgb, var(--rc) 70%, transparent); animation: runeBob 3s ease-in-out infinite; }
+  @keyframes runeBob { 0%, 100% { translate: 0 0; } 50% { translate: 0 -3px; } }
+  .shop-panel.enchant .upg-detail .go { background: linear-gradient(180deg, #7a52e0, #4d33a8); border-color: #d9c2ff; color: #fff; } .shop-panel.enchant .upg-detail .go:disabled { filter: grayscale(.7) brightness(.7); }
+  .shop-panel.enchant .upg-detail .ofill { background: linear-gradient(90deg, #6a4fd0, #b58cff, #3ff2e0); }
+  .rdetail .fxrow { display: flex; gap: 4px; margin: 2px 0 5px; flex-wrap: nowrap; } .rdetail .fxrow.lv { margin-top: 0; }
+  .rdetail .fxrow.wrap { flex-wrap: wrap; }
+  .rdetail .fxb { display: flex; flex-direction: column; align-items: center; gap: 1px; width: 52px; padding: 4px 1px 2px; margin: 0; min-height: 0; border-radius: 10px; background: #14102c; border: 2px solid #3a2f6a; } .rdetail .fxb small { font-size: 10px; color: var(--ink-dim); }
+  .rdetail .fxb.on { border-color: var(--rc); box-shadow: 0 0 12px color-mix(in srgb, var(--rc) 60%, transparent); } .rdetail .fxb:hover { filter: brightness(1.2); }
+  .rdetail .fxl { width: 46px; padding: 4px 0; margin: 0; min-height: 0; border-radius: 8px; background: #14102c; border: 2px solid #3a2f6a; font-weight: 700; } .rdetail .fxl.on { border-color: var(--rc); color: var(--rc); box-shadow: 0 0 10px color-mix(in srgb, var(--rc) 55%, transparent); }
+  .rdetail .ubuy button:not(.go) { flex: none; width: auto; padding: 9px 12px; }
+  #talkBtns.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } #talkBtns.grid button { margin: 0; }
+  .rdetail .rnote { font-size: 12px; color: #a99ccf; line-height: 1.5; margin: 6px 0 4px; }
+  .rdetail .rup { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 4px; } .rdetail .rup span { color: #c9a8ff; font-size: 20px; text-shadow: 0 0 10px #a77fff; }
+  .rdetail .rup .uic { width: 46px; height: 46px; border-radius: 12px; background: radial-gradient(circle at 50% 40%, #33286a, #120e26); border: 2px solid var(--rc); padding: 3px; } .rdetail .rup .uic svg { display: block; width: 100%; height: 100%; }
+  /* ---- settings tabs ---- */
+  .settabs { display: flex; gap: .5em; margin: 0 0 .8em; justify-content: center; flex-wrap: wrap; }
+  .settabs button { width: auto; margin: 0; padding: .45em 1.4em; font-size: .95em; border-radius: 12px 12px 4px 4px; min-height: 0; background: linear-gradient(180deg, #4b372a, #392a20); border: 2px solid #1d120b; color: var(--ink-dim); }
+  .settabs button:hover { filter: brightness(1.15); color: var(--ink); }
+  .settabs button.on { background: linear-gradient(180deg, #8fd16d, #4f9742 60%, #3f8036); border-color: #2b5524; color: #fff8de; text-shadow: 0 1px 0 #2d5a27; box-shadow: 0 3px 0 #264a20, 0 0 14px rgba(143,211,106,.35); }
+  #settings .stab { display: none; } #settings .stab.show { display: block; }
+  .keysum { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 22px; margin-top: .7em; max-height: 46vh; overflow-y: auto; padding-right: 6px; }
+  .keysum .krow { display: flex; justify-content: space-between; gap: .6em; padding: .25em .1em; border-bottom: 1px dashed rgba(232,207,148,.18); font-size: .92em; } .keysum .krow b { font-weight: 600; text-align: right; } .keysum em { color: var(--ink-dim); font-weight: 400; }
+  @media (max-width: 800px) { .keysum { grid-template-columns: 1fr; } }
+  /* ---- tile shops: boxes on the left, the chosen item on the right ---- */
+  .shop-panel.tiles { width: min(860px, 100%); }
+  .shop-panel.tiles .shop-body { overflow: visible; padding-right: 0; margin-right: 0; }
+  .shop-panel.tiles .upg-detail, .tdetail { position: static; }
+  .tdetail .tdesc { font-size: 13px; color: var(--ink-dim); line-height: 1.5; margin: 4px 0 8px; } .tdetail .tdesc b { color: #9be07a; }
+  .tdetail .multirow { margin: 8px 0 0; } .tdetail .multirow button { width: auto; margin: 0; padding: 4px 11px; font-size: 12px; border-radius: 999px; min-height: 0; } .tdetail .multirow button.on { background: linear-gradient(180deg, #4a9a58, #2f6f3d); border-color: #7fd08a; color: #f4fff6; }
+  .tdetail .ubuy .go.sell { background: linear-gradient(180deg, #4a9a58, #2f6f3d); border-color: #7fd08a; color: #f4fff6; }
+  .utile.empty { min-height: 112px; background: rgba(0,0,0,.16); border: 2px dashed rgba(255,255,255,.1); box-shadow: none; pointer-events: none; }
+  .utile.empty:hover { transform: none; background: rgba(0,0,0,.16); }
+  .rdetail .ubuy { flex-wrap: wrap; } .rdetail .ubuy .go { min-width: 0; flex: 1 1 140px; } .rdetail .ubuy button:not(.go) { flex: 0 0 auto; width: auto; min-width: 74px; padding: 9px 12px; font-size: 13px; white-space: nowrap; }
+  .tdetail .ubuy { flex-wrap: wrap; } .tdetail .ubuy .go { min-width: 0; flex: 1 1 140px; } .tdetail .ubuy button:not(.go) { flex: 0 0 auto; width: auto; min-width: 74px; padding: 9px 12px; font-size: 13px; white-space: nowrap; }
+  .utile.dim { opacity: .55; } .utile .worn { white-space: nowrap; }
+  .shop-panel.upgrade .upg.tshop { flex: 1; }
+  /* ---- inventory tabs: Gear, Weapons, Runes ---- */
+  .invtabs { display: flex; gap: .5em; margin: .2em 0 .7em; flex: none; }
+  .hero-panel .invtabs button { width: auto; margin: 0; padding: .45em 1.3em; font-size: .95em; border-radius: 12px 12px 4px 4px; min-height: 0; background: linear-gradient(180deg, #4b372a, #392a20); border: 2px solid #1d120b; color: var(--ink-dim); }
+  .invtabs button i { font-style: normal; margin-right: .3em; } .invtabs button small { margin-left: .35em; padding: 0 .5em; border-radius: 999px; background: rgba(0,0,0,.35); font-size: .8em; color: var(--ink); }
+  .hero-panel .invtabs button:hover { filter: brightness(1.15); color: var(--ink); }
+  .hero-panel .invtabs button.on { background: linear-gradient(180deg, #8fd16d, #4f9742 60%, #3f8036); border-color: #2b5524; color: #fff8de; text-shadow: 0 1px 0 #2d5a27; box-shadow: 0 3px 0 #264a20, 0 0 14px rgba(143,211,106,.35); }
+  #inv[data-tab="runes"] .invtabs button.on { background: linear-gradient(180deg, #8f6af0, #5a3fb0 60%, #43308f); border-color: #24184f; color: #fff4ff; text-shadow: 0 1px 0 #2a1d68; box-shadow: 0 3px 0 #1c1340, 0 0 14px rgba(150,110,255,.5); }
+  #inv[data-tab="weapons"] .invtabs button.on { background: linear-gradient(180deg, #e0a050, #b0702a 60%, #8a5420); border-color: #4a2c10; color: #fff4dc; text-shadow: 0 1px 0 #4a2c10; box-shadow: 0 3px 0 #3a2208, 0 0 14px rgba(240,170,80,.35); }
+  .rpiece { display: grid; grid-template-columns: 2.6em minmax(0, 1fr); gap: .3em .7em; align-items: center; padding: .4em .6em; margin-bottom: .4em; border: 2px solid var(--line); border-radius: 12px; background: linear-gradient(180deg, #4b372a, #392a20); }
+  .rpiece .ico svg { width: 2.4em; height: 2.4em; } .rpiece .rtxt { min-width: 0; } .rpiece .rtxt b { display: block; font-size: .92em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; } .rpiece .rtxt small { color: var(--ink-dim); font-size: .78em; }
+  .rpiece .rsocks { grid-column: 1 / -1; display: flex; gap: .4em; }
+  .hero-panel .rpiece .sk { width: 2.5em; height: 2.5em; margin: 0; padding: 0; min-height: 0; border-radius: 10px; background: #14141c; border: 2px dashed #6b5a44; color: #9a8a6c; font-size: 1.1em; display: flex; align-items: center; justify-content: center; }
+  .rpiece .sk.on { border: 2px solid var(--rc); background: #1c1a26; } .rpiece .sk.ready { border-color: #c9a8ff; color: #e6d6ff; box-shadow: 0 0 10px rgba(180,140,255,.55); }
+  .cell.rune { aspect-ratio: 1.2; } .cell.rune .upn { color: #fff4d6; font-size: .75em; }
+  /* the in-game question box (quit, delete, discard...) */
+  #confirmDlg { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 60; background: rgba(8,6,4,.62); backdrop-filter: blur(2px); }
+  #confirmDlg.show { display: flex; animation: wheelIn .14s ease-out; }
+  .confirm-panel { width: min(440px, 92%); text-align: center; }
+  .confirm-text { margin: 6px 6px 16px; font-size: 15px; line-height: 1.55; color: var(--ink); }
+  .confirm-btns { display: flex; gap: 10px; } .confirm-btns button { flex: 1; margin: 0; }
+  .confirm-btns .danger { border-color: #a8453f; } .confirm-hint { margin-top: 10px; font-size: 11px; color: var(--ink-dim); }
+  /* the hold-to-open wheel menu: a ring of wooden segments over the game, which slows to a crawl while it is up; the segment the mouse points at turns gold */
+  #wheel { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; z-index: 40; pointer-events: none; backdrop-filter: blur(3px) brightness(.72) saturate(.9); -webkit-backdrop-filter: blur(3px) brightness(.72); }
+  #wheel.show { display: flex; animation: wheelIn .16s ease-out; }
+  @keyframes wheelIn { from { opacity: 0; transform: scale(.9); } to { opacity: 1; transform: none; } }
+  .wheel-box { position: relative; width: min(520px, 92vmin); aspect-ratio: 1; filter: drop-shadow(0 12px 28px rgba(0,0,0,.55)); }
+  .wheel-box svg { width: 100%; height: 100%; display: block; overflow: visible; }
+  .wseg { fill: rgba(52, 34, 20, .88); stroke: #9a6a34; stroke-width: 2.5; transition: fill .1s, stroke .1s; }
+  .wseg.on { fill: url(#wheelGold); fill: #d8a93e; stroke: #fff0b8; stroke-width: 3; filter: drop-shadow(0 0 14px rgba(245,196,81,.7)); }
+  .wseg.soon { fill: rgba(40, 28, 20, .72); stroke: #5d4630; }
+  .wseg.soon.on { fill: rgba(96, 78, 60, .8); stroke: #b9a07a; filter: none; }
+  .whub { fill: rgba(30, 20, 13, .94); stroke: #9a6a34; stroke-width: 3; }
+  .wicon { transition: transform .1s; pointer-events: none; }
+  .wicon text { fill: #ecdbb5; font: 700 14px/1 system-ui, sans-serif; letter-spacing: .5px; paint-order: stroke; stroke: rgba(0,0,0,.55); stroke-width: 3px; }
+  .wicon.on text { fill: #2b1a0c; stroke: rgba(255,240,190,.5); stroke-width: 2px; }
+  .wicon.soon { opacity: .42; }
+  .wicon.soon.on { opacity: .8; }
+  .wheel-hub { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 40%; text-align: center; pointer-events: none; }
+  .wheel-name { font-size: clamp(18px, 4.4vmin, 30px); font-weight: 700; color: #fff4d6; letter-spacing: .8px; text-shadow: 0 2px 8px rgba(0,0,0,.7); }
+  .wheel-sub { margin-top: 8px; font-size: 13px; color: #cdb68c; }
+  .wheel-sub b { display: inline-block; padding: 1px 8px; margin: 0 2px; border: 1px solid #cdb68c; border-radius: 5px; color: #fff4d6; background: rgba(255,255,255,.08); font-weight: 700; }
+  /* Brann's upgrade list: the grid of pieces on the left, the chosen piece and its next stats on the right */
+  .shop-panel.upgrade { width: min(940px, 100%); height: min(780px, 100%); max-height: none; }
+  .shop-panel.upgrade .shop-body { flex: 1 1 0; overflow: hidden; margin-right: 0; padding-right: 0; display: flex; }
+  .shop-panel.upgrade .upg { flex: 1; min-height: 0; align-items: stretch; }
+  .shop-panel.upgrade .upg-grid { overflow-y: auto; min-height: 0; padding-right: 6px; }
+  .shop-panel.upgrade .upg-detail { position: static; overflow-y: auto; min-height: 0; }
+  .upg-grid::-webkit-scrollbar, .upg-detail::-webkit-scrollbar { width: 10px; } .upg-grid::-webkit-scrollbar-thumb, .upg-detail::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; } .upg-grid::-webkit-scrollbar-track, .upg-detail::-webkit-scrollbar-track { background: transparent; }
+  .upg-detail .ubuy { position: sticky; bottom: -14px; padding: 10px 0 2px; background: var(--panel-2); }
+  .upg { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 14px; align-items: start; }
+  .upg-detail { order: 2; }
+  .upg-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-content: start; }
+  .utile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 5px; padding: 12px 6px 8px; margin: 0; text-align: center; min-width: 0; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 12px; transition: transform .08s, border-color .1s, background .1s; }
+  .utile:hover { background: #4a3322; transform: translateY(-1px); }
+  .utile.on { border-color: var(--gold); box-shadow: 0 0 0 2px rgba(245,196,81,.35); background: #51382a; }
+  .utile .uic, .upg-detail .uic { width: 54px; height: 54px; border-radius: 12px; background: #14141c; border: 2px solid var(--rc); padding: 3px; flex: none; }
+  .utile .uic svg, .upg-detail .uic svg { display: block; width: 100%; height: 100%; }
+  .utile .una { width: 100%; font-size: 12px; font-weight: 700; line-height: 1.25; max-width: 100%; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; word-break: break-word; }
+  .utile small { display: block; font-size: 11px; color: var(--ink-dim); }
+  .utile kbd { position: absolute; left: 6px; top: 6px; font-size: 10px; padding: 0 5px; }
+  .utile .worn { position: absolute; right: 6px; top: 6px; font-style: normal; font-size: 9.5px; letter-spacing: .4px; padding: 1px 6px; border-radius: 6px; background: rgba(143,211,106,.18); color: #b6e69a; }
+  .upg-detail { position: sticky; top: 0; background: var(--panel-2); border: 1px solid var(--line-soft); border-radius: 14px; padding: 14px; text-align: left; }
+  .upg-detail .uhead { display: flex; gap: 12px; align-items: center; margin-bottom: 10px; }
+  .upg-detail .uic.big { width: 64px; height: 64px; }
+  .upg-detail .uhead b { font-size: 16px; } .upg-detail .uhead small { display: block; margin-top: 3px; color: var(--ink-dim); font-size: 12px; }
+  .upg-detail .ulevel { font-size: 13px; color: var(--ink-dim); margin-bottom: 6px; } .upg-detail .ulevel b { color: var(--gold); font-size: 15px; } .upg-detail .ulevel span { float: right; }
+  .upg-detail .ustats { margin-bottom: 10px; }
+  .upg-detail .srow b { font-weight: 700; } .upg-detail .srow i { font-style: normal; color: var(--ink-dim); margin: 0 2px; } .upg-detail .srow em { font-style: normal; color: #9be07a; }
+  .upg-detail .uodds { margin: 8px 0; font-size: 13px; }
+  .upg-detail .obar { height: 8px; border-radius: 6px; background: rgba(0,0,0,.4); overflow: hidden; margin-bottom: 6px; }
+  .upg-detail .ofill { height: 100%; background: linear-gradient(90deg, #d9534f, #f5c451, #8bd36a); background-size: 300px 100%; border-radius: 6px; }
+  .upg-detail .otxt small { display: block; color: var(--ink-dim); font-size: 11.5px; margin-top: 2px; }
+  .upg-detail .umsg { margin: 8px 0; padding: 7px 10px; border-radius: 9px; font-size: 13px; font-weight: 700; }
+  .upg-detail .umsg.good { background: rgba(143,211,106,.16); color: #b6e69a; } .upg-detail .umsg.bad { background: rgba(226,86,90,.16); color: #ff9a9c; }
+  .upg-detail .ubuy { display: flex; gap: 8px; margin-top: 10px; align-items: stretch; } .upg-detail .ubuy button { margin: 0; padding: 9px 10px; font-size: 14px; white-space: nowrap; min-height: 0; } .upg-detail .ubuy .go { flex: 1; width: auto; } .upg-detail .ubuy button:not(.go) { flex: none; width: 58px; }
+  .upg-detail .usock { margin: 8px 0 4px; } .upg-detail .usock.none small { color: var(--ink-dim); font-size: 11.5px; }
+  .upg-detail .slabel { font-size: 12px; color: var(--ink-dim); margin-bottom: 5px; } .upg-detail .slabel small { margin-left: 4px; }
+  .upg-detail .sbox { display: flex; gap: 8px; }
+  .upg-detail .sk { width: 40px; height: 40px; margin: 0; padding: 0; border-radius: 10px; background: #14141c; border: 2px dashed #6b5a44; color: #9a8a6c; font-size: 18px; display: flex; align-items: center; justify-content: center; min-height: 0; }
+  .upg-detail .sk.on { border: 2px solid var(--rc); border-style: solid; background: #1c1a26; } .upg-detail .sk.sel { border-color: var(--gold); color: var(--gold); }
+  .upg-detail .spick { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; padding: 8px; border-radius: 10px; background: rgba(0,0,0,.25); }
+  .upg-detail .rp { position: relative; width: 40px; height: 40px; margin: 0; padding: 0; border-radius: 9px; background: #14141c; border: 1px solid var(--rc); min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .upg-detail .rp b { position: absolute; right: 2px; bottom: 0; font-size: 10px; color: #fff4d6; text-shadow: 0 1px 2px #000; }
+  .upg-detail .spick small { color: var(--ink-dim); font-size: 11.5px; }
+  .runestock { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; font-size: 12px; color: var(--ink-dim); } .runestock i { position: relative; display: inline-flex; padding: 2px; border-radius: 7px; background: #14141c; border: 1px solid var(--rc); } .runestock i b { font-size: 10px; margin-left: 2px; color: #fff4d6; align-self: flex-end; }
+  @media (max-width: 800px) { .upg { grid-template-columns: 1fr; } .upg-detail { order: 0; } .upg-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  .panel.talk-panel::before { content: ''; left: 0; top: 14px; bottom: 14px; width: 4px; height: auto; background: linear-gradient(180deg, var(--gold), var(--leaf)); border-radius: 0 3px 3px 0; right: auto; transform: none; }
+  .talk-panel::after { display: none; }
+  .talk-name { color: var(--gold); }
+  .con { background: rgba(31,21,14,.95); border: 3px solid var(--wood-hi); border-radius: 12px; box-shadow: 0 0 0 2px var(--wood-edge), 0 12px 40px rgba(0,0,0,.6); }
+  .dev-panel { box-shadow: 0 0 0 2px var(--wood-edge), 0 0 0 4px var(--brass-d), 0 24px 60px rgba(0,0,0,.7), inset 0 0 46px rgba(0,0,0,.4); }
+  .uniq { background: rgba(76,199,181,.1); border-color: rgba(76,199,181,.5); }
+  .chip.cap, .badd.cap { border-color: var(--gold); box-shadow: 0 0 0 1px var(--gold); }
+  .chip { background: #2a1c13; border: 2px solid #17100a; }
+
+  /* theme fixes: the title sits over the vines, no sideways scrolling, a tighter equipment list so the totals show */
+  .panel { overflow-x: hidden; }
+  .panel::before { left: 0; top: 0; width: 132px; height: 64px; }
+  .panel::after { right: 0; top: 0; width: 132px; height: 64px; }
+  .panel h2 { z-index: 3; }
+  .title-panel::before, .title-panel::after { display: none; }
+  .hero-panel .eqslot { min-height: 2.1em; padding: .2em .6em; }
+  .hero-panel .eqslot .ico { width: 2.5em; } .hero-panel .eqslot svg { width: 2.3em; height: 2.3em; }
+  .hero-panel .equipgrid { gap: .28em; }
+  .hero-panel .eqtxt small { font-size: .62em; }
+  .totals { grid-template-columns: repeat(3, 1fr); gap: .3em; padding: .35em; }
+  .totals .srow { flex-direction: column; gap: 0; border: 0; padding: .2em .45em; background: rgba(0,0,0,.18); border-radius: 8px; font-size: .86em; }
+  .totals .srow span { font-size: .78em; text-transform: uppercase; letter-spacing: .5px; } .totals .srow b { font-size: 1.05em; }
+  .panel .multirow button { display: inline-block; width: auto; margin: 0; padding: .3em .8em; font-size: .85em; border-radius: 999px; }
+  .panel .sellbar > button.sell { width: 100%; margin: 0; padding: 9px; font-size: 1em; border-radius: 12px; }
+  /* small windows: columns never push past their edge (long names are clipped, not cut off) */
+  .equipgrid { grid-template-columns: minmax(0, 1fr); }
+  .hero-panel .invgrid { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .hero-panel .eqslot { min-width: 0; overflow: hidden; }
 </style>
 </head>
 <body>
@@ -341,6 +640,8 @@
   <div class="overlay" id="settings">
     <div class="panel xwide">
       <h2>SETTINGS</h2>
+      <div class="settabs" id="setTabs"><button data-stab="graphics">Graphics</button><button data-stab="audio">Audio</button><button data-stab="keys">Keybinds</button><button data-stab="other">Other</button></div>
+      <div class="stab" data-tab="graphics">
       <div class="row"><span>Quality</span><div class="opts" data-set="quality">
         <button data-v="low">Low</button><button data-v="medium">Medium</button><button data-v="high">High</button><button data-v="ultra">Ultra</button>
       </div></div>
@@ -365,12 +666,6 @@
       <div class="row"><span>Show FPS</span><div class="opts" data-set="showFps">
         <button data-v="true">On</button><button data-v="false">Off</button>
       </div></div>
-      <div class="row"><span>Reduce flashing &amp; shake</span><div class="opts" data-set="comfort">
-        <button data-v="true">On</button><button data-v="false">Off</button>
-      </div></div>
-      <div class="row"><span>Music volume</span><input type="range" min="0" max="100" data-set="musicVol"></div>
-      <div class="row"><span>Sound effects</span><input type="range" min="0" max="100" data-set="sfxVol"></div>
-      <div class="row"><span>Ambience</span><input type="range" min="0" max="100" data-set="ambVol"></div>
       <div class="hint">
         <b>Low</b> half resolution, no effects · <b>Medium</b> shadows, sword trails, hit particles ·
         <b>High</b> grass, flowers, glow · <b>Ultra</b> animated grass that reacts to you, weather, screen shake,
@@ -378,10 +673,49 @@
         <b>Render scale:</b> draws the game at a lower resolution and enlarges it on the GPU with a bicubic filter plus contrast-adaptive
         sharpening (an FSR-style upscaler). Lower scales run faster on weak GPUs or 4K screens; 75% is a good start. It needs WebGL and is
         not used on Low quality.<br>
-        <b>Reduce flashing &amp; shake:</b> removes white screen flashes, blinking, screen shake and hit freeze-frames.<br>
         <span id="gpuInfo"></span>
       </div>
+      </div>
+      <div class="stab" data-tab="audio">
+      <div class="row"><span>Music volume</span><input type="range" min="0" max="100" data-set="musicVol"></div>
+      <div class="row"><span>Sound effects</span><input type="range" min="0" max="100" data-set="sfxVol"></div>
+      <div class="row"><span>Ambience</span><input type="range" min="0" max="100" data-set="ambVol"></div>
+      <div class="hint">Music is the background tunes, sound effects are your sword, steps and menus, and ambience is wind, rain, crickets and the creatures of each place.</div>
+      </div>
+      <div class="stab" data-tab="keys">
+      <div class="row"><span>Controls <small>(keyboard &amp; mouse)</small></span><div class="opts"><button data-act="controls">Edit keybinds…</button></div></div>
+      <div class="keysum" id="keySummary"></div>
+      </div>
+      <div class="stab" data-tab="other">
+      <div class="row"><span>Reduce flashing &amp; shake</span><div class="opts" data-set="comfort">
+        <button data-v="true">On</button><button data-v="false">Off</button>
+      </div></div>
+      <div class="row"><span>Console <small>(` key)</small></span><div class="opts" data-set="consoleEnabled">
+        <button data-v="true">Enabled</button><button data-v="false">Disabled</button>
+      </div></div>
+      <div class="hint">
+        <b>Reduce flashing &amp; shake:</b> removes white screen flashes, blinking, screen shake and hit freeze-frames.<br>
+        <b>Console:</b> when enabled, pressing ` opens a command prompt (try <b>save</b> or <b>help</b>). When disabled, ` does nothing.
+      </div>
+      </div>
       <button data-act="back">Back</button>
+    </div>
+  </div>
+
+  <div class="overlay" id="controls">
+    <div class="panel wide">
+      <h2>CONTROLS</h2>
+      <div class="hint" id="bindMsg"></div>
+      <div id="bindList"></div>
+      <button data-act="bindreset">Reset to defaults</button>
+      <button data-act="controlsBack">Back</button>
+    </div>
+  </div>
+
+  <div class="overlay clear" id="console">
+    <div class="con">
+      <div id="conLog"></div>
+      <label class="con-row"><span>Console&gt;</span><input type="text" id="conIn" autocomplete="off" spellcheck="false" maxlength="60"></label>
     </div>
   </div>
 
@@ -392,6 +726,9 @@
       <button data-act="close">Close (` / Esc)</button>
     </div>
   </div>
+
+  <div id="wheel" aria-hidden="true"></div>
+  <div id="confirmDlg" role="alertdialog"></div>
 
   <div class="overlay clear talk" id="talk">
     <div class="panel talk-panel">
@@ -414,12 +751,13 @@
   <div class="overlay" id="inv">
     <div class="panel hero-panel">
       <h2>INVENTORY</h2>
-      <div class="hp-body">
+      <div class="hp-body inv-body">
         <div class="lvhead"><span id="invCount"></span><span>Gold: <span class="pts" id="invGold"></span></span></div>
+        <div class="invtabs" id="invTabs"></div>
         <div class="invcols">
-          <div><h3>Equipped</h3><div id="invEquip" class="equipgrid"></div></div>
-          <div><h3>Backpack</h3><div id="invGrid" class="invgrid"></div><h3>Gear totals</h3><div class="summary" id="invTotals"></div></div>
-          <div><h3>Details</h3><div id="invDetail" class="invdetail"></div></div>
+          <div class="invcol"><h3 id="invH1">Equipped</h3><div id="invEquip" class="equipgrid"></div><h3 id="invH4">Gear totals</h3><div class="summary totals" id="invTotals"></div></div>
+          <div class="invcol"><h3 id="invH2">Backpack</h3><div id="invBar" class="invbar"></div><div id="invGrid" class="invgrid"></div></div>
+          <div class="invcol"><h3 id="invH3">Details</h3><div id="invDetail" class="invdetail"></div></div>
         </div>
       </div>
       <button data-act="close">Close (Tab / Esc)</button>
@@ -435,13 +773,13 @@
           <div><h3>Stats</h3><div id="lvStats"></div></div>
           <div><h3>Summary</h3><div class="summary" id="lvSummary"></div></div>
         </div>
-        <div class="hint">Weapons and gear are in the <b>Inventory</b> (press <b>Tab</b>). Spend your points on the left.</div>
+        <div class="hint">Weapons and gear are in the <b>Inventory</b> (hold <b>Tab</b>, point at the bag, let go). Spend your points on the left.</div>
       </div>
       <button data-act="close">Close (M / Esc)</button>
     </div>
   </div>
 </div>
-<div id="help"><b>WASD</b>move<b>Space</b>attack<b>Shift</b>flip<b>Q</b>drink<b>R</b>switch potion<b>M</b>character<b>Tab</b>inventory<b>E</b>talk<b>Esc</b>menu<b>F</b>fullscreen<b>`</b>dev</div>
+<div id="help"><b>WASD</b>move<b>Space</b>attack<b>Shift</b>flip<b>Q</b>drink<b>M</b>character<b>Tab</b>hold: wheel menu<b>E</b>talk<b>Esc</b>menu<b>F</b>fullscreen<b>`</b>dev</div>
 <script src="sfx.js"></script>
 <script src="postfx.js"></script>
 <script src="sky.js"></script>
@@ -457,6 +795,7 @@
 <script src="camp.js"></script>
 <script src="variants.js"></script>
 <script src="bosses.js"></script>
+<script src="mobs.js"></script>
 <script src="game.js"></script>
 </body>
 </html>

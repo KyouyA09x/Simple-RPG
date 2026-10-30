@@ -62,6 +62,7 @@ function computeVision() {
   const night = f * (1 - Math.min(1, aurora));
   if (night > 0.01) push(lightRadius() + (1 - night) * 260, NIGHT_HAZE.d * night, NIGHT_HAZE.c);
 
+  if (typeof ailT === 'function' && ailT('blind') > 0) push(150, 0.93, [8, 8, 16]);                         // blinded: only what is close can be seen
   // weather, cross-fading with the weather system
   for (const [kind, w] of [[weather.kind, 1 - p], [weather.next, p]]) {
     const v = VISION[kind];

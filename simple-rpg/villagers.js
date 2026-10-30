@@ -11,7 +11,7 @@ const lerpN = (a, b, t) => a + (b - a) * t;
 // A villager is a stick figure with clothes. n: { x, y, f (facing ±1), scale, pose, pt (pose time), walkT, moving,
 // carry, alpha, ph, look: { body, apron, hat, hair, beard, dress, glasses, skin } }
 function villagerPose(n, sh, f, s) {
-  const pt = n.pt, R = { bh: null, fh: null, tool: null, lean: n.moving ? 0.12 : 0.02, hop: 0, sit: false, kick: 0 };
+  const pt = n.pt, mv = n._mv ?? (n.moving ? 1 : 0), R = { bh: null, fh: null, tool: null, lean: 0.02 + 0.10 * mv, hop: 0, sit: false, kick: 0 };
   const rest = () => { R.bh = { x: sh.x - f * 3 * s, y: sh.y + 17 * s }; R.fh = { x: sh.x + f * 5 * s, y: sh.y + 16 * s }; };
   switch (n.pose) {
     case 'chop': {
@@ -81,12 +81,13 @@ function villagerPose(n, sh, f, s) {
       R.tool = { k: 'spear' }; R.lean = 0.0; break;
     }
     default:
-      if (n.moving) {
-        const sw = Math.cos(n.walkT);
-        R.bh = { x: sh.x - f * 9 * s * sw, y: sh.y + (13 - Math.abs(Math.sin(n.walkT)) * 2) * s };
-        R.fh = { x: sh.x + f * 9 * s * sw, y: sh.y + (13 - Math.abs(Math.sin(n.walkT)) * 2) * s };
-        if (n.look && n.look.spear) R.tool = { k: 'spear' };
-      } else { rest(); if (n.look && n.look.spear) R.tool = { k: 'spear' }; }
+      rest();                                                  // standing, then blended into the walking swing as they start to move
+      if (mv > 0.01) {
+        const sw = Math.cos(n.walkT), wy = sh.y + (13 - Math.abs(Math.sin(n.walkT)) * 2) * s;
+        R.bh = { x: lerpN(R.bh.x, sh.x - f * 9 * s * sw, mv), y: lerpN(R.bh.y, wy, mv) };
+        R.fh = { x: lerpN(R.fh.x, sh.x + f * 9 * s * sw, mv), y: lerpN(R.fh.y, wy, mv) };
+      }
+      if (n.look && n.look.spear) R.tool = { k: 'spear' };
       if (n.carry && n.pose !== 'carry') { /* carried item shown only in the carry pose */ }
   }
   return R;
@@ -151,8 +152,17 @@ function drawTool(t, hand, f, s) {
 }
 
 function drawVillager(n) {
-  const L = n.look || {}, s = n.scale || 1, f = n.f || 1, x = n.x, y = n.y;
+  const L = n.look || {}, s = n.scale || 1, x = n.x, y = n.y;
   const ink = '#1a1a1a';
+  // smooth state, so nothing pops: turning round takes a moment (the figure narrows through the turn), walking eases in and out, poses blend into each other, sitting down is a motion
+  const dtA = Math.max(0, Math.min(0.1, tAnim - (n._lt ?? tAnim))); n._lt = tAnim;
+  const fWant = n.f || 1; if (n._fv === undefined) n._fv = fWant;
+  n._fv += (fWant - n._fv) * Math.min(1, dtA * 11); if (Math.abs(fWant - n._fv) < 0.03) n._fv = fWant;
+  const f = n._fv;
+  const sitting = n.pose === 'sit' || n.pose === 'knit', mvWant = n.moving && !sitting ? 1 : 0;
+  n._mv = n._mv === undefined ? mvWant : n._mv + (mvWant - n._mv) * Math.min(1, dtA * 9);
+  n._sk = n._sk === undefined ? (sitting ? 1 : 0) : n._sk + ((sitting ? 1 : 0) - n._sk) * Math.min(1, dtA * 8);
+  const mvK = n._mv < 0.02 ? 0 : n._mv, sitK = n._sk < 0.02 ? 0 : n._sk > 0.98 ? 1 : n._sk;
   ctx.save();
   ctx.globalAlpha = n.alpha ?? 1;
   drawShadow(x, y, 11 * s);
@@ -160,10 +170,16 @@ function drawVillager(n) {
   const br = n.pose === 'sit' || n.pose === 'knit' ? 0 : Math.sin(tAnim * 2.4 + n.ph) * 1.1 * s;
   const sh0 = { x, y: y - 50 * s };
   const P = villagerPose(n, sh0, f, s);
-  const moving = n.moving && !P.sit;
-  const bounce = moving ? Math.abs(Math.cos(n.walkT)) * 2 * s : 0;
+  { const key = n.pose;                                          // a new pose: the hands glide from where they were to where they now belong
+    if (n._pk !== key) { n._pk = key; n._pb = 0; n._fromB = n._lastB; n._fromF = n._lastF; }
+    n._pb = Math.min(1, (n._pb ?? 1) + dtA / 0.22); const wB = ease01(n._pb);
+    const rel = (h, from) => !h ? null : (from && wB < 1 ? { x: lerpN(from.x, h.x - sh0.x, wB) + sh0.x, y: lerpN(from.y, h.y - sh0.y, wB) + sh0.y } : h);
+    const nb = rel(P.bh, n._fromB), nf = rel(P.fh, n._fromF);
+    n._lastB = P.bh ? { x: (nb || P.bh).x - sh0.x, y: (nb || P.bh).y - sh0.y } : n._lastB; n._lastF = P.fh ? { x: (nf || P.fh).x - sh0.x, y: (nf || P.fh).y - sh0.y } : n._lastF;
+    if (nb) P.bh = nb; if (nf) P.fh = nf; }
+  const bounce = mvK ? Math.abs(Math.cos(n.walkT)) * 2 * s * mvK : 0;
   const yy = y - P.hop;
-  const hipY = P.sit ? y - 8 * s : yy - 25 * s + bounce;
+  const hipY = lerpN(yy - 25 * s + bounce, y - 8 * s, sitK);
   const hip = { x, y: hipY };
   const lean = P.lean;
   const neck = { x: x + f * Math.sin(lean) * 26 * s, y: hipY - Math.cos(lean) * 26 * s + br * 0.5 };
@@ -175,15 +191,17 @@ function drawVillager(n) {
 
   // legs
   let legs;
-  if (P.sit) {
+  if (sitK > 0.5) {
     const k1 = { x: x + f * 14 * s, y: hipY }, k2 = { x: x + f * 11 * s, y: hipY + 1 * s };
     legs = [[hip, k1, { x: k1.x + f * 1 * s, y }], [hip, k2, { x: k2.x + f * 1 * s, y }]];
   } else {
     const Lg = 13.5 * s, fy = yy;
     let feet;
     if (n.pose === 'kick') feet = [{ x: x + f * (6 + P.kick * 16) * s, y: fy - P.kick * 9 * s }, { x: x - f * 5 * s, y: fy }];
-    else if (moving) feet = [footAt(x, fy, f, n.walkT, 14 * s * 0.85, 7 * s), footAt(x, fy, f, n.walkT + Math.PI, 14 * s * 0.85, 7 * s)];
-    else feet = [{ x: x + f * 6 * s, y: fy }, { x: x - f * 5 * s, y: fy }];
+    else {
+      feet = [{ x: x + f * 6 * s, y: fy }, { x: x - f * 5 * s, y: fy }];
+      if (mvK) { const wf = [footAt(x, fy, f, n.walkT, 14 * s * 0.85, 7 * s), footAt(x, fy, f, n.walkT + Math.PI, 14 * s * 0.85, 7 * s)]; feet = feet.map((p, i) => ({ x: lerpN(p.x, wf[i].x, mvK), y: lerpN(p.y, wf[i].y, mvK) })); }
+    }
     legs = feet.map(ft => { const k = ik(hip.x, hip.y, ft.x, ft.y, Lg, Lg, -f); return [hip, k.j, k.e]; });
   }
   ctx.strokeStyle = L.legs || ink;
@@ -193,7 +211,7 @@ function drawVillager(n) {
   // dress / skirt
   if (L.dress) {
     ctx.fillStyle = L.dress; ctx.strokeStyle = shadeHex(L.dress, -0.45); ctx.lineWidth = 1.2;
-    const bot = P.sit ? y - 4 * s : yy - 5 * s;
+    const bot = lerpN(yy - 5 * s, y - 4 * s, sitK);
     ctx.beginPath(); ctx.moveTo(neck.x - 3.5 * s, neck.y + 5 * s); ctx.lineTo(neck.x + 3.5 * s, neck.y + 5 * s);
     ctx.lineTo(x + 13 * s, bot); ctx.lineTo(x - 13 * s, bot); ctx.closePath(); ctx.fill(); ctx.stroke();
     ctx.strokeStyle = ink; ctx.lineWidth = 3 * (s < 0.9 ? 0.85 : 1);
@@ -440,6 +458,32 @@ function drawBuilding(b, night, lit) {
   }
   // hanging sign
   if (b.sign) drawSign(b, x - w / 2 - 6, y - wh * 0.42);
+  if (b.id === 'enchant') drawEnchantAura(b, night);
+  if (b.id === 'craft') drawCraftBoards(b, night);
+}
+// the Crafting Hall: shutters over the windows, planks across the door, a banner (it opens in a later update)
+function drawCraftBoards(b, night) {
+  const x = b.x, y = b.y, w = b.w, wh = b.wh, dxx = x + (b.doorX || 0);
+  for (const dx of winOffsets(w)) { const wx = x + dx, wy = y - wh * 0.78; ctx.fillStyle = '#6a4a2e'; ctx.strokeStyle = '#2a1a0e'; ctx.lineWidth = 1.2; ctx.fillRect(wx - 12, wy, 24, 20); ctx.strokeRect(wx - 12, wy, 24, 20); line(wx - 12, wy + 7, wx + 12, wy + 7); line(wx - 12, wy + 14, wx + 12, wy + 14); }
+  ctx.fillStyle = '#7a5a38'; ctx.strokeStyle = '#2a1a0e'; ctx.lineWidth = 1.4;
+  ctx.save(); ctx.translate(dxx, y - 20); ctx.rotate(-0.35); ctx.fillRect(-20, -3, 40, 6); ctx.strokeRect(-20, -3, 40, 6); ctx.rotate(0.7); ctx.fillRect(-20, -3, 40, 6); ctx.strokeRect(-20, -3, 40, 6); ctx.restore();
+  ctx.fillStyle = '#c9a86a'; ctx.beginPath(); ctx.roundRect(dxx - 37, y - wh - 4 + 22, 74, 15, 3); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = '#3a2a1a'; ctx.font = 'bold 7px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('OPENING SOON', dxx, y - wh + 33); ctx.textAlign = 'left';
+  if (gfx.particles && Math.random() < 0.02) particles.push({ x: b.chim.x + 7, y: b.chim.y, vx: 6, vy: -18, life: 1.2, max: 1.2, size: 3, color: 'rgba(200,200,200,0.45)' });
+}
+// the enchantress's house: a crystal on the roof and a ring of little runes turning above it
+function drawEnchantAura(b, night) {
+  const t = typeof vil !== 'undefined' && vil ? vil.t : 0, top = b.y - b.wh - b.rh, cols = ['#ff9a4a', '#6fb5ff', '#c36bff', '#5fd07a', '#3ff2e0', '#ffd24a'];
+  const pulse = 0.55 + 0.45 * Math.sin(t * 2.2), cy = top - 11;
+  ell(b.x, cy, 22 + pulse * 6, 12 + pulse * 3, night ? 'rgba(190,150,255,0.30)' : 'rgba(190,150,255,0.16)');
+  ctx.fillStyle = '#bfe8ff'; ctx.strokeStyle = '#33265c'; ctx.lineWidth = 1.4;
+  ctx.beginPath(); ctx.moveTo(b.x, cy - 9); ctx.lineTo(b.x + 6, cy); ctx.lineTo(b.x, cy + 9); ctx.lineTo(b.x - 6, cy); ctx.closePath(); ctx.fill(); ctx.stroke();
+  for (let i = 0; i < cols.length; i++) {
+    const a = t * 0.7 + i * (Math.PI * 2 / cols.length), px = b.x + Math.cos(a) * 56, py = cy - 8 + Math.sin(a) * 8 + Math.sin(t * 1.6 + i) * 2.5, back = Math.sin(a) < 0;
+    ctx.globalAlpha = back ? 0.55 : 1; ell(px, py, 6, 6, cols[i] + '40');
+    ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.moveTo(px, py - 4.2); ctx.lineTo(px + 3, py); ctx.lineTo(px, py + 4.2); ctx.lineTo(px - 3, py); ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 }
 
 function drawSign(b, sx, sy) {
@@ -454,6 +498,9 @@ function drawSign(b, sx, sy) {
     case 'sack': ctx.fillStyle = '#b89a62'; ctx.beginPath(); ctx.ellipse(cx, cy + 2, 8, 7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#f5c451'; ctx.beginPath(); ctx.arc(cx, cy + 2, 3, 0, Math.PI * 2); ctx.fill(); break;
     case 'shield': ctx.fillStyle = '#5b7fb5'; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 7); ctx.lineTo(cx + 7, cy - 7); ctx.lineTo(cx + 7, cy + 1); ctx.quadraticCurveTo(cx + 7, cy + 7, cx, cy + 9); ctx.quadraticCurveTo(cx - 7, cy + 7, cx - 7, cy + 1); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#e8d8a8'; ctx.fillRect(cx - 1, cy - 5, 2, 11); ctx.fillRect(cx - 4, cy - 1, 8, 2); break;
     case 'gem': ctx.fillStyle = '#4fd0b0'; ctx.beginPath(); ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx - 3, cy - 7); ctx.lineTo(cx + 3, cy - 7); ctx.lineTo(cx + 7, cy - 2); ctx.lineTo(cx, cy + 8); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.beginPath(); ctx.moveTo(cx - 7, cy - 2); ctx.lineTo(cx + 7, cy - 2); ctx.stroke(); break;
+    case 'rune': ctx.fillStyle = '#262432'; ctx.strokeStyle = '#6b3fb0'; ctx.beginPath(); ctx.moveTo(cx, cy - 8); ctx.lineTo(cx + 7, cy - 4); ctx.lineTo(cx + 7, cy + 5); ctx.lineTo(cx, cy + 9); ctx.lineTo(cx - 7, cy + 5); ctx.lineTo(cx - 7, cy - 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = '#c36bff'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.moveTo(cx - 2, cy - 4); ctx.lineTo(cx - 2, cy + 6); ctx.moveTo(cx - 2, cy - 4); ctx.lineTo(cx + 3, cy - 1); ctx.lineTo(cx - 2, cy + 2); ctx.stroke(); break;
+    case 'hammer': ctx.fillStyle = '#6a6a74'; ctx.fillRect(cx - 7, cy - 6, 12, 6); ctx.strokeRect(cx - 7, cy - 6, 12, 6); ctx.fillStyle = '#8a5a30'; ctx.fillRect(cx - 1, cy - 1, 3, 11); ctx.strokeRect(cx - 1, cy - 1, 3, 11); break;
     case 'anvil': ctx.fillStyle = '#555'; ctx.fillRect(cx - 8, cy - 4, 16, 5); ctx.fillRect(cx - 3, cy + 1, 6, 5); ctx.fillRect(cx - 7, cy + 6, 14, 2); break;
   }
   ctx.restore();
@@ -619,6 +666,15 @@ const VPROP = {
         ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.moveTo(bx - 5, y - 21); ctx.lineTo(bx - 2, y - 26); ctx.lineTo(bx + 2, y - 26); ctx.lineTo(bx + 5, y - 21); ctx.lineTo(bx, y - 17); ctx.closePath(); ctx.fill();
         ctx.strokeStyle = 'rgba(255,255,255,0.7)'; ctx.lineWidth = 0.8; ctx.beginPath(); ctx.moveTo(bx - 2, y - 25); ctx.lineTo(bx, y - 21); ctx.stroke();
       }
+    } else if (p.kind === 'enchant') {
+      const t = typeof vil !== 'undefined' && vil ? vil.t : 0, gl = 0.5 + 0.5 * Math.sin(t * 2.4);
+      ctx.fillStyle = '#33265c'; ctx.fillRect(x - w / 2 + 11, y - 17, 18, 5);                          // a crystal ball on its stand
+      ell(x - w / 2 + 20, y - 26, 12 + gl * 3, 11 + gl * 2, 'rgba(160,210,255,0.22)');
+      circ(x - w / 2 + 20, y - 26, 8, '#9fd8ff'); circ(x - w / 2 + 17, y - 29, 2.6, 'rgba(255,255,255,0.85)');
+      ctx.fillStyle = '#5a2f7a'; ctx.fillRect(x - 4, y - 19, 24, 6); ctx.fillStyle = '#efe6c8'; ctx.fillRect(x - 2, y - 22, 20, 4);   // an open book
+      ctx.strokeStyle = '#8a7a5a'; ctx.lineWidth = 0.8; line(x + 8, y - 22, x + 8, y - 18);
+      const cols = ['#ff9a4a', '#c36bff', '#3ff2e0'];                                                    // three resting runes
+      for (let i = 0; i < 3; i++) { const bx = x + w / 2 - 34 + i * 11; ctx.fillStyle = '#262432'; ctx.strokeStyle = cols[i]; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(bx, y - 24); ctx.lineTo(bx + 4.5, y - 21); ctx.lineTo(bx + 4.5, y - 16); ctx.lineTo(bx, y - 14); ctx.lineTo(bx - 4.5, y - 16); ctx.lineTo(bx - 4.5, y - 21); ctx.closePath(); ctx.fill(); ctx.stroke(); circ(bx, y - 19, 1.5 + gl * 0.6, cols[i]); }
     } else {
       ctx.fillStyle = '#c8a24a'; ctx.beginPath(); ctx.ellipse(x - w / 2 + 16, y - 19, 9, 6, 0, Math.PI, 0); ctx.fill();
       ctx.fillStyle = '#d23'; circ(x - w / 2 + 12, y - 22, 3, '#d9534f'); circ(x - w / 2 + 19, y - 22, 3, '#e8903a');

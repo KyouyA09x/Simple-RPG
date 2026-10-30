@@ -8,7 +8,7 @@ const VW = 960, VH = 540;        // logical view size (16:9); rendered at any re
 const WW = 2400, WH = 1600;      // world size
 
 const FLIP_TIME = 0.4, FLIP_SPEED = 420, FLIP_COOLDOWN = 0.7;
-const FLIP_COST = 40, REGEN_DELAY = 0.7;
+const FLIP_COST = 32, REGEN_DELAY = 0.5;
 // Natural regeneration: 4 seconds after the last hit you recover 2% of max HP a second (4% while running), but only up to 70% of max HP:
 // the rest takes a potion, the inn or a level-up. Standing still is slower than running, which keeps you moving. Running also refills stamina faster.
 const HP_REGEN_DELAY = 4, HP_REGEN_RATE = 0.02, HP_REGEN_MOVE = 2, HP_REGEN_CAP = 0.7, STAMINA_REGEN_MOVE = 1.6;
@@ -18,21 +18,31 @@ const GOLD_BASE = 3, GOLD_PER_WAVE = 1.5, GOLD_BOSS_BASE = 60, GOLD_BOSS_PER_WAV
 const SAVE_KEY = i => `stickrpg_slot${i}`, SLOTS = [1, 2, 3];
 
 // --- Weapon types: every weapon item is one of these; `lvl` is the hero level needed to wield it ---
+// `kind` picks the animation, the drawing and the sounds (see WEAPON_KINDS); it defaults to 'sword'. Keep the list sorted by lvl: better weapons are likelier drops.
 const SWORDS = [
-  { id: 'wood', cost: 10,   name: 'Wooden Sword', lvl: 1,  dmg: 20, range: 52, time: 0.30, len: 24, color: '#b8864b' },
-  { id: 'iron', cost: 11,   name: 'Iron Sword',   lvl: 3,  dmg: 28, range: 56, time: 0.30, len: 26, color: '#ccc' },
-  { id: 'dagger', cost: 6, name: 'Twin Dagger',  lvl: 5,  dmg: 22, range: 46, time: 0.18, len: 18, color: '#9ef' },
-  { id: 'great', cost: 20,  name: 'Greatsword',   lvl: 7,  dmg: 50, range: 72, time: 0.48, len: 38, color: '#888' },
-  { id: 'flame', cost: 12,  name: 'Flame Blade',  lvl: 10, dmg: 38, range: 60, time: 0.28, len: 28, color: '#f73', burn: true },
-  { id: 'frost', cost: 12,  name: 'Frostbrand',   lvl: 13, dmg: 42, range: 62, time: 0.28, len: 30, color: '#6cf', slow: true },
-  { id: 'holy', cost: 13,   name: 'Excalibur',    lvl: 17, dmg: 65, range: 70, time: 0.26, len: 34, color: '#fe6', burn: true, slow: true },
+  { id: 'wood', cost: 8,   name: 'Wooden Sword', lvl: 1,  dmg: 20, range: 52, time: 0.30, len: 24, color: '#b8864b' },
+  { id: 'iron', cost: 9,   name: 'Iron Sword',   lvl: 3,  dmg: 28, range: 56, time: 0.30, len: 26, color: '#ccc' },
+  { id: 'spear', kind: 'spear', cost: 9, name: 'Spear',   lvl: 4,  dmg: 26, range: 70, time: 0.34, len: 46, color: '#cde' },
+  { id: 'dagger', kind: 'dagger', cost: 5, name: 'Twin Dagger',  lvl: 5,  dmg: 22, range: 46, time: 0.18, len: 18, color: '#9ef' },
+  { id: 'rapier', kind: 'rapier', cost: 7, name: 'Rapier', lvl: 6,  dmg: 24, range: 58, time: 0.20, len: 36, color: '#dde' },
+  { id: 'great', kind: 'great', cost: 16,  name: 'Greatsword',   lvl: 7,  dmg: 50, range: 72, time: 0.48, len: 38, color: '#888' },
+  { id: 'katana', kind: 'katana', cost: 8, name: 'Katana', lvl: 8, dmg: 34, range: 58, time: 0.24, len: 34, color: '#e8eef5', critBonus: 0.15 },
+  { id: 'axe', kind: 'axe', cost: 13, name: 'Battle Axe', lvl: 9,  dmg: 46, range: 60, time: 0.42, len: 28, color: '#9aa', hitAt: 0.6 },
+  { id: 'flame', cost: 10,  name: 'Flame Blade',  lvl: 10, dmg: 38, range: 60, time: 0.28, len: 28, color: '#f73', burn: true },
+  { id: 'whip', kind: 'whip', cost: 7, name: 'Whip',    lvl: 11, dmg: 24, range: 90, time: 0.30, len: 70, color: '#a76', pull: true, hitAt: 0.34 },
+  { id: 'hammer', kind: 'hammer', cost: 18, name: 'War Hammer', lvl: 12, dmg: 62, range: 58, time: 0.62, len: 30, color: '#889', stun: 0.9, hitAt: 0.76 },
+  { id: 'frost', cost: 10,  name: 'Frostbrand',   lvl: 13, dmg: 42, range: 62, time: 0.28, len: 30, color: '#6cf', slow: true },
+  { id: 'scythe', kind: 'scythe', cost: 14, name: 'Scythe', lvl: 14, dmg: 48, range: 68, time: 0.44, len: 40, color: '#bcd', back: true, hitAt: 0.42 },
+  { id: 'halberd', kind: 'halberd', cost: 16, name: 'Halberd', lvl: 15, dmg: 58, range: 84, time: 0.50, len: 48, color: '#abc', hitAt: 0.4 },
+  { id: 'fist', kind: 'fist', cost: 4, name: 'Iron Gauntlets', lvl: 16, dmg: 30, range: 44, time: 0.16, len: 0, color: '#bbc', lifesteal: 0.03, hitAt: 0.2 },
+  { id: 'holy', cost: 11,   name: 'Excalibur',    lvl: 17, dmg: 65, range: 70, time: 0.26, len: 34, color: '#fe6', burn: true, slow: true },
 ];
 
 // Level stats are a small personal edge: gear is where the build comes from (see GEAR_CAPS in gear.js). Their caps grow a little with every rebirth.
 const STATS = [
   { k: 'hp',      color: '#e2565a', name: 'Vitality',    short: 'VIT', desc: '+10 max HP, +0.15% damage reduction', capNote: 'more points allowed with every rebirth', maxFn: () => vitMax() },
   { k: 'str',     color: '#ff9a4a', name: 'Strength',    short: 'STR', desc: '+2 sword damage', capNote: 'more points allowed with every rebirth', maxFn: () => strMax() },
-  { k: 'sta',     color: '#5fd07a', name: 'Stamina',     short: 'STA', desc: '+10 max stamina, +regen, +0.15% move speed', capNote: 'speed caps at +6%', softCap: 50 },
+  { k: 'sta',     color: '#5fd07a', name: 'Stamina',     short: 'STA', desc: '+10 max stamina, +regen, +0.15% move speed', capNote: 'more points allowed with every rebirth (speed caps at +6%)', maxFn: () => staMax() },
   { k: 'cd',      color: '#6fb5ff', name: 'Cooldown',    short: 'CD',  desc: '-6% flip cooldown, -4% swing time', max: 10 },
   { k: 'crit',    color: '#ffd24a', name: 'Critical',    short: 'CRT', desc: '+0.5% crit chance, +0.02× crit damage', capNote: 'at most 15% and 1.7× from levels', max: 10 },
 ];
@@ -80,12 +90,42 @@ const QUALITY = {
   high:   { rs: 1,   shadows: true,  trail: true,  particles: true,  grass: 1500, decor: true,  glow: true,  anim: false, ambient: false, shake: true,  post: false },
   ultra:  { rs: 1,   shadows: true,  trail: true,  particles: true,  grass: 3200, decor: true,  glow: true,  anim: true,  ambient: true,  shake: true,  post: true },
 };
-const settings = { quality: 'high', res: 'auto', renderScale: '100', sharpness: 60, fps: 0, showFps: false, musicVol: 50, sfxVol: 80, ambVol: 60, comfort: false };
+// --- Key and mouse bindings: each action can have as many keys and mouse buttons as you like (Settings > Edit keybinds).
+// Inputs are keyboard codes ('KeyW', 'Space', 'ArrowUp'...) or 'Mouse0' left, 'Mouse1' middle, 'Mouse2' right, 'Mouse3' / 'Mouse4' the two side buttons.
+// Esc (pause / back), the console key (`) and the number keys in dialogues and shops are fixed.
+const BIND_ACTIONS = [
+  { id: 'up',           label: 'Move up',            def: ['KeyW', 'ArrowUp'] },
+  { id: 'down',         label: 'Move down',          def: ['KeyS', 'ArrowDown'] },
+  { id: 'left',         label: 'Move left',          def: ['KeyA', 'ArrowLeft'] },
+  { id: 'right',        label: 'Move right',         def: ['KeyD', 'ArrowRight'] },
+  { id: 'attack',       label: 'Attack',             def: ['Space', 'Mouse0'] },
+  { id: 'flip',         label: 'Flip (dodge)',       def: ['ShiftLeft', 'ShiftRight'] },
+  { id: 'potion',       label: 'Use the equipped utility',       def: ['KeyQ'] },
+  { id: 'utility',      label: 'Utility wheel (hold, release on an icon)', def: ['KeyR'] },
+  { id: 'swapWeapon',   label: 'Swap to spare weapon', def: ['KeyX'] },
+  { id: 'interact',     label: 'Talk / interact',    def: ['KeyE'] },
+  { id: 'character',    label: 'Character window',   def: ['KeyM'] },
+  { id: 'inventory',    label: 'Wheel menu (hold, release on an icon)',   def: ['Tab'] },
+  { id: 'pause',        label: 'Pause menu',         def: ['KeyP'], note: '(Esc always works)' },
+  { id: 'fullscreen',   label: 'Fullscreen',         def: ['KeyF'] },
+  { id: 'respawn',      label: 'Start again after dying', def: ['KeyR'] },
+];
+const defaultBinds = () => Object.fromEntries(BIND_ACTIONS.map(a => [a.id, a.def.slice()]));
+// repair whatever was saved: unknown actions go, missing ones get their defaults, and an input belongs to one action only (apart from respawn, which shares R with switching potions)
+function sanitizeBinds(b) {
+  const out = defaultBinds(), seen = new Set();
+  if (b && typeof b === 'object') for (const a of BIND_ACTIONS) if (Array.isArray(b[a.id])) out[a.id] = b[a.id].filter(c => typeof c === 'string' && /^[A-Za-z0-9]{2,20}$/.test(c) && c !== 'Escape' && c !== 'Backquote');
+  for (const a of BIND_ACTIONS) { if (a.id === 'respawn') continue; out[a.id] = out[a.id].filter(c => !seen.has(c) && seen.add(c)); }
+  return out;
+}
+let bindCap = null, bindAssignedAt = 0;        // the action being (re)bound in the controls window, and when the last one was set
+const settings = { quality: 'high', res: 'auto', renderScale: '100', sharpness: 60, fps: 0, showFps: false, musicVol: 50, sfxVol: 80, ambVol: 60, comfort: false, consoleEnabled: false, binds: null };
 try { Object.assign(settings, JSON.parse(localStorage.getItem('rpgSettings')) || {}); } catch {}
 if (!QUALITY[settings.quality]) settings.quality = 'high';
 if (!['100', '85', '75', '67', '50'].includes(String(settings.renderScale))) settings.renderScale = '100';
 settings.renderScale = String(settings.renderScale);
 settings.sharpness = Math.max(0, Math.min(100, Number(settings.sharpness) || 0));
+settings.binds = sanitizeBinds(settings.binds); settings.consoleEnabled = settings.consoleEnabled === true;
 delete settings.frameGen;                          // frame generation was removed: the simulation costs about 5% of a frame, so it saved nothing
 let gfx, postActive = false, fxActive = false;     // postActive: the WebGL pass shows the picture; fxActive: ...and also applies the Ultra effects
 let outRes = { w: 1280, h: 720 };                  // size the picture is shown at; the game renders at outRes x render scale
@@ -123,14 +163,28 @@ function applySettings() {
     (upscaling() ? ` → shown at ${outRes.w} × ${outRes.h} (${postActive ? 'bicubic upscale + sharpening on the GPU' : 'stretched by the browser'})` : '') +
     `<br><b>Frame cap:</b> ${cappedFpsLabel()}`;
   if (world && world.grassKey !== `${gfx.grass}|${gfx.anim}`) { buildGrass(); buildGround(); }
+  renderHelp();
   try { localStorage.setItem('rpgSettings', JSON.stringify(settings)); } catch {}
 }
 
+// settings are in four tabs: Graphics, Audio, Keybinds and Other
+let settingsTab = 'graphics';
+function showSettingsTab(t) {
+  settingsTab = ['graphics', 'audio', 'keys', 'other'].includes(t) ? t : 'graphics';
+  document.querySelectorAll('#settings [data-stab]').forEach(b => b.classList.toggle('on', b.dataset.stab === settingsTab));
+  document.querySelectorAll('#settings .stab').forEach(p => p.classList.toggle('show', p.dataset.tab === settingsTab));
+  if (settingsTab === 'keys') renderKeySummary();
+}
+function renderKeySummary() {                                                          // what each action is bound to, read-only; the editing happens in the Controls window
+  const el = document.getElementById('keySummary'); if (!el) return;
+  el.innerHTML = BIND_ACTIONS.map(a => `<div class="krow"><span>${escapeHtml(a.label)}</span><b>${(settings.binds[a.id] || []).map(c => `<kbd>${escapeHtml(inputName(c))}</kbd>`).join(' ') || '<em>unbound</em>'}</b></div>`).join('');
+}
+document.getElementById('setTabs').addEventListener('click', e => { const b = e.target.closest('[data-stab]'); if (b) { sfx('tab'); showSettingsTab(b.dataset.stab); } });
 document.querySelectorAll('.opts[data-set]').forEach(g => g.addEventListener('click', e => {
   const v = e.target.dataset.v;
   if (v === undefined) return;
   const k = g.dataset.set;
-  settings[k] = k === 'showFps' || k === 'comfort' ? v === 'true' : v;
+  settings[k] = k === 'showFps' || k === 'comfort' || k === 'consoleEnabled' ? v === 'true' : v;
   applySettings(); sfx('click');
 }));
 document.querySelectorAll('select[data-set], input[data-set]').forEach(el => el.addEventListener('input', () => {
@@ -166,6 +220,27 @@ function withAlpha(hex, a) {
   const n = parseInt(h, 16);
   return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${a})`;
 }
+// An in-game question box (never the system's dialog): a themed window over everything, with Yes and No buttons. Enter / Y says yes, Esc / N says no.
+// askConfirm(title, text, onYes, { yes: 'Label', no: 'Label' | null (no second button), danger: false })
+let confirmOpen = false, confirmYes = null;
+let quitToDesktop = () => { if (window.stickApp) window.stickApp.quit(); else window.close(); };
+function askConfirm(title, text, onYes, o = {}) {
+  const el = document.getElementById('confirmDlg'); if (!el) { if (onYes) onYes(); return; }
+  confirmYes = onYes || null; confirmOpen = true;
+  el.innerHTML = `<div class="panel confirm-panel"><h2>${escapeHtml(title)}</h2><div class="confirm-text">${escapeHtml(text)}</div>
+    <div class="confirm-btns"><button data-confirm="yes" class="${o.danger === false ? '' : 'danger'}">${escapeHtml(o.yes || 'Yes')}</button>${o.no === null ? '' : `<button data-confirm="no">${escapeHtml(o.no || 'Cancel')}</button>`}</div>
+    <div class="confirm-hint">${o.no === null ? 'Enter to continue' : 'Enter to confirm · Esc to cancel'}</div></div>`;
+  el.classList.add('show'); sfx('ask');
+  const first = el.querySelector('[data-confirm="no"]') || el.querySelector('[data-confirm="yes"]'); if (first) first.focus();          // Cancel is the one focused, so a stray key press cannot confirm
+}
+function closeConfirm(yes) {
+  if (!confirmOpen) return;
+  const cb = confirmYes; confirmOpen = false; confirmYes = null;
+  const el = document.getElementById('confirmDlg'); el.classList.remove('show'); el.innerHTML = '';
+  sfx(yes ? 'click' : 'tick'); if (yes && cb) cb();
+}
+document.getElementById('confirmDlg').addEventListener('click', e => { const b = e.target.closest('[data-confirm]'); if (b) closeConfirm(b.dataset.confirm === 'yes'); else if (e.target.id === 'confirmDlg') closeConfirm(false); });
+
 const escapeHtml = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // --- Game state ---
@@ -185,7 +260,7 @@ function reset() {
     attackT: 0, attackDur: 0.3, hitSet: null,
     flipT: 0, flipCd: 0, flipDx: 1, flipDy: 0,
     hurtT: 0, dead: false, deadT: 0, auraT: 0, hpRegenT: 0, gold: 0, lostGold: 0, goldPulse: 0,
-    potions: 2, cures: 0, potionSel: 'heal', lamp: 0, lightBonus: 0, potionCd: 0,
+    potions: 2, bond: {}, gifts: {}, ail: {}, quests: emptyQuests(), recalls: 0, recallT: 0, util: 'potion', potionSel: 'heal', lamp: 0, lightBonus: 0, potionCd: 0,
     scarf: Array.from({ length: 7 }, () => ({ x: WW / 2, y: WH / 2 - 50 })),
   };
   applyRebirthPerks(); initGear();
@@ -218,7 +293,7 @@ function saveGame(auto = false, quiet = false) {
     v: 3, rebirth: rebirths(), rbHp: hero.rbHp | 0, name: hero.name, diff: diffKey, level: hero.level, xp: hero.xp, xpNext: hero.xpNext,
     points: hero.points, stats: { ...hero.stats }, maxHp: hero.maxHp, sword: hero.sword.id,
     wave: Math.max(0, wavesCleared()), playTime: Math.round(playTime), savedAt: Date.now(),
-    biome: zone, tod, dayCount, weather: weather.kind, gold: hero.gold, potions: hero.potions | 0, cures: hero.cures | 0, potionSel: hero.potionSel || 'heal', lamp: hero.lamp | 0, ...serializeGear(),
+    biome: zone, tod, dayCount, weather: weather.kind, gold: hero.gold, potions: hero.potions | 0, lamp: hero.lamp | 0, bond: { ...hero.bond }, gifts: { ...hero.gifts }, quests: hero.quests, recalls: hero.recalls | 0, ...serializeGear(),
   };
   try {
     writeSlot(currentSlot, JSON.stringify(data));
@@ -248,7 +323,8 @@ function loadSlot(i) {
   hero.stamina = maxStamina();
   diffKey = d.diff; currentSlot = i; wave = d.wave; lastSavedWave = d.wave; playTime = d.playTime || 0;
   hero.gold = d.gold | 0; savedGold = hero.gold;
-  hero.potions = Math.max(0, Math.min(POTION_MAX, d.potions | 0)); hero.cures = Math.max(0, Math.min(POTION_MAX, d.cures | 0)); hero.potionSel = d.potionSel === 'cure' ? 'cure' : 'heal'; hero.lamp = Math.max(0, Math.min(LAMPS.length - 1, d.lamp | 0)); applyLamp();
+  hero.potions = Math.max(0, Math.min(POTION_MAX, d.potions | 0)); hero.potionSel = 'heal'; hero.ail = {};
+  { const clean = (o, max) => { const r = {}; if (o && typeof o === 'object') for (const k of Object.keys(o).slice(0, 40)) { const n = Math.floor(Number(o[k])); if (n > 0) r[String(k).slice(0, 12)] = Math.min(max, n); } return r; }; hero.bond = clean(d.bond, 8); hero.gifts = clean(d.gifts, 1); hero.quests = cleanQuests(d.quests); hero.recalls = Math.max(0, Math.min(RECALL_MAX, d.recalls | 0)); hero.recallT = 0; } hero.lamp = Math.max(0, Math.min(LAMPS.length - 1, d.lamp | 0)); applyLamp();
   loadGear(d);
   lastZoneStep = zoneFor(d.wave + 1);
   if (Number.isFinite(d.tod)) tod = d.tod;
@@ -297,7 +373,7 @@ document.getElementById('slots').addEventListener('click', e => {
   if (!act) return;
   sfx('click');
   if (act === 'load') loadSlot(i);
-  if (act === 'delete' && confirm(`Delete save in slot ${i}? This can't be undone.`)) { eraseSlot(i); renderLoad(); }
+  if (act === 'delete') askConfirm('DELETE SAVE?', `Delete the save in slot ${i}? This can't be undone.`, () => { eraseSlot(i); renderLoad(); }, { yes: 'Delete', no: 'Keep it' });
   if (act === 'export') {
     const d = readSlot(i);
     const a = document.createElement('a');
@@ -313,10 +389,9 @@ document.getElementById('importFile').addEventListener('change', async e => {
   if (!f) return;
   let d = null;
   try { d = JSON.parse(await f.text()); } catch {}
-  if (!validSave(d)) { alert('That file is not a valid Stick RPG save.'); return; }
-  if (readSlot(importTarget) && !confirm(`Overwrite slot ${importTarget}?`)) return;
-  writeSlot(importTarget, JSON.stringify(d));
-  sfx('save'); renderLoad();
+  if (!validSave(d)) { askConfirm('NOT A SAVE', 'That file is not a valid Stick RPG save.', null, { yes: 'OK', no: null, danger: false }); return; }
+  const slot = importTarget, doImport = () => { writeSlot(slot, JSON.stringify(d)); sfx('save'); renderLoad(); };
+  if (readSlot(slot)) askConfirm('OVERWRITE SAVE?', `Slot ${slot} already has a save. Replace it with the imported one?`, doImport, { yes: 'Overwrite', no: 'Keep it' }); else doImport();
 });
 
 // New game panel
@@ -343,19 +418,24 @@ function latestSlot() {
 }
 
 // --- Menus ---
-const OVERLAYS = ['title', 'single', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'talk', 'shop', 'inv'];
+const OVERLAYS = ['title', 'single', 'newgame', 'load', 'menu', 'settings', 'level', 'dev', 'console', 'controls', 'talk', 'shop', 'inv'];
 let paused = false, openMenu = null, settingsReturn = 'title';
 function showMenu(which) {
-  const paused0 = paused;
+  const wasMenu = openMenu;
   openMenu = which;
   paused = (state === 'play' || state === 'village') && which !== null;
   for (const id of OVERLAYS) document.getElementById(id).classList.toggle('show', id === which);
   for (const k in keys) keys[k] = false;
   if (which === 'level') renderLevelMenu();
-  if ((which === 'level' || which === 'inv') && !paused0) sfx('menu');
+  if ((state === 'play' || state === 'village') && which !== 'talk' && which !== 'shop' && wasMenu !== 'talk' && wasMenu !== 'shop') { if (which && !wasMenu) sfx('menuOpen'); else if (!which && wasMenu) sfx('menuClose'); }
   if (which === 'shop') renderShop();
+  if (state === 'village') { if (which === 'shop') Sound.music('shop'); else if (wasMenu === 'shop') Sound.music('village'); }
   if (which === 'inv') renderInventory();
   if (which === 'dev') renderDev();
+  if (which !== 'controls') bindCap = null;
+  if (which === 'settings') showSettingsTab(settingsTab);
+  if (which === 'controls') { renderControls(); bindMsg('Click a key to change it, × to remove it, or + Add to give an action more keys. Mouse buttons work too, side buttons included.'); }
+  if (which === 'console') { renderConsole(); document.getElementById('conIn').value = ''; conHistPos = conHistory.length; }
   if (which === 'menu') renderMenuInfo();
   if (which === 'load') renderLoad();
   if (which === 'newgame') { ngSlot = SLOTS.find(i => !readSlot(i)) ?? 1; renderNewGame(); }
@@ -369,6 +449,9 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
   sfx('click');
   if (a === 'resume' || a === 'close') showMenu(null);
   if (a === 'settings') { settingsReturn = openMenu; showMenu('settings'); }
+  if (a === 'controls') showMenu('controls');
+  if (a === 'controlsBack') showMenu('settings');
+  if (a === 'bindreset') { settings.binds = defaultBinds(); bindCap = null; persistSettings(); renderHelp(); renderControls(); bindMsg('Controls reset to the defaults.'); }
   if (a === 'back') showMenu(settingsReturn);
   if (a === 'newgame') showMenu('newgame');
   if (a === 'load') showMenu('load');
@@ -378,27 +461,26 @@ document.querySelectorAll('[data-act]').forEach(b => b.addEventListener('click',
   if (a === 'continue') { const l = latestSlot(); if (l) loadSlot(l.i); }
   if (a === 'startNew') {
     const d = readSlot(ngSlot);
-    if (d && !confirm(`Slot ${ngSlot} already has a save (${d.name}). Overwrite it?`)) return;
-    newRun(document.getElementById('ngName').value, ngDiff, ngSlot);
+    const go = () => newRun(document.getElementById('ngName').value, ngDiff, ngSlot);
+    if (d) askConfirm('OVERWRITE SAVE?', `Slot ${ngSlot} already has a save (${d.name}). Start a new run over it?`, go, { yes: 'Overwrite', no: 'Keep it' }); else go();
   }
   if (a === 'quitApp') {
     const inRun = hero && (state === 'play' || state === 'village');
     const atRisk = inRun && (wave > Math.max(0, lastSavedWave) || hero.gold > savedGold);
-    if (atRisk && !confirm(`Quit to desktop? Progress since your last save (wave ${Math.max(0, lastSavedWave)}) will be lost.`)) return;
-    if (window.stickApp) window.stickApp.quit(); else window.close();
+    const go = quitToDesktop;
+    if (atRisk) askConfirm('QUIT TO DESKTOP?', `Progress since your last save (wave ${Math.max(0, lastSavedWave)}) will be lost.`, go, { yes: 'Quit to desktop', no: 'Keep playing' }); else go();
   }
   if (a === 'openSaves' && window.stickApp) window.stickApp.openSaveFolder();
   if (a === 'quit') {
     const atRisk = wave > Math.max(0, lastSavedWave) || hero.gold > savedGold;
-    if (atRisk && !confirm(`Quit to title? Progress since your last campfire save (wave ${Math.max(0, lastSavedWave)}) will be lost.`)) return;
-    goTitle();
+    if (atRisk) askConfirm('QUIT TO TITLE?', `Progress since your last campfire save (wave ${Math.max(0, lastSavedWave)}) will be lost.`, goTitle, { yes: 'Quit to title', no: 'Keep playing' }); else goTitle();
   }
 }));
 function renderMenuInfo() {
   const el = document.getElementById('menuInfo');
   if (!el || !hero) return;
   const w = Math.max(0, lastSavedWave), lostW = Math.max(0, wave - w), lostG = Math.max(0, hero.gold - savedGold);
-  el.innerHTML = `Saves happen after every 5th wave, at the village (wave 9 of each set) and at campfires (after each boss). <em>Last save: wave ${w}</em>` +
+  el.innerHTML = `<em>Last save: wave ${w}</em>` +
     (lostW || lostG ? `<br>At risk if you die: ${lostW} wave${lostW === 1 ? '' : 's'}, ${lostG.toLocaleString()} gold` : '<br>Nothing at risk right now.');
 }
 function goTitle() {
@@ -446,7 +528,7 @@ document.getElementById('level').addEventListener('click', e => {
     hero.points--; hero.stats[st]++;
     if (st === 'hp') { hero.maxHp += VIT_HP; hero.hp += VIT_HP; syncRebirthHp(); }
     if (st === 'sta') hero.stamina = Math.min(maxStamina(), hero.stamina + 10);
-    sfx('upgrade'); renderLevelMenu();
+    sfx('point'); renderLevelMenu();
   }
 });
 
@@ -462,60 +544,202 @@ function advanceIntro() {
   if (state === 'intro') { goTitle(); return true; }
   return false;
 }
-wrap.addEventListener('pointerdown', e => { if (e.target === canvas || e.target.id === 'gl') { if (!advanceIntro() && rebirthFx) skipRebirthFx(); } });
-addEventListener('keydown', e => {
+const held = a => (settings.binds[a] || []).some(c => keys[c]);           // is any input bound to this action held down?
+
+// The wheel menu: hold the inventory key and a ring of segments appears over the game, which slows to a crawl while it is up. Move the mouse towards a segment
+// (it lights up) and let go to open it; let go over the middle or over a locked segment and the wheel just closes. (Skills opens the Character window, where the stat points are, until real skills arrive.)
+const WHEEL_ITEMS = [
+  { id: 'inv', name: 'Inventory', open: 'inv', icon: '<path d="M14 18 Q14 8 24 8 Q34 8 34 18" fill="none" stroke="#e6c887" stroke-width="3" stroke-linecap="round"/><path d="M11 18 H37 L40 40 Q40 43 37 43 H11 Q8 43 8 40 Z" fill="#8a5528" stroke="#f0d9a2" stroke-width="2" stroke-linejoin="round"/><path d="M8 27 H40" stroke="#f0d9a2" stroke-width="2"/><rect x="20" y="25" width="8" height="7" rx="1.5" fill="#e6c887" stroke="#4a2a14" stroke-width="1.2"/>' },
+  { id: 'level', name: 'Skills', open: 'level', icon: '<path d="M24 44 V30 M24 30 Q12 28 10 16 M24 30 Q36 28 38 16" fill="none" stroke="#9be07a" stroke-width="3" stroke-linecap="round"/><path d="M24 4 L27 11 L34.5 11.5 L28.8 16.4 L30.6 23.8 L24 19.8 L17.4 23.8 L19.2 16.4 L13.5 11.5 L21 11 Z" fill="#f4c64f" stroke="#7a5a10" stroke-width="1.5" stroke-linejoin="round"/><circle cx="10" cy="14" r="4.5" fill="#9be07a" stroke="#2f5a26" stroke-width="1.5"/><circle cx="38" cy="14" r="4.5" fill="#9be07a" stroke="#2f5a26" stroke-width="1.5"/>' },
+];
+const UTIL_ITEMS = [
+  { id: 'potion', name: 'Healing Potion', open: 'potion', icon: '<path d="M19 6 H29 V9 H27 V19 L37 38 Q39 43 33 43 H15 Q9 43 11 38 L21 19 V9 H19 Z" fill="#e0405a" stroke="#f6c0c8" stroke-width="2" stroke-linejoin="round"/><path d="M14 36 H34" stroke="#ff9aaa" stroke-width="3" stroke-linecap="round"/><rect x="19" y="3" width="10" height="5" rx="1.5" fill="#d8cdb0" stroke="#6a5a3a" stroke-width="1.2"/>' },
+  { id: 'scroll', name: 'Return Scroll', open: 'scroll', icon: '<path d="M13 10 H35 V38 H13 Z" fill="#efe6c8" stroke="#6a5a3a" stroke-width="2"/><path d="M9 7 H39 V12 H9 Z M9 36 H39 V41 H9 Z" fill="#b8a070" stroke="#6a5a3a" stroke-width="1.6"/><path d="M19 22 L24 16 L29 22 M24 16 V31" fill="none" stroke="#8a50d0" stroke-width="2.6" stroke-linecap="round"/>' },
+];
+let wheelItems = WHEEL_ITEMS, wheelKind = 'menu';                       // the ring shows either the menu items (Tab) or the utilities (R)
+let wheelOpen = false, wheelCode = null, wheelHover = null, wheelSel = -1, wheelSlow = 1, lastMouse = null;       // wheelHover: what a release opens (or null); wheelSlow: how fast time runs (1 normal)
+const wheelEl = document.getElementById('wheel'), WHEEL = { C: 260, R1: 112, R2: 250 };
+function buildWheel() {                                                  // the ring: one wooden segment per item, a hub in the middle that names the one you are aiming at
+  const n = wheelItems.length, { C, R1, R2 } = WHEEL, pol = (r, a) => `${(C + r * Math.cos(a)).toFixed(1)} ${(C + r * Math.sin(a)).toFixed(1)}`;
+  let segs = '', icons = '';
+  wheelItems.forEach((it, i) => {
+    const mid = -Math.PI / 2 + i * 2 * Math.PI / n, half = Math.PI / n - 0.035, a0 = mid - half, a1 = mid + half, rm = (R1 + R2) / 2 + 6;
+    segs += `<path class="wseg${it.soon ? ' soon' : ''}" data-i="${i}" d="M ${pol(R2, a0)} A ${R2} ${R2} 0 0 1 ${pol(R2, a1)} L ${pol(R1 + 10, a1)} A ${R1 + 10} ${R1 + 10} 0 0 0 ${pol(R1 + 10, a0)} Z"/>`;
+    const x = C + rm * Math.cos(mid), y = C + rm * Math.sin(mid);
+    icons += `<g class="wicon${it.soon ? ' soon' : ''}" data-i="${i}" transform="translate(${(x - 30).toFixed(1)} ${(y - 36).toFixed(1)})"><svg width="60" height="60" viewBox="0 0 48 48">${it.icon}</svg><text x="30" y="76" text-anchor="middle">${it.name}</text></g>`;
+  });
+  wheelEl.innerHTML = `<div class="wheel-box" id="wheelBox"><svg viewBox="0 0 520 520">${segs}<circle class="whub" cx="${C}" cy="${C}" r="${R1}"/>${icons}</svg>
+    <div class="wheel-hub"><div class="wheel-name" id="wheelName"></div><div class="wheel-sub" id="wheelSub"></div></div></div>`;
+  wheelAim(null);
+}
+function wheelAim(i) {                                                   // light up segment i (or none) and say what releasing will do
+  const prev = wheelSel; wheelSel = i === null || i === undefined ? -1 : i;
+  const it = wheelItems[wheelSel], nm = document.getElementById('wheelName'), sub = document.getElementById('wheelSub');
+  wheelHover = it && !it.soon ? it.open : null;
+  wheelEl.querySelectorAll('.wseg, .wicon').forEach(el => el.classList.toggle('on', +el.dataset.i === wheelSel));
+  if (nm) { nm.textContent = it ? it.name : wheelKind === 'util' ? 'Utility' : 'Menu'; sub.innerHTML = !it ? 'Point at an icon' : it.soon ? 'Coming soon' : wheelKind === 'util' ? `Release <b>${escapeHtml(keyLabel('utility'))}</b> to equip` : `Release <b>${escapeHtml(keyLabel('inventory'))}</b> to open`; }
+  if (wheelOpen && wheelSel !== prev && wheelSel >= 0) sfx('tick');
+}
+function wheelAimAt(x, y) {                                              // the mouse is at (x, y) on the page: which segment is it pointing at? (the middle is nothing)
+  const box = document.getElementById('wheelBox'); if (!box) return;
+  const r = box.getBoundingClientRect(), k = r.width / 520, dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2);
+  if (Math.hypot(dx, dy) < WHEEL.R1 * k * 0.92) { wheelAim(null); return; }
+  const n = wheelItems.length; let a = Math.atan2(dy, dx) + Math.PI / 2 + Math.PI / n; a = (a % (2 * Math.PI) + 2 * Math.PI) % (2 * Math.PI);
+  wheelAim(Math.floor(a / (2 * Math.PI / n)) % n);
+}
+function openWheel(code, kind = 'menu') { if (kind !== wheelKind) { wheelKind = kind; wheelItems = kind === 'util' ? UTIL_ITEMS : WHEEL_ITEMS; buildWheel(); } wheelOpen = true; wheelCode = code; wheelAim(null); wheelEl.classList.add('show'); sfx('switch'); }
+function closeWheel() { wheelOpen = false; wheelCode = null; wheelHover = null; wheelSel = -1; wheelEl.classList.remove('show'); }
+function wheelRelease() {                                                // the key came up: open what the mouse is pointing at, or nothing
+  if (!wheelOpen) return;
+  const pick = wheelHover, kind = wheelKind; closeWheel();
+  if (kind === 'util') { if (pick && !hero.dead) equipUtility(pick); return; }
+  if (pick && !hero.dead && (state === 'play' || state === 'village') && openMenu === null) { sfx('menu'); showMenu(pick); }
+}
+buildWheel();
+addEventListener('mousemove', e => { lastMouse = { x: e.clientX, y: e.clientY }; if (wheelOpen) wheelAimAt(e.clientX, e.clientY); });      // nothing is aimed at until the mouse moves, so a still mouse never opens anything by accident
+addEventListener('blur', closeWheel);
+
+function handleInput(code, e) {                                            // one press of a key or mouse button (code: 'KeyW', 'Mouse0'...)
+  const is = a => (settings.binds[a] || []).includes(code), rep = !!e.repeat, stop = () => { if (e.cancelable) e.preventDefault(); };
   Sound.ctx();   // browsers only allow audio after a user gesture
-  const tag = e.target.tagName;
-  if ((tag === 'INPUT' && e.target.type === 'text') && e.code !== 'Escape') return;
+  if (confirmOpen) { stop(); if (!rep) { if (code === 'Escape' || code === 'KeyN') closeConfirm(false); else if (code === 'Enter' || code === 'NumpadEnter' || code === 'KeyY') closeConfirm(true); } return; }       // a question is open: only its own keys count
   if (advanceIntro()) return;
   if (rebirthFx) { skipRebirthFx(); return; }                    // the rebirth scene: any key moves it along, nothing else happens meanwhile
   if (state === 'camp') { if (campT > 1.5 && campT < 6.2) campT = 6.2; return; }
-  if (e.code === 'KeyF' && !e.repeat) { toggleFullscreen(); return; }
+  if (is('fullscreen') && !rep) { toggleFullscreen(); return; }
+  if (wheelOpen) { stop(); if (code === 'Escape') closeWheel(); return; }              // while the wheel is up, nothing else listens (no stray swings)
   if (state === 'title') {
-    if (e.code === 'Escape' && openMenu !== 'title') showMenu(openMenu === 'settings' ? settingsReturn : openMenu === 'newgame' || openMenu === 'load' ? 'single' : 'title');
+    if (code === 'Escape' && openMenu !== 'title') showMenu(openMenu === 'settings' ? settingsReturn : openMenu === 'controls' ? 'settings' : openMenu === 'newgame' || openMenu === 'load' ? 'single' : 'title');
     return;
   }
-  if (e.code === 'Escape' || e.code === 'KeyP') {
+  if (openMenu === 'controls') { if (code === 'Escape') showMenu('settings'); return; }
+  if (code === 'Escape' || is('pause')) {
     showMenu(openMenu === 'settings' ? settingsReturn : paused ? null : 'menu');
     return;
   }
-  if (e.code === 'Backquote' && !e.repeat && (openMenu === null || openMenu === 'dev')) {
-    showMenu(openMenu === 'dev' ? null : 'dev');
+  if (code === 'Backquote' && settings.consoleEnabled && !rep && (openMenu === null || openMenu === 'dev' || openMenu === 'console')) {      // ` opens the console (when it is enabled in Settings); the dev menu is opened from inside it
+    stop();
+    showMenu(openMenu === null ? 'console' : null);
     return;
   }
-  if ((e.code === 'KeyM' || e.code === 'Tab') && (openMenu === null || openMenu === 'level' || openMenu === 'inv')) {      // M: Character, Tab: Inventory (two separate windows)
-    e.preventDefault();
-    if (!e.repeat && !hero.dead) { const w = e.code === 'KeyM' ? 'level' : 'inv'; showMenu(openMenu === w ? null : w); }
+  const wantChar = is('character'), wantInv = is('inventory');
+  if (is('utility') && openMenu === null && !paused && !hero.dead && (state === 'play' || state === 'village')) { stop(); if (!rep) openWheel(code, 'util'); return; }
+  if (wantInv && openMenu === null && !paused && !hero.dead && (state === 'play' || state === 'village')) { stop(); if (!rep) openWheel(code); return; }
+  if ((wantChar || wantInv) && (openMenu === null || openMenu === 'level' || openMenu === 'inv')) {      // Character and Inventory are two separate windows
+    stop();
+    if (!rep && !hero.dead) { const w = wantChar ? 'level' : 'inv'; showMenu(openMenu === w || (wantInv && openMenu === 'level') ? null : w); }
     return;
   }
-  if ((openMenu === 'talk' || openMenu === 'shop') && /^(Digit|Numpad)[0-9]$/.test(e.code)) {   // number keys pick dialogue / shop options
-    e.preventDefault(); if (e.repeat) return;
-    const n = +e.code.slice(-1);
-    const btns = [...document.querySelectorAll(openMenu === 'talk' ? '#talkBtns button' : '#shopBody [data-buy]')];
+  if ((openMenu === 'talk' || openMenu === 'shop') && /^(Digit|Numpad)[0-9]$/.test(code)) {   // number keys pick dialogue / shop options
+    stop(); if (rep) return;
+    const n = +code.slice(-1);
+    const tiles = document.querySelectorAll('#shopBody [data-pick], #shopBody [data-tpick], #shopBody [data-epick]');
+    const btns = [...(openMenu === 'talk' ? document.querySelectorAll('#talkBtns button') : tiles.length ? tiles : document.querySelectorAll('#shopBody [data-buy]'))];
     if (n === 0 && openMenu === 'shop') showMenu(null);
     else if (btns[n - 1] && !btns[n - 1].disabled) btns[n - 1].click();
     return;
   }
   if (paused) return;
-  keys[e.code] = true;
-  if (e.code.startsWith('Arrow') || e.code === 'Space') e.preventDefault();
-  if (e.repeat) return;
+  keys[code] = true;
+  if (code.startsWith('Arrow') || code === 'Space' || code.startsWith('Mouse')) stop();
+  if (rep) return;
   if (hero.dead) {
-    if (e.code === 'KeyR' && hero.deadT > 1) { if (!loadSlot(currentSlot)) newRun(hero.name, diffKey, currentSlot); }
+    if (is('respawn') && hero.deadT > 1) { if (!loadSlot(currentSlot)) newRun(hero.name, diffKey, currentSlot); }
     return;
   }
-  if (e.code === 'KeyQ') drinkPotion();
-  if (e.code === 'KeyR') switchPotion();
-  if (e.code === 'KeyX' && slotOpen('weapon2')) {                                  // rebirth 10: swap to the spare weapon
+  if (is('potion')) useUtility();
+  if (is('swapWeapon') && slotOpen('weapon2')) {                                  // rebirth 10: swap to the spare weapon
     const r = swapWeapons();
-    popups.push({ text: r === 'ok' ? `Swapped to ${hero.equip.weapon.name}` : r === 'empty' ? 'No spare weapon (set one in the inventory)' : r, x: VW / 2, y: 120, t: 1.4, screen: true, small: true, color: r === 'ok' ? '#fd4' : '#fb8' });
+    popups.push({ text: r === 'ok' ? `Swapped to ${hero.equip.weapon.name}` : r === 'empty' ? 'No spare weapon (set one in the inventory)' : r, x: VW / 2, y: 120, t: 1.4, screen: true, small: true, color: r === 'ok' ? '#fd4' : '#f88' });
     if (r === 'ok') sfx('pickup');
   }
-  if (state === 'village') { if (e.code === 'KeyE') villageInteract(); return; }     // no fighting in the village
-  if (e.code === 'Space') startAttack();
-  if (e.code === 'ShiftLeft' || e.code === 'ShiftRight') startFlip();
+  if (state === 'village') { if (is('interact')) villageInteract(); return; }     // no fighting in the village
+  if (is('attack')) startAttack();
+  if (is('flip')) startFlip();
+}
+addEventListener('keydown', e => {
+  const tag = e.target.tagName;
+  if ((tag === 'INPUT' && e.target.type === 'text') && e.code !== 'Escape') return;
+  if (bindCap) return;                                                   // the controls window is waiting for a key (handled below)
+  handleInput(e.code, e);
 });
-addEventListener('keyup', e => { keys[e.code] = false; });
+addEventListener('keyup', e => { keys[e.code] = false; if (wheelOpen && e.code === wheelCode) wheelRelease(); });
+wrap.addEventListener('mousedown', e => { if (!bindCap && (e.target === canvas || e.target.id === 'gl')) handleInput('Mouse' + e.button, e); });      // a click on the game view (menus sit on top of it, so clicking them never attacks)
+addEventListener('mouseup', e => { keys['Mouse' + e.button] = false; if (wheelOpen && 'Mouse' + e.button === wheelCode) wheelRelease(); if (e.button > 2 && e.cancelable) e.preventDefault(); });
+addEventListener('auxclick', e => { if (e.button > 2 && e.cancelable) e.preventDefault(); });                  // the side buttons must not act as browser back / forward
+wrap.addEventListener('contextmenu', e => { if (e.target === canvas || e.target.id === 'gl') e.preventDefault(); });
+
+// --- Controls window (Settings > Edit keybinds) ---
+const MOUSE_NAMES = { Mouse0: 'Left mouse button', Mouse1: 'Middle mouse button', Mouse2: 'Right mouse button', Mouse3: 'Mouse side button 1 (back)', Mouse4: 'Mouse side button 2 (forward)' };
+const KEY_NAMES = { Space: 'Space', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ControlLeft: 'Left Ctrl', ControlRight: 'Right Ctrl', AltLeft: 'Left Alt', AltRight: 'Right Alt', Tab: 'Tab', Enter: 'Enter', Backspace: 'Backspace', CapsLock: 'Caps Lock', Backquote: '`' };
+function inputName(c) {
+  if (MOUSE_NAMES[c]) return MOUSE_NAMES[c];
+  if (/^Mouse\d+$/.test(c)) return `Mouse button ${+c.slice(5) + 1}`;
+  return KEY_NAMES[c] || c.replace(/^Key/, '').replace(/^Digit/, '').replace(/^Numpad/, 'Num ');
+}
+const shortInput = c => ({ Mouse0: 'LMB', Mouse1: 'MMB', Mouse2: 'RMB', Mouse3: 'M4', Mouse4: 'M5', ShiftLeft: 'Shift', ShiftRight: 'Shift', ControlLeft: 'Ctrl', ControlRight: 'Ctrl', AltLeft: 'Alt', AltRight: 'Alt' }[c] || (/^Mouse\d+$/.test(c) ? 'M' + (+c.slice(5) + 1) : inputName(c)));
+function persistSettings() { try { localStorage.setItem('rpgSettings', JSON.stringify(settings)); } catch {} }
+// the help line under the game shows whatever is bound right now
+function renderHelp() {
+  const el = document.getElementById('help'); if (!el || !settings.binds) return;
+  const names = a => { const out = [...new Set((settings.binds[a] || []).map(shortInput))].slice(0, 2); return out.length ? out.join('/') : '–'; };
+  const move = ['up', 'left', 'down', 'right'].map(a => names(a).split('/')[0]);
+  const item = (a, text) => `<b>${escapeHtml(names(a))}</b>${text}`;
+  el.innerHTML = `<b>${escapeHtml(move.every(m => m.length === 1) ? move.join('') : move.join('/'))}</b>move` + item('attack', 'attack') + item('flip', 'flip') + item('potion', 'use item') + item('utility', 'hold: items') + item('character', 'character') + item('inventory', 'hold: wheel menu') + item('interact', 'talk') +
+    '<b>Esc</b>menu' + item('fullscreen', 'fullscreen') + (settings.consoleEnabled ? '<b>`</b>console' : '');
+}
+const keyLabel = a => { const c = (settings.binds[a] || [])[0]; return c ? shortInput(c) : '?'; };            // what to show for an action's first key
+function bindMsg(text) { const m = document.getElementById('bindMsg'); if (m) m.textContent = text; }
+function renderControls() {
+  document.getElementById('bindList').innerHTML = BIND_ACTIONS.map(a => {
+    const cur = settings.binds[a.id] || [];
+    const chips = cur.map((c, i) => {
+      const cap = bindCap && bindCap.a === a.id && bindCap.i === i;
+      return `<span class="chip ${cap ? 'cap' : ''}"><button data-bind="edit" data-a="${a.id}" data-i="${i}">${cap ? 'Press a key or mouse button…' : escapeHtml(inputName(c))}</button><button class="bx" data-bind="del" data-a="${a.id}" data-i="${i}" title="Remove">×</button></span>`;
+    }).join('');
+    const adding = bindCap && bindCap.a === a.id && bindCap.i === -1;
+    return `<div class="bindrow"><span class="bname">${a.label}${a.note ? ` <small>${a.note}</small>` : ''}</span><div class="bchips">${chips}<button class="badd ${adding ? 'cap' : ''}" data-bind="add" data-a="${a.id}">${adding ? 'Press a key or mouse button…' : '+ Add'}</button></div></div>`;
+  }).join('');
+}
+function bindDone(code) {                                              // finish a capture; code is null when it was cancelled
+  const { a, i } = bindCap; bindCap = null;
+  if (code) {
+    let moved = null;
+    for (const k in settings.binds) if (k !== a && k !== 'respawn' && a !== 'respawn' && settings.binds[k].includes(code)) { settings.binds[k] = settings.binds[k].filter(c => c !== code); moved = BIND_ACTIONS.find(x => x.id === k).label; }
+    const list = settings.binds[a].slice(); if (i >= 0) list[i] = code; else list.push(code);
+    settings.binds[a] = list.filter((c, idx) => c !== code || idx === list.indexOf(code));
+    persistSettings(); renderHelp();
+    bindMsg(`${inputName(code)} is now bound to "${BIND_ACTIONS.find(x => x.id === a).label}"${moved ? ` (it was taken from "${moved}")` : ''}.`);
+  } else bindMsg('Cancelled.');
+  bindAssignedAt = performance.now(); renderControls();
+}
+document.getElementById('bindList').addEventListener('click', e => {
+  if (performance.now() - bindAssignedAt < 300) return;                  // the click that ended a capture must not start another
+  const b = e.target.closest('[data-bind]'); if (!b) return;
+  const a = b.dataset.a, i = +b.dataset.i;
+  sfx('click');
+  if (b.dataset.bind === 'edit') bindCap = { a, i };
+  else if (b.dataset.bind === 'add') bindCap = { a, i: -1 };
+  else { settings.binds[a].splice(i, 1); bindCap = null; persistSettings(); renderHelp(); bindMsg('Removed.'); }
+  renderControls();
+});
+// while a capture is open, the next key or mouse button (pressed on the list) becomes the binding; Esc cancels
+addEventListener('keydown', e => {
+  if (!bindCap) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  if (e.code === 'Escape') bindDone(null);
+  else if (e.code === 'Backquote') bindMsg('The console key (`) is fixed. Turn the console on or off in Settings.');
+  else bindDone(e.code);
+}, true);
+addEventListener('mousedown', e => {
+  if (!bindCap) return;
+  if (!e.target.closest('#bindList')) { bindCap = null; renderControls(); return; }     // pressing anything else cancels, and that click goes through
+  e.preventDefault(); e.stopImmediatePropagation();
+  bindDone('Mouse' + e.button);
+}, true);
+document.addEventListener('contextmenu', e => { if (bindCap) e.preventDefault(); });
+
+
 addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 document.addEventListener('visibilitychange', () => { if (document.hidden && (state === 'play' || state === 'village') && !paused) showMenu('menu'); });
 
@@ -602,36 +826,71 @@ function bakeGrass(c) {
 
 // --- Hero ---
 // Gear adds on top of the level stats (gearStat / capValue live in gear.js); the ceilings are in GEAR_CAPS.
-const swordDmg = () => Math.round((hero.sword.dmg + Math.min(strMax(), hero.stats.str) * 2 + Math.round(gearStat('dmg'))) * rbDmgMul());
-const maxStamina = () => 100 + hero.stats.sta * 10 + Math.round(gearStat('stamina'));
-const staminaRegen = () => Math.min(32, 14 + hero.stats.sta * 1.2);      // hard cap: stamina still matters late
+const swordDmg = () => Math.round((hero.sword.dmg + Math.min(strMax(), hero.stats.str) * 2 + Math.round(gearStat('dmg'))) * rbDmgMul() * (ailT('weak') > 0 ? 0.7 : 1));
+const staPts = () => Math.min(staMax(), hero.stats.sta);
+const maxStamina = () => 100 + staPts() * 10 + Math.round(gearStat('stamina'));
+const staminaRegen = () => Math.min(44, 22 + staPts() * 1.4);      // hard cap: stamina still matters late
 const flipCooldown = () => FLIP_COOLDOWN * (1 - hero.stats.cd * 0.06) * (1 - Math.min(0.5, gearStat('cdr')));
 const dmgReduction = () => capValue('dr', Math.min(drCap(), Math.min(vitMax(), hero.stats.hp) * 0.0015));        // Vitality gives at most 10% (and its points are capped well before that); with gear the ceiling is 60%
-const moveSpeed = () => BASE_SPEED * (1 + capValue('speed', Math.min(speedCap(), hero.stats.sta * 0.0015))) * (hero.chillT > 0 ? 0.65 : 1);      // a Frost nova chills you
+const moveSpeed = () => BASE_SPEED * (1 + capValue('speed', Math.min(speedCap(), staPts() * 0.0015))) * (hero.chillT > 0 ? 0.65 : 1) * (ailT('freeze') > 0 ? 0 : 1);      // a Frost nova chills you; frozen, you cannot move at all
 const critChance = () => capValue('crit', BASE_CRIT + Math.min(CRIT_POINTS_MAX, hero.stats.crit) * 0.005);
 const critMult = () => capValue('critDmg', BASE_CRIT_MULT + Math.min(CRIT_POINTS_MAX, hero.stats.crit) * 0.02);
 
+// --- What a blow hits: the weapon itself. weaponShapes(p) is where the weapon is, p of the way through the attack: capsules along the blade (and bigger ones at the head of an axe, hammer, scythe...).
+// An enemy is hit when its body (a tall capsule standing on its feet) touches one of them, checked at several points between this frame and the last, so a fast swing cannot skip over anyone.
+const HIT_SHAPE = {
+  sword: { r: 4 }, great: { r: 5.5 }, dagger: { r: 4 }, rapier: { r: 3 }, katana: { r: 3.5 }, spear: { r: 3.5, head: { from: 0.75, r: 5 } },
+  axe: { r: 3.5, head: { from: 0.6, r: 10 } }, hammer: { r: 3.5, head: { from: 0.7, r: 11 } }, scythe: { r: 3.5, head: { from: 0.5, r: 11 } }, halberd: { r: 3.5, head: { from: 0.6, r: 9 } },
+  whip: { r: 4 }, fist: { r: 8 },
+};
+function weaponShapes(p) {
+  const sw = hero.sword, f = hero.facing, K = weaponKind(sw), shape = HIT_SHAPE[sw.kind || 'sword'] || HIT_SHAPE.sword, out = [];
+  const J = poseStick(hero.x, hero.y, f, { p: 0, run: false, lean: 0.02, breath: 0, atk: p, tuck: false, kind: sw.kind, variant: hero.attackVar | 0 });
+  const add = (h, bl, len) => {
+    const dx = f * Math.cos(bl), dy = Math.sin(bl), tx = h.x + dx * len, ty = h.y + dy * len;
+    out.push({ x1: h.x, y1: h.y, x2: tx, y2: ty, r: shape.r });
+    if (shape.head) out.push({ x1: h.x + dx * len * shape.head.from, y1: h.y + dy * len * shape.head.from, x2: tx, y2: ty, r: shape.head.r });
+  };
+  if (sw.kind === 'fist') for (const hd of [J.front.e, J.back.e]) out.push({ x1: hd.x, y1: hd.y, x2: hd.x, y2: hd.y, r: shape.r });
+  else if (sw.kind === 'whip') { const w = whipPose(J, p); add(J.front.e, w.ang, sw.len * w.ext); }
+  else { const len = weaponLength(sw); if (K.twin) add(J.back.e, J.bblade, len); add(J.front.e, J.blade, len); }
+  return out;
+}
+function segDist(ax, ay, bx, by, cx, cy, dx, dy) {                    // the shortest distance between two line segments
+  const pt = (px, py, x1, y1, x2, y2) => { const vx = x2 - x1, vy = y2 - y1, l = vx * vx + vy * vy, t = l ? Math.max(0, Math.min(1, ((px - x1) * vx + (py - y1) * vy) / l)) : 0; return Math.hypot(px - (x1 + vx * t), py - (y1 + vy * t)); };
+  const o = (px, py, qx, qy, rx, ry) => (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  if (o(ax, ay, bx, by, cx, cy) * o(ax, ay, bx, by, dx, dy) < 0 && o(cx, cy, dx, dy, ax, ay) * o(cx, cy, dx, dy, bx, by) < 0) return 0;      // they cross
+  return Math.min(pt(ax, ay, cx, cy, dx, dy), pt(bx, by, cx, cy, dx, dy), pt(cx, cy, ax, ay, bx, by), pt(dx, dy, ax, ay, bx, by));
+}
+const enemyBody = m => ({ h: m.type === 'slime' ? m.r * 2.0 : m.r * 5.5, r: m.r * 0.75 });               // a tall capsule standing on the enemy's feet
+const shapesHit = (m, shapes) => { const b = enemyBody(m); return shapes.some(s => segDist(s.x1, s.y1, s.x2, s.y2, m.x, hero.y - 4, m.x, hero.y - b.h) <= s.r + b.r); };      // the body is tested in the hero's lane (the depth gap is limited separately), so an enemy standing a little nearer or further is hit like one beside you
+
 function startAttack() {
-  if (hero.attackT > 0 || hero.flipT > 0) return;
-  if (hero.stamina < hero.sword.cost) { sfx('tired'); return; }
-  hero.stamina -= hero.sword.cost;
+  if (hero.attackT > 0 || hero.flipT > 0 || ailT('freeze') > 0) return;
+  const K = weaponKind(hero.sword), vi = (hero.combo | 0) % K.variants.length, Vr = K.variants[vi];      // an attack soon after the last one plays the next variant of the weapon's combo
+  const cost = Math.max(1, Math.round(hero.sword.cost * Vr.cost));
+  if (hero.stamina < cost) { sfx('tired'); return; }
+  hero.stamina -= cost;
   hero.regenT = REGEN_DELAY;
-  hero.attackDur = hero.sword.time * (1 - hero.stats.cd * 0.04) * (1 - Math.min(0.35, gearStat('cdr') * 0.6));
+  hero.attackDur = hero.sword.time * Vr.t * (1 - hero.stats.cd * 0.04) * (1 - Math.min(0.35, gearStat('cdr') * 0.6));
   hero.attackT = hero.attackDur;
-  hero.hitSet = new Set();
-  sfx('swing');
+  hero.hitSet = new Set(); hero.lastP = 0;
+  hero.attackVar = vi; hero.atkMul = Vr.dmg; hero.attackReach = Vr.reach; hero.attackHitAt = Vr.hitAt ?? hero.sword.hitAt ?? 0.3; hero.rehitLeft = (Vr.rehit || []).slice();
+  hero.combo = (vi + 1) % K.variants.length; hero.comboT = hero.attackDur + 0.9;
+  const snd = Vr.sfx || K.sfx, at = Vr.sfxAt ?? K.sfxAt;
+  if (at) setTimeout(() => sfx(snd), hero.attackDur * at * 1000); else sfx(snd);
 }
 
 function startFlip() {
-  if (hero.flipT > 0 || hero.flipCd > 0) return;
+  if (hero.flipT > 0 || hero.flipCd > 0 || ailT('freeze') > 0) return;
   if (hero.stamina < FLIP_COST) { sfx('tired'); popups.push({ text: 'No stamina', x: hero.x, y: hero.y - 75, t: 0.6, color: '#7c7' }); return; }
   hero.stamina -= FLIP_COST;
   hero.regenT = REGEN_DELAY;
   let dx = 0, dy = 0;
-  if (keys.KeyA || keys.ArrowLeft) dx--;
-  if (keys.KeyD || keys.ArrowRight) dx++;
-  if (keys.KeyW || keys.ArrowUp) dy--;
-  if (keys.KeyS || keys.ArrowDown) dy++;
+  if (held('left')) dx--;
+  if (held('right')) dx++;
+  if (held('up')) dy--;
+  if (held('down')) dy++;
   if (!dx && !dy) dx = hero.facing;
   const len = Math.hypot(dx, dy);
   hero.flipDx = dx / len; hero.flipDy = dy / len;
@@ -657,8 +916,10 @@ function damageHero(dmg, sound = true, src = null) {
   }
   dmg = Math.max(1, Math.round(dmg * (1 - dmgReduction())));
   hero.hp = Math.max(0, hero.hp - dmg);
+  questEvent('hit'); cancelRecall('The scroll fizzles: you were hit');
   if (src) {
     if (src.poisons) addPoison(src);
+    rollAilment(src);
     if (src.vamp && src.hp > 0) { const heal = Math.round(dmg * src.vamp); src.hp = Math.min(src.maxHp, src.hp + heal); popups.push({ text: `+${heal}`, x: src.x, y: src.y - 90, t: 0.6, color: '#c77dff', small: true }); }
   }
   hero.hurtT = 0.8;
@@ -710,6 +971,23 @@ const TYPES = {
   slime:    { hp: 45, speed: 0,   r: 16, dmg: 8,  xp: 15, from: 2, color: '#5b5', gold: 1 },
   archer:   { hp: 35, speed: 70,  r: 12, dmg: 10, xp: 20, from: 3, color: '#ddd', gold: 1.2 },
   ogre:     { hp: 140, speed: 40, r: 24, dmg: 18, xp: 45, from: 7, color: '#6a7a3a', gold: 2.2 },
+  // the creatures of single biomes (BIOME_MOBS in mobs.js says where each one lives)
+  wolf:      { hp: 26, speed: 120, r: 12, dmg: 7,  xp: 14, from: 1, color: '#8a8a94', gold: 1,   pack: 2 },
+  scorpion:  { hp: 50, speed: 60,  r: 15, dmg: 10, xp: 20, from: 1, color: '#c9923a', gold: 1.2 },
+  icesprite: { hp: 22, speed: 90,  r: 10, dmg: 8,  xp: 16, from: 1, color: '#9fe4ff', gold: 1.1 },
+  fireimp:   { hp: 28, speed: 95,  r: 10, dmg: 9,  xp: 18, from: 1, color: '#ff6a2a', gold: 1.1 },
+  bogLurker: { hp: 70, speed: 55,  r: 17, dmg: 11, xp: 24, from: 1, color: '#4a6a3a', gold: 1.3, init: { state: 'hidden', untouchable: true, stateT: 1.0, poisons: true } },
+  panther:   { hp: 55, speed: 85,  r: 14, dmg: 12, xp: 24, from: 1, color: '#2a2a34', gold: 1.3 },
+  skeleton:  { hp: 24, speed: 80,  r: 12, dmg: 8,  xp: 12, from: 1, color: '#e8e4d0', gold: 1,   pack: 3 },
+  harpy:     { hp: 32, speed: 100, r: 11, dmg: 10, xp: 20, from: 1, color: '#c9a0e0', gold: 1.2 },
+  treant:       { hp: 90,  speed: 38,  r: 20, dmg: 12, xp: 28, from: 3, color: '#5a7a3a', gold: 1.6 },
+  mummy:        { hp: 75,  speed: 45,  r: 15, dmg: 11, xp: 24, from: 3, color: '#d8cfa8', gold: 1.4, fireVuln: 2 },
+  frostwolf:    { hp: 34,  speed: 125, r: 12, dmg: 8,  xp: 18, from: 2, color: '#cfe8ff', gold: 1.1, pack: 2 },
+  magmaslime:   { hp: 60,  speed: 0,   r: 16, dmg: 10, xp: 22, from: 3, color: '#ff6a2a', gold: 1.3 },
+  wisp:         { hp: 20,  speed: 70,  r: 9,  dmg: 7,  xp: 16, from: 2, color: '#9fffd0', gold: 1.1 },
+  sporeshroom:  { hp: 55,  speed: 0,   r: 14, dmg: 8,  xp: 20, from: 3, color: '#b05a8a', gold: 1.2 },
+  cursedKnight: { hp: 110, speed: 50,  r: 17, dmg: 14, xp: 34, from: 4, color: '#5a5a78', gold: 1.8 },
+  golem:        { hp: 160, speed: 30,  r: 24, dmg: 16, xp: 40, from: 5, color: '#8a8a7a', gold: 2 },
 };
 
 function edgePos() {
@@ -727,15 +1005,17 @@ function spawnEnemy(type, pos = edgePos(), extra = {}) {
     speed: (T.speed * (0.85 + Math.random() * 0.3) + wave * 2) * d.spd * th.spd,
     facing: 1, walkT: Math.random() * 6, state: 'walk', stateT: Math.random(), spawnT: 0.5,
     chargeDx: 0, chargeDy: 0, knockX: 0, knockY: 0, flashT: 0, burnT: 0, slowT: 0, hopZ: 0, size: 1,
+    ...(T.init || {}),
     ...extra,
   };
   enemies.push(m);
   if (!extra.noVariant) rollVariant(m, extra.variant);
+  if (extra.leader) makeLeader(m);
   burst(pos.x, pos.y, m.elite ? '#ffd24a' : '#000', m.elite ? 14 : 6, 60, 3, -30);
   return m;
 }
 function spawnElite() {
-  const pool = Object.keys(TYPES).filter(t => wave >= TYPES[t].from);
+  const pool = wavePool();
   const m = spawnEnemy(pool[Math.floor(Math.random() * pool.length)], edgePos(), { variant: 'elite' });
   popups.push({ text: `Elite: ${m.name}`, x: VW / 2, y: 170, t: 1.8, screen: true, small: true, color: '#ffd24a' });
   sfx('roar');
@@ -756,12 +1036,14 @@ function spawnBoss(kindOverride) {
 // Waves are counted within their set of ten, so a longer gap between bosses doesn't mean ever-larger crowds:
 // the halfway wave (5) is a goblin horde, the last wave before the boss (9) is a heavier push.
 function buildWave() {
-  const pool = Object.keys(TYPES).filter(t => wave >= TYPES[t].from);
+  const pool = wavePool();                                                       // only this biome's creatures
   const pos = setPos(wave);
   let n = 2 + Math.floor(Math.random() * (2 + pos)) + 2 * tierOf(wave);
   if (pos === 9) n = Math.round(n * 1.3);
   const list = Array.from({ length: n }, () => pool[Math.floor(Math.random() * pool.length)]);
-  if (pos === 5) for (let i = 0; i < 3 + tierOf(wave); i++) list.push('goblin');
+  for (const t of [...list]) if (TYPES[t].pack && Math.random() < 0.5) { for (let k = 1; k < TYPES[t].pack; k++) list.push(t); const i = list.indexOf(t); if (i >= 0) list[i] = t + '!'; }      // the first of a pack is its leader ('!')                      // wolves and skeletons come in packs
+  const weakest = pool.reduce((a, t) => TYPES[t].hp < TYPES[a].hp ? t : a, pool[0]);
+  if (pos === 5) for (let i = 0; i < 3 + tierOf(wave); i++) list.push(weakest);                                  // the halfway horde is the biome's weakest creature
   const t = tierOf(wave);                                         // elites turn up in ordinary waves once a boss has fallen, more often the further you get
   const elites = t < 1 ? 0 : (Math.random() < Math.min(0.6, 0.2 + 0.1 * t) ? 1 : 0) + (pos === 9 ? 1 : 0) + (t >= 3 && Math.random() < 0.3 ? 1 : 0);
   for (let i = 0; i < elites; i++) list.splice(Math.floor(Math.random() * (list.length + 1)), 0, 'elite');
@@ -773,7 +1055,7 @@ function updateWaves(dt) {
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
       const t = spawnQueue.shift();
-      t === 'boss' ? spawnBoss() : t === 'elite' ? spawnElite() : spawnEnemy(t);
+      t === 'boss' ? spawnBoss() : t === 'elite' ? spawnElite() : t.endsWith('!') ? spawnEnemy(t.slice(0, -1), edgePos(), { leader: true }) : spawnEnemy(t);
       sfx('spawn');
       spawnTimer = 0.3 + Math.random() * 1.3;
     }
@@ -784,6 +1066,7 @@ function updateWaves(dt) {
         saveGame(true, true); popups.push({ text: `Checkpoint: wave ${wave} saved`, x: VW / 2, y: 150, t: 2.2, screen: true, small: true, color: '#9f9' });
       }
       if ((wave + 1) % WAVES_PER_SET === 0 && villageSkip !== wave + 1) { enterVillage(); return; }   // a village before every boss
+      if (wave > 0) questEvent('waveClear');
       wave++;
       if (zoneFor(wave) !== lastZoneStep) { lastZoneStep = zoneFor(wave); startCamp(randomBiome()); }
       else if (Sound.current === 'boss') Sound.music(BIOMES[zone % BIOMES.length].music);
@@ -803,46 +1086,48 @@ function updateWaves(dt) {
 }
 
 function updateBoss(m, dt, dx, dy, dist, spd) {
-  if (m.kind && m.kind !== 'minotaur') updateKitBoss(m, dt, dx, dy, dist, spd); else updateMinotaurBoss(m, dt, dx, dy, dist, spd);
+  updateKitBoss(m, dt, dx, dy, dist, spd);              // every boss, the Minotaur King included, runs on the attack kit in bosses.js
 }
-function updateMinotaurBoss(m, dt, dx, dy, dist, spd) {
-  if (!m.summoned && m.hp < m.maxHp / 2) {         // phase 2: call minions + enrage
-    m.summoned = true; m.speed *= 1.3;
-    for (let i = 0; i < 3; i++) spawnEnemy(i ? 'goblin' : 'minotaur');
-    sfx('roar'); shake(8);
-    popups.push({ text: `${m.name} is enraged!`, x: VW / 2, y: 150, t: 2, big: true, screen: true, color: '#f66' });
-  }
-  if (m.state === 'walk') {
-    m.x += (dx / dist) * spd * dt; m.y += (dy / dist) * spd * dt;
-    m.facing = Math.sign(dx) || m.facing;
-    m.walkT += dt * 5;
-    if (m.stateT <= 0 && !hero.dead) {
-      if (dist < 140 || Math.random() < 0.4) { m.state = 'slamWind'; m.stateT = 0.8; }
-      else { m.state = 'windup'; m.stateT = 0.6; m.charges = m.summoned ? 3 : 2; }
-      m.chargeDx = dx / dist; m.chargeDy = dy / dist;
-    }
-  } else if (m.state === 'windup') {
-    m.chargeDx = dx / dist; m.chargeDy = dy / dist; m.facing = Math.sign(dx) || m.facing;
-    if (m.stateT <= 0) { m.state = 'charge'; m.stateT = 0.55; sfx('charge'); }
-  } else if (m.state === 'charge') {
-    m.x += m.chargeDx * 460 * dt; m.y += m.chargeDy * 460 * dt;
-    m.walkT += dt * 18;
-    if (gfx.particles && Math.random() < 0.5) burst(m.x, m.y, '#a98', 1, 40, 4, -10);
-    if (m.stateT <= 0) {
-      if (--m.charges > 0) { m.state = 'windup'; m.stateT = 0.35; }
-      else { m.state = 'walk'; m.stateT = 1.5 + Math.random(); }
-    }
-  } else if (m.state === 'slamWind') {
-    if (m.stateT <= 0) {
-      shockwaves.push({ x: m.x, y: m.y, r: 10, maxR: m.summoned ? 320 : 240, hit: false, dmg: m.dmg });
-      sfx('slam'); shake(12);
-      burst(m.x, m.y, '#b9a', 24, 220, 4, 100);
-      m.state = 'walk'; m.stateT = 1.8 + Math.random();
+// ---- weapon effects (bought at the Enchantress): damage over time and crowd control on an enemy that was hit
+function applyWeaponFx(m, item, dx) {
+  const f = item && item.fx; if (!f || !WFX[f.k]) return;
+  const W = WFX[f.k], lv = f.lv, base = Math.max(1, swordDmg()), boss = m.type === 'boss', fx = m.wfx || (m.wfx = {});
+  const d = p => Math.max(1, Math.round(base * p));
+  if (f.k === 'fire') fx.fire = { t: 3 + lv, dps: d(0.08 * lv) };
+  else if (f.k === 'poison') { const s = Math.min(3, ((fx.poison && fx.poison.n) | 0) + 1); fx.poison = { t: 5, n: s, dps: d(0.07 * lv) }; }
+  else if (f.k === 'bleed') fx.bleed = { t: 4, dps: d(0.06 * lv) };
+  else if (f.k === 'frost') { m.slowT = Math.max(m.slowT || 0, 2 + lv); if (lv >= 3 && !boss && Math.random() < 0.12) mobStun(m, 1); }
+  else if (f.k === 'shock') {
+    if (Math.random() < 0.10 + 0.07 * lv) mobStun(m, 0.6 + 0.2 * lv, boss);
+    let best = null, bd = 170; for (const o of enemies) if (o !== m && o.hp > 0 && o.dieT === undefined) { const dd = Math.hypot(o.x - m.x, o.y - m.y); if (dd < bd) { bd = dd; best = o; } }
+    if (best) {
+      const arc = d(0.2 * lv); best.hp -= arc; best.flashT = 0.12; popups.push({ text: `${arc}`, x: best.x, y: best.y - 80, t: 0.5, color: W.color, small: true });
+      if (gfx.particles) for (let i = 0; i < 6; i++) { const k = i / 6; particles.push({ x: m.x + (best.x - m.x) * k, y: m.y - 35 + (best.y - m.y) * k + (Math.random() - 0.5) * 8, vx: 0, vy: 0, life: 0.25, max: 0.25, size: 2.2, color: W.color, add: true }); }
     }
   }
-  m.x = Math.max(20, Math.min(WW - 20, m.x)); m.y = Math.max(60, Math.min(WH - 10, m.y));
+  if (gfx.particles && Math.random() < 0.6) burst(m.x, m.y - 35, W.color, 5, 120, 2, 80, true);
 }
-
+function mobStun(m, t, bossToo) {
+  if (m.type === 'boss' && !bossToo) return;
+  if (m.type === 'boss') { m.slowT = Math.max(m.slowT || 0, t * 1.5); return; }          // a boss only staggers
+  m.stunT = Math.max(m.stunT || 0, t); m.mel = null; m.melCd = Math.max(m.melCd || 0, t);
+  if (['windup', 'smashWind', 'crouch', 'aim', 'charge', 'hop'].includes(m.state)) { m.state = 'walk'; m.stateT = t + 0.3; m.hopZ = 0; }
+  popups.push({ text: 'STUNNED', x: m.x, y: m.y - 92, t: 0.6, color: '#fff06a', small: true });
+}
+function tickMobFx(m, dt) {                                                               // the damage-over-time effects of the hero's weapon
+  const fx = m.wfx; if (!fx) return;
+  m.fxTick = (m.fxTick || 0) - dt;
+  const due = m.fxTick <= 0; if (due) m.fxTick = 0.5;
+  for (const k of ['fire', 'poison', 'bleed']) {
+    const e = fx[k]; if (!e) continue;
+    e.t -= dt; if (e.t <= 0) { delete fx[k]; continue; }
+    if (!due) continue;
+    const dmg = Math.max(1, Math.round(e.dps * (k === 'poison' ? 0.5 * e.n : 1) * (k === 'fire' ? (TYPES[m.type] && TYPES[m.type].fireVuln) || 1 : 1)));
+    m.hp -= dmg; popups.push({ text: `${dmg}`, x: m.x + (Math.random() - 0.5) * 16, y: m.y - 66, t: 0.4, color: WFX[k === 'fire' ? 'fire' : k === 'poison' ? 'poison' : 'bleed'].color, small: true });
+  }
+  if (gfx.particles && Math.random() < dt * 10) { const c = fx.fire ? WFX.fire.color : fx.poison ? WFX.poison.color : fx.bleed ? WFX.bleed.color : null; if (c) particles.push({ x: m.x + (Math.random() - 0.5) * 20, y: m.y - 30 - Math.random() * 24, vx: 0, vy: fx.bleed && !fx.fire ? 25 : -45, life: 0.5, max: 0.5, size: 2.3, color: c, add: !fx.bleed }); }
+  if (!fx.fire && !fx.poison && !fx.bleed) delete m.wfx;
+}
 function updateEnemies(dt) {
   for (const m of enemies) {
     const dx = hero.x - m.x, dy = hero.y - m.y, dist = Math.hypot(dx, dy) || 1;
@@ -851,16 +1136,22 @@ function updateEnemies(dt) {
     m.spawnT = Math.max(0, (m.spawnT || 0) - dt);
     if (m.burnT > 0) {
       m.burnT -= dt; m.burnTick = (m.burnTick || 0) - dt;
-      if (m.burnTick <= 0) { m.burnTick = 0.5; m.hp -= 4; popups.push({ text: '4', x: m.x, y: m.y - 70, t: 0.4, color: '#f84' }); }
+      if (m.burnTick <= 0) { m.burnTick = 0.5; { const bd = 4 * ((TYPES[m.type] && TYPES[m.type].fireVuln) || 1); m.hp -= bd; } popups.push({ text: '4', x: m.x, y: m.y - 70, t: 0.4, color: '#f84' }); }
       if (gfx.particles && Math.random() < 0.3) particles.push({ x: m.x + (Math.random() - 0.5) * 20, y: m.y - 30 - Math.random() * 20, vx: 0, vy: -50, life: 0.5, max: 0.5, size: 2.5, color: '#f73', add: true });
     }
-    m.stateT -= dt;
-    const wm = waterAt(m.x, m.y) ? 0.75 : 1;
+    tickMobFx(m, dt);
+    const stunned = m.stunT > 0 && m.type !== 'boss'; if (stunned) { m.stunT -= dt; m.moving = false; m.mel = null; }
+    m.stateT -= dt; mobTick(m, dt);
+    const wm = (waterAt(m.x, m.y) ? 0.75 : 1) * mobBoost(m, dt);                  // packs rallied by a leader, enraged by its fall, speeded by a wisp
     const fz = m.frenzy && m.hp < m.maxHp * 0.3 ? 1.5 : 1;       // a Frenzied monster goes berserk when hurt
     const spd = m.speed * fz * (m.slowT > 0 ? 0.5 : 1) * wm;
     const slowMul = (m.slowT > 0 ? 0.5 : 1) * wm;
 
+    const busy = m.type !== 'boss' && !stunned && melTick(m, dt, dx, dy, dist, fz);          // mid-swing it stands and fights instead of walking
     if (m.type === 'boss') updateBoss(m, dt, dx, dy, dist, spd);
+    else if (busy) { /* swinging */ }
+    else if (stunned) { /* dazed: it stands still */ }
+    else if (isNewMob(m)) newMobAI(m, dt, dx, dy, dist, spd, slowMul);
     else if (m.type === 'minotaur' || m.type === 'ogre') {
       if (m.state === 'walk') {
         m.x += (dx / dist) * spd * dt; m.y += (dy / dist) * spd * dt;
@@ -881,7 +1172,7 @@ function updateEnemies(dt) {
         if (m.stateT <= 0) {
           shockwaves.push({ x: m.x, y: m.y, r: 10, maxR: 90, hit: false, dmg: m.dmg });
           sfx('slam'); shake(5); burst(m.x, m.y, '#a98', 12, 120, 3, 100);
-          m.state = 'walk'; m.stateT = 1.5;
+          m.state = 'walk'; m.stateT = 1.5; m.fireT = FIRE_T;
         }
       }
     } else if (m.type === 'goblin') {
@@ -890,7 +1181,8 @@ function updateEnemies(dt) {
       m.y += (dy / dist + dx / dist * wob) * spd * dt;
       m.facing = Math.sign(dx) || m.facing; m.walkT += dt * stepRate(spd, 8.5 * 0.9);
     } else if (m.type === 'slime') {
-      if (m.state === 'walk' && m.stateT <= 0) { m.state = 'hop'; m.stateT = 0.5; m.chargeDx = dx / dist; m.chargeDy = dy / dist; }
+      if (m.state === 'walk' && m.stateT <= 0 && !hero.dead) { m.state = 'crouch'; m.stateT = 0.28; }                              // it squats before it springs
+      if (m.state === 'crouch' && m.stateT <= 0) { m.state = 'hop'; m.stateT = 0.5; m.chargeDx = dx / dist; m.chargeDy = dy / dist; }
       if (m.state === 'hop') {
         const p = 1 - m.stateT / 0.5;
         m.hopZ = Math.sin(p * Math.PI) * 22;
@@ -921,39 +1213,49 @@ function updateEnemies(dt) {
     m.x += m.knockX * dt; m.y += m.knockY * dt;
     m.knockX *= decay; m.knockY *= decay;
 
-    if (!hero.dead && dist < m.r + 12 && (m.hopZ || 0) < 10 && m.spawnT < 0.2) {
+    if (!hero.dead && dist < m.r + 12 && (m.hopZ || 0) < 10 && m.spawnT < 0.2 && touchHurts(m)) {
       damageHero((m.state === 'charge' ? m.dmg * 2 + 5 : m.dmg) * fz, true, m);
     }
   }
 
   // sword hits (active in the middle of the swing)
-  const sw = hero.sword;
-  if (hero.attackT > 0 && hero.attackT < hero.attackDur * 0.7) {
+  const sw = hero.sword, VAR = weaponVariant(sw, hero.attackVar);
+  if (hero.attackT > 0 && hero.rehitLeft && hero.rehitLeft.length && 1 - hero.attackT / hero.attackDur >= hero.rehitLeft[0]) { hero.rehitLeft.shift(); hero.hitSet.clear(); }      // a multi-hit blow lands again
+  if (hero.attackT > 0 && hero.attackT < hero.attackDur * (1 - (hero.attackHitAt ?? sw.hitAt ?? 0.3))) {
+    const pNow = 1 - hero.attackT / hero.attackDur, p0 = Math.max(hero.lastP ?? pNow, (hero.attackHitAt ?? sw.hitAt ?? 0.3) - 0.02), shapes = [];
+    for (let k = 1; k <= 6; k++) shapes.push(...weaponShapes(p0 + (pNow - p0) * k / 6));           // the weapon's path since the last frame
+    hero.lastP = pNow;
     for (const m of enemies) {
-      if (hero.hitSet.has(m)) continue;
+      if (hero.hitSet.has(m) || m.untouchable) continue;                          // underground and under water nothing can be hit
       const dx = m.x - hero.x, dy = m.y - hero.y;
       const dist = Math.hypot(dx, dy);
       // what a swing reaches: the arc in front of you (a little past your shoulder counts as in front), and your whole body.
       // Anything close enough to hurt you (contact is m.r + 12) is always close enough to hit, on whichever side it stands.
-      const inFront = dist < sw.range + m.r * 0.6 && dx * hero.facing > -10, onBody = dist < m.r + 20;
-      if (inFront || onBody) {
+      // what the weapon touches is hit (in the same lane, give or take); an enemy right against the hero's body is hit too, so nothing standing on you can be missed
+      const hitByWeapon = Math.abs(dy) <= 40 + m.r * 0.5 && shapesHit(m, shapes), touching = dist < m.r + 10;
+      if (hitByWeapon || touching) {
         hero.hitSet.add(m);
-        const crit = Math.random() < critChance(), dmg = dev.oneHit ? Math.max(1, Math.ceil(m.hp)) : Math.max(1, Math.round(swordDmg() * (crit ? critMult() : 1) * (1 - (m.armor || 0))));
-        const hpBefore = m.hp; m.hp -= dmg;
+        const crit = Math.random() < critChance() + (sw.critBonus || 0), dmg = dev.oneHit ? Math.max(1, Math.ceil(m.hp)) : Math.max(1, Math.round(swordDmg() * (hero.atkMul || 1) * (crit ? critMult() : 1) * (1 - (m.armor || 0))));
+        const hpBefore = m.hp; m.hp -= dmg; if (m.state === 'bones') m.hp = 0; if (m.type === 'bogLurker') m.hits = (m.hits | 0) + 1;       // a heap of bones that is hit is finished for good
         if (gearHas('lifesteal')) hero.hp = Math.min(hero.maxHp, hero.hp + Math.min(dmg, hpBefore) * 0.04);
-        m.flashT = 0.15;
+        if (sw.lifesteal) hero.hp = Math.min(hero.maxHp, hero.hp + Math.min(dmg, hpBefore) * sw.lifesteal);
+        m.flashT = 0.15; mobHurt(m);
         m.knockX = m.noKnock ? 0 : (Math.sign(dx) || hero.facing) * (m.type === 'boss' ? 120 : m.type === 'ogre' ? 200 : 500);          // away from you, never through you
+        if ((sw.pull || VAR.pull) && !m.noKnock && m.type !== 'boss' && dist > m.r + 30) m.knockX = -(Math.sign(dx) || hero.facing) * 260;            // the lash drags it in, but never past you
         if (sw.burn) m.burnT = 3;
+        applyWeaponFx(m, hero.equip.weapon, dx);
         if (sw.slow) m.slowT = 2.5;
+        if (sw.stun) { m.slowT = Math.max(m.slowT || 0, sw.stun); if (m.state === 'windup' && m.type !== 'boss') { m.state = 'walk'; m.stateT = sw.stun; } shake(5); }
         if (m.state === 'windup' && m.type !== 'boss') { m.state = 'walk'; m.stateT = 0.8; } // interrupt
         popups.push({ text: crit ? `${dmg}!` : `${dmg}`, x: m.x, y: m.y - 80, t: 0.7, color: crit ? '#f80' : '#ff0', pop: 0, crit });
         burst(m.x, m.y - 35, crit ? '#fc6' : sw.color, crit ? 16 : 8, 220, 2.2, 250, true);
-        if (!settings.comfort) hitStop = crit ? 0.05 : 0.02; shake(crit ? 4 : 2);
-        sfx(crit ? 'crit' : m.type === 'slime' ? 'squish' : 'hit');
+        if (!settings.comfort) hitStop = crit ? 0.05 : 0.02; shake(crit ? 4 : 2); if (VAR.shake) shake(VAR.shake);
+        sfx(crit ? 'crit' : m.type === 'slime' ? 'squish' : VAR.hit || weaponKind(sw).hit);
       }
     }
   }
 
+  rebuildSkeletons();
   const dead = enemies.filter(m => m.hp <= 0);
   enemies = enemies.filter(m => m.hp > 0);
   for (const m of dead) onKill(m);
@@ -962,8 +1264,9 @@ function updateEnemies(dt) {
 function onKill(m) {
   corpses.push({ ...m, dieT: 0, dieMax: m.type === 'boss' ? 1.6 : 0.6 });
   burst(m.x, m.y - 30, TYPES[m.type]?.color || '#fff', 14, 180, 3, 250);
-  if (m.type === 'slime' && m.size === 1) {        // big slimes split
-    for (const s of [-1, 1]) spawnEnemy('slime', { x: m.x + s * 15, y: m.y }, { size: 0.6, r: 10, hp: 18, maxHp: 18, xp: 5, spawnT: 0 });
+  if (m.leader) leaderFell(m);
+  if ((m.type === 'slime' || m.type === 'magmaslime') && m.size === 1) {        // big slimes split
+    for (const s of [-1, 1]) spawnEnemy(m.type, { x: m.x + s * 15, y: m.y }, { size: 0.6, r: 10, hp: 18, maxHp: 18, xp: 5, spawnT: 0 });
   }
   const dropMul = D().drop;
   if (m.type === 'boss') {
@@ -995,6 +1298,9 @@ function onKill(m) {
     dropItem('gold', m.x + (Math.random() - 0.5) * 22, m.y + (Math.random() - 0.5) * 12, { amount: Math.max(1, Math.round(base)) });
   }
   for (const it of gearDropsFor(m)) dropGear(it, m.x + (Math.random() - 0.5) * 50, m.y + 10 + Math.random() * 22);
+  for (const k of essenceDropsFor(m)) dropItem('essence', m.x + (Math.random() - 0.5) * 44, m.y + 12 + Math.random() * 18, { ess: k, t: 40 });
+  for (const k of runeDropsFor(m)) dropItem('rune', m.x + (Math.random() - 0.5) * 44, m.y + 12 + Math.random() * 18, { rune: k, t: 40 });
+  questEvent('kill', m);
   gainXp(m.xp, m);
 }
 
@@ -1007,6 +1313,8 @@ const DROPS = {
   big:    { color: '#f6c', label: 'Mega Potion' },
   gold:   { color: '#f5c451', label: 'Gold' },
   gear:   { color: '#fff', label: 'Gear' },
+  rune:   { color: '#c9b0ff', label: 'Rune' },
+  essence: { color: '#ffcf8a', label: 'Essence' },
 };
 function dropItem(kind, x, y, extra = {}) {
   if (kind === 'gear' && !extra.item) extra = { ...extra, item: rollItem({ tier: depthOf(), level: hero.level }) };
@@ -1022,6 +1330,7 @@ function updateDrops(dt) {
     if (dist < mag && dist > 28) { d.x += (hero.x - d.x) / dist * pull * dt; d.y += (hero.y - 10 - d.y) / dist * pull * dt; }  // magnet
     if (dist > 28) continue;
     if (d.kind === 'gear' && !pickUpGear(d)) continue;          // full backpack: it stays on the ground
+    if (d.kind === 'gear') questEvent('gear');
     d.t = 0;
     burst(d.x, d.y, d.kind === 'gear' ? RARITIES[d.item.rarity].color : DROPS[d.kind].color, 10, 120, 2, -50, true);
     const lbl = DROPS[d.kind].label;
@@ -1029,7 +1338,9 @@ function updateDrops(dt) {
     if (d.kind === 'big') { hero.hp = hero.maxHp; hero.stamina = maxStamina(); sfx('potion'); popups.push({ text: 'Fully healed!', x: d.x, y: d.y - 30, t: 1, color: '#f6c' }); }
     if (d.kind === 'energy') { hero.stamina = maxStamina(); sfx('pickup'); popups.push({ text: 'Stamina!', x: d.x, y: d.y - 30, t: 1, color: '#5d5' }); }
     if (d.kind === 'gem') { sfx('pickup'); gainXp(Math.round((15 + wave * 4) * D().xp), d); }
-    if (d.kind === 'gold') { hero.gold += d.amount; hero.goldPulse = 0.5; sfx('coin'); popups.push({ text: `+${d.amount}`, x: d.x, y: d.y - 24, t: 0.8, color: '#f5c451' }); }
+    if (d.kind === 'essence') { addEss(d.ess); sfx('sparkle'); popups.push({ text: ESS[d.ess].title, x: d.x, y: d.y - 30, t: 1.6, color: ESS[d.ess].color }); }
+    if (d.kind === 'rune') { addRune(d.rune); sfx('sparkle'); popups.push({ text: RUNES[d.rune].title, x: d.x, y: d.y - 30, t: 1.6, color: RUNES[d.rune].tier > 1 ? RUNES[d.rune].tc : RUNES[d.rune].color }); }
+    if (d.kind === 'gold') { questEvent('gold', d.amount); hero.gold += d.amount; hero.goldPulse = 0.5; sfx('coin'); popups.push({ text: `+${d.amount}`, x: d.x, y: d.y - 24, t: 0.8, color: '#f5c451' }); }
     if (d.kind === 'star') { hero.points++; sfx('unlock'); popups.push({ text: lbl, x: d.x, y: d.y - 30, t: 1.2, color: '#fd4' }); }
   }
   drops = drops.filter(d => d.t > 0);
@@ -1038,7 +1349,7 @@ function updateDrops(dt) {
 function updateProjectiles(dt) {
   for (const p of projectiles) {
     p.x += p.vx * dt; p.y += p.vy * dt; p.t -= dt;
-    if (Math.hypot(p.x - hero.x, p.y - (hero.y - 35)) < 18 && !invulnerable() && !hero.dead) { damageHero(p.dmg, true, p.src); p.t = 0; }
+    if (Math.hypot(p.x - hero.x, p.y - (hero.y - 35)) < 18 && !invulnerable() && !hero.dead) { damageHero(p.dmg, true, p.src); if (p.ail && !hero.dead) projAil(p.ail); p.t = 0; }
     if (hero.attackT > 0 && Math.hypot(p.x - hero.x, p.y - hero.y + 35) < hero.sword.range) {   // swing deflects arrows
       p.t = 0; sfx('click'); burst(p.x, p.y, '#fff', 6, 150, 1.5, 0, true);
     }
@@ -1068,7 +1379,7 @@ function gainXp(n, m) {
     hero.hp = hero.maxHp;
     hero.stamina = maxStamina();
     hero.auraT = 1.2;
-    popups.push({ text: hero.level >= levelCap() ? `MAX LEVEL ${hero.level}! The shrine awaits` : `LEVEL UP! +${pointsPerLevel()} points (M)`, x: VW / 2, y: 230, t: 1.8, color: '#fd4', big: true, screen: true });
+    popups.push({ text: hero.level >= levelCap() ? `MAX LEVEL ${hero.level}! The shrine awaits` : `LEVEL UP! +${pointsPerLevel()} points (${keyLabel('character')})`, x: VW / 2, y: 230, t: 1.8, color: '#fd4', big: true, screen: true });
     burst(hero.x, hero.y - 30, '#fd4', 30, 200, 2.5, -40, true);
     sfx('levelup');
   }
@@ -1079,12 +1390,16 @@ function updateHero(dt) {
   if (hero.dead) { hero.deadT += dt; return; }
   hero.flipCd = Math.max(0, hero.flipCd - dt);
   hero.potionCd = Math.max(0, (hero.potionCd || 0) - dt);
+  hero.comboT = Math.max(0, (hero.comboT || 0) - dt); if (hero.comboT <= 0 && hero.attackT <= 0) hero.combo = 0;      // the weapon's combo starts over after a pause
+  if (state === 'play' && hero.hp / hero.maxHp < 0.3 && (hero.hbT = (hero.hbT || 0) - dt) <= 0) { hero.hbT = 0.95; sfx('heartbeat'); }   // a heartbeat when close to death
   hero.hurtT = Math.max(0, hero.hurtT - dt);
   hero.dodgeT = Math.max(0, (hero.dodgeT || 0) - dt);
   hero.capT = Math.max(0, (hero.capT || 0) - dt);
   hero.auraT = Math.max(0, hero.auraT - dt);
   hero.chillT = Math.max(0, (hero.chillT || 0) - dt);
+  tickRecall(dt);
   if (hero.poison && tickPoison(dt)) { killHero(); return; }
+  if (tickAilments(dt)) { killHero(); return; }
   if (hero.attackT > 0) hero.attackT -= dt;
   hero.regenT = Math.max(0, hero.regenT - dt);
   // health slowly returns when you haven't been hit for a while
@@ -1105,10 +1420,10 @@ function updateHero(dt) {
     if (hero.flipT <= 0) burst(hero.x, hero.y, '#d8cfb0', 6, 70, 3, -20);   // landing dust
   } else {
     let dx = 0, dy = 0;
-    if (keys.KeyA || keys.ArrowLeft) dx--;
-    if (keys.KeyD || keys.ArrowRight) dx++;
-    if (keys.KeyW || keys.ArrowUp) dy--;
-    if (keys.KeyS || keys.ArrowDown) dy++;
+    if (held('left')) dx--;
+    if (held('right')) dx++;
+    if (held('up')) dy--;
+    if (held('down')) dy++;
     hero.moving = !!(dx || dy);
     if (hero.moving) {
       const len = Math.hypot(dx, dy);
@@ -1168,6 +1483,7 @@ function updateSoundScene(dt) {
 }
 
 function update(dt) {
+  if (state === 'play' || state === 'village') { const nf = night01(); if (nf > 0.65) Sound.setNight(true); else if (nf < 0.4) Sound.setNight(false); }      // with some slack, so the music cannot flip back and forth at dusk
   dt *= dev.speed;
   tAnim += dt;
   if (!dev.freezeTime) updateSky(dt, zone);
@@ -1230,9 +1546,192 @@ function drawLegs(x, hipY, groundY, f, p, moving, L, stride = L * 0.9, spread = 
   });
 }
 
-// Full hero pose. o: { p: run phase, run, lean, breath, atk (0..1, or -1 when not attacking), tuck }
-function poseStick(x, y, f, o) {
-  const p = o.p || 0, br = o.breath || 0, lean = o.lean || 0;
+// --- Weapon kinds: how each weapon is held, swung, drawn and heard ---
+// Every kind has 3 to 5 attack variants that play as a combo: an attack made soon after the last one plays the next variant, and the chain starts over after a pause.
+// A variant's swing(t) (t = 0..1 through the attack) gives the weapon hand's direction `ang` from the shoulder (0 = straight ahead, negative = up) and its reach `r`
+// (the arm is 19 long), `blade` (the weapon's direction), `lunge` (px the whole body steps forward), `lean`, and `back` ({ ang, r, blade }: where the free hand, or the second dagger, goes).
+// Variant fields: n name, t time, dmg damage, cost stamina (multipliers), hitAt when the blow can land (0..1), pull drags enemies in, rehit times (0..1) at which
+// the blow can land again, trail ('thrust' | { a0, ccw, from, about, spin }), sfx / hit sounds, sfxAt when the swing sound plays, shake extra screen shake.
+// What a blow hits is decided by where the weapon really is (see weaponShapes); `reach` and `back` on a variant are only notes about what it does.
+// Kind fields: idle / run the carried blade angles, two = both hands on the shaft, twin = a weapon in each hand.
+const lerp = (a, b, x) => a + (b - a) * x;      // clamp01 lives further down
+const easeOut = x => 1 - Math.pow(1 - x, 3), easeInOut = x => x * x * (3 - 2 * x), pulse = x => Math.sin(clamp01(x) * Math.PI);
+const wrapPI = d => d - 2 * Math.PI * Math.round(d / (2 * Math.PI));          // the shortest way round between two angles
+const REST = 0.6;                                                              // where the hand starts a swing from
+// windup (the hand goes REST -> aw), then the strike (aw -> ae). pw > 0 makes the strike accelerate (heavy), sf is the share of the strike spent moving,
+// bo the weapon's angle relative to the arm, lw / ls the lean at the end of the windup / strike, lb a lean that bows with the swing, lg a lunge.
+const strike = ({ wf = 0.25, aw, ae, r = 16, bo = -0.3, pw = 0, sf = 1, lb = 0, lg = 0, lw = 0, ls = 0 }) => t => {
+  if (t < wf) { const x = easeInOut(t / wf), ang = lerp(REST, aw, x); return { ang, r, blade: ang + bo, lean: lw * x }; }
+  const x = (t - wf) / (1 - wf), u = clamp01(x / sf), e = pw ? Math.pow(u, pw) : easeOut(u), ang = lerp(aw, ae, e);
+  return { ang, r, blade: ang + bo, lunge: lg * pulse(x), lean: lb * Math.sin(Math.PI * t) + lerp(lw, ls, e) };
+};
+// pull back, then drive the point forward
+const thrust = ({ pull = 0.3, r0 = 7, r1 = 19, ang = 0.05, bl = -0.03, lg = 9, ls = 0.08, hold = 0.4 }) => t => {
+  if (t < pull) { const x = easeInOut(t / pull); return { ang, r: lerp(16, r0, x), blade: bl, lunge: -2 * x, lean: -0.04 * x }; }
+  const x = (t - pull) / (1 - pull), e = x < hold ? easeOut(x / hold) : 1 - 0.7 * easeInOut((x - hold) / (1 - hold));
+  return { ang, r: lerp(r0, r1, e), blade: bl, lunge: lerp(-2, lg, e), lean: ls * e };
+};
+// several quick jabs in one attack
+const jabs = ({ n = 2, pull = 0.22, r0 = 8, r1 = 19, ang = 0.05, bl = 0, lg = 6 }) => t => {
+  if (t < pull) { const x = easeInOut(t / pull); return { ang, r: lerp(16, r0, x), blade: bl, lunge: -2 * x }; }
+  const p = (t - pull) / (1 - pull) * n, f = p - Math.floor(Math.min(p, n - 1e-6)), e = f < 0.4 ? easeOut(f / 0.4) : 1 - easeInOut((f - 0.4) / 0.6);
+  return { ang, r: lerp(r0, r1, e), blade: bl, lunge: lerp(-1, lg, e), lean: 0.06 * e };
+};
+// a full turn on the spot: the weapon circles the hero
+const spin = ({ wf = 0.18, aw = -0.5, turns = 1, r = 16, bo = -0.3, lb = 0.12 }) => t => {
+  if (t < wf) { const x = easeInOut(t / wf), ang = lerp(REST, aw, x); return { ang, r, blade: ang + bo, lean: -0.1 * x }; }
+  const x = (t - wf) / (1 - wf), ang = aw - 2 * Math.PI * turns * easeInOut(x);
+  return { ang, r: r - 3 * pulse(x), blade: ang + bo, lunge: 3 * pulse(x), lean: lb * pulse(x) };
+};
+// a cut across the body: the hand stays near the chest and the weapon turns from b0 to b1 (seen from the side, a horizontal slash)
+const sweepBlade = ({ wf = 0.28, b0 = -2.9, b1 = -0.1, ang = 0.1, r0 = 9, r1 = 15, lg = 4 }) => t => {
+  if (t < wf) { const x = easeInOut(t / wf); return { ang: lerp(REST, ang, x), r: lerp(16, r0, x), blade: lerp(REST - 0.3, b0, x), lean: -0.08 * x }; }
+  const x = (t - wf) / (1 - wf), e = easeOut(x);
+  return { ang, r: lerp(r0, r1, e), blade: lerp(b0, b1, e), lunge: lg * pulse(x), lean: lerp(-0.08, 0.1, e) };
+};
+const withBack = (fn, back) => t => ({ ...fn(t), back });                                          // a fixed guard hand
+const mirrored = (fn, da = 0.25) => t => { const s = fn(t); return { ...s, back: { ang: s.ang + da, r: Math.max(6, s.r - 1), blade: s.blade + da } }; };      // the second weapon follows the first
+const opposed = fn => t => { const s = fn(t); return { ...s, back: { ang: s.ang + Math.PI, r: s.r, blade: s.blade + Math.PI } }; };                               // the second weapon on the other side of the circle
+const V = (n, swing, o = {}) => ({ n, swing, t: 1, dmg: 1, reach: 1, cost: 1, ...o });
+const arc = (a0, ccw, from) => ({ a0, ccw, from });
+
+const WEAPON_KINDS = {
+  sword: {
+    idle: 0.35, run: 0.15, sfx: 'swing', hit: 'hitMetal',
+    variants: [
+      V('Slash', strike({ wf: 0.22, aw: -2.4, ae: 1.0, lb: 0.18 }), { hitAt: 0.3, trail: arc(-2.7, false, 0.22) }),
+      V('Rising cut', strike({ wf: 0.2, aw: 1.1, ae: -2.0, bo: -0.2, lb: 0.1 }), { t: 0.95, hitAt: 0.3, trail: arc(1.1, true, 0.2), sfx: 'swingKatana' }),
+      V('Thrust', thrust({ pull: 0.3, r0: 8, r1: 19, bl: -0.02, lg: 10 }), { t: 0.85, dmg: 0.9, reach: 1.2, hitAt: 0.4, trail: 'thrust', sfx: 'swingRapier', hit: 'hitPierce' }),
+      V('Whirlwind', spin({ wf: 0.18, aw: -0.5 }), { t: 1.5, dmg: 1.25, cost: 1.5, back: true, hitAt: 0.3, rehit: [0.62], trail: { a0: -0.5, ccw: true, from: 0.2, spin: true }, sfx: 'swingWhirl', shake: 1 }),
+    ],
+  },
+  great: {
+    idle: 0.5, run: 0.35, two: true, sfx: 'swingAxe', hit: 'hitHeavy',
+    variants: [
+      V('Cleave', strike({ wf: 0.4, aw: -2.5, ae: 1.3, pw: 1.5, bo: -0.25, sf: 0.6, lw: -0.12, ls: 0.2, lg: 5 }), { hitAt: 0.62, trail: arc(-2.6, false, 0.4), sfxAt: 0.4 }),
+      V('Wide sweep', strike({ wf: 0.35, aw: 2.8, ae: -0.3, bo: -0.15, r: 17, lb: 0.15 }), { t: 1.05, dmg: 1.05, back: true, hitAt: 0.5, trail: arc(2.8, true, 0.35), sfx: 'swingScythe', sfxAt: 0.35 }),
+      V('Rising wave', strike({ wf: 0.3, aw: 1.2, ae: -2.2, pw: 1.3, sf: 0.7, bo: -0.2 }), { t: 0.95, hitAt: 0.45, trail: arc(1.2, true, 0.3), sfxAt: 0.3 }),
+      V('Impale', thrust({ pull: 0.4, r0: 6, r1: 19, lg: 12, bl: -0.03 }), { t: 0.9, dmg: 1.15, reach: 1.2, hitAt: 0.55, trail: 'thrust', sfx: 'swingSpear', hit: 'hitPierce' }),
+      V('Great whirl', spin({ wf: 0.2, aw: -0.6, turns: 1, lb: 0.15 }), { t: 1.45, dmg: 1.4, cost: 1.5, back: true, hitAt: 0.35, rehit: [0.66], trail: { a0: -0.6, ccw: true, from: 0.22, spin: true }, sfx: 'swingWhirl', shake: 2 }),
+    ],
+  },
+  dagger: {
+    idle: 0.5, run: 0.35, twin: true, sfx: 'swingRapier', hit: 'hitSlash',
+    variants: [
+      V('Flurry', t => { const a = pulse(t / 0.5), b = t < 0.45 ? 0 : pulse((t - 0.45) / 0.55); return { ang: 0.02, r: 8 + 9 * a, blade: 0, lunge: 4 * Math.max(a, b), lean: 0.06 * Math.max(a, b), back: { ang: 0.05, r: t < 0.45 ? 9 : 8 + 9 * b, blade: 0.05 } }; },
+        { t: 0.9, dmg: 0.8, hitAt: 0.2, rehit: [0.55], trail: 'thrust', hit: 'hitPierce' }),
+      V('Cross slash', t => {
+        const wf = 0.25;
+        if (t < wf) { const x = easeInOut(t / wf); return { ang: lerp(REST, -1.3, x), r: 14, blade: lerp(REST - 0.3, -1.5, x), lean: -0.06 * x, back: { ang: lerp(0.6, 1.1, x), r: 13, blade: lerp(0.4, 1.0, x) } }; }
+        const x = (t - wf) / (1 - wf), e = easeOut(x), a = lerp(-1.3, 0.9, e), b = lerp(1.1, -0.9, e);
+        return { ang: a, r: 15, blade: a - 0.2, lunge: 4 * pulse(x), lean: 0.08 * pulse(x), back: { ang: b, r: 15, blade: b - 0.2 } };
+      }, { t: 1.1, dmg: 1.1, hitAt: 0.35, trail: arc(-1.4, false, 0.25) }),
+      V('Double stab', mirrored(thrust({ pull: 0.28, r0: 8, r1: 18, lg: 10, bl: 0 }), 0.3), { t: 0.95, dmg: 1.0, reach: 1.15, hitAt: 0.4, trail: 'thrust', hit: 'hitPierce' }),
+      V('Twirl', opposed(spin({ wf: 0.15, aw: -0.4, r: 15, bo: -0.2 })), { t: 1.35, dmg: 1.1, reach: 1.3, cost: 1.4, back: true, hitAt: 0.3, rehit: [0.62], trail: { a0: -0.4, ccw: true, from: 0.2, spin: true }, sfx: 'swingKatana' }),
+    ],
+  },
+  spear: {
+    idle: -0.5, run: -0.4, two: true, sfx: 'swingSpear', hit: 'hitPierce',
+    variants: [
+      V('Thrust', thrust({ pull: 0.3, r0: 7, r1: 19, bl: -0.03, lg: 9 }), { hitAt: 0.3, trail: 'thrust' }),
+      V('Double thrust', jabs({ n: 2, pull: 0.24, r0: 8, r1: 19, bl: -0.02 }), { t: 1.25, dmg: 0.75, hitAt: 0.3, rehit: [0.62], trail: 'thrust' }),
+      V('Rising thrust', thrust({ pull: 0.3, r0: 7, r1: 19, ang: -0.5, bl: -0.5, lg: 9, ls: 0.1 }), { t: 1.0, dmg: 1.05, hitAt: 0.32, trail: 'thrust' }),
+      V('Low thrust', thrust({ pull: 0.34, r0: 7, r1: 19, ang: 0.45, bl: 0.4, lg: 11, ls: 0.14 }), { t: 1.05, dmg: 1.1, reach: 1.1, hitAt: 0.36, trail: 'thrust' }),
+      V('Pole sweep', spin({ wf: 0.2, aw: 0.3, turns: 1, bo: 0, lb: 0.1 }), { t: 1.45, dmg: 1.1, cost: 1.4, back: true, hitAt: 0.3, rehit: [0.64], trail: { a0: 0.3, ccw: true, from: 0.22, spin: true }, sfx: 'swingWhirl' }),
+    ],
+  },
+  rapier: {
+    idle: 0.5, run: 0.3, sfx: 'swingRapier', hit: 'hitPierce',
+    variants: [
+      V('Lunge', thrust({ pull: 0.2, r0: 8, r1: 19, ang: 0, bl: -0.05, lg: 11, hold: 0.35 }), { hitAt: 0.3, trail: 'thrust' }),
+      V('Flick', strike({ wf: 0.2, aw: -0.9, ae: 0.5, bo: -0.1, lb: 0.05 }), { t: 0.75, dmg: 0.8, hitAt: 0.3, trail: arc(-1.0, false, 0.2), hit: 'hitSlash', sfx: 'swingKatana' }),
+      V('Riposte', t => {
+        if (t < 0.3) { const x = easeInOut(t / 0.3); return { ang: lerp(REST, -0.5, x), r: 14, blade: lerp(REST - 0.3, -1.25, x), lunge: -5 * x, lean: -0.1 * x }; }           // a step back with the point raised
+        const x = (t - 0.3) / 0.7, e = x < 0.35 ? easeOut(x / 0.35) : 1 - 0.7 * easeInOut((x - 0.35) / 0.65), k = easeOut(clamp01(x / 0.25));
+        return { ang: lerp(-0.5, 0.0, k), r: lerp(14, 19, e), blade: lerp(-1.25, -0.05, k), lunge: lerp(-5, 12, e), lean: 0.1 * e };
+      }, { t: 1.1, dmg: 1.2, reach: 1.2, hitAt: 0.45, trail: 'thrust' }),
+      V('Triple thrust', jabs({ n: 3, pull: 0.2, r0: 9, r1: 19, ang: 0, bl: -0.04, lg: 7 }), { t: 1.5, dmg: 0.6, hitAt: 0.28, rehit: [0.5, 0.75], trail: 'thrust' }),
+    ],
+  },
+  katana: {
+    idle: -0.85, run: -0.7, two: true, sfx: 'swingKatana', hit: 'hitSlash',
+    variants: [
+      V('Draw cut', t => { const ang = t < 0.28 ? lerp(0.6, -2.7, easeInOut(t / 0.28)) : -2.7 + 4.0 * (1 - Math.pow(1 - (t - 0.28) / 0.72, 4)); return { ang, r: 16, blade: ang - 0.12, lunge: 4 * pulse((t - 0.2) / 0.8), lean: 0.05 }; }, { hitAt: 0.3, trail: arc(-2.8, false, 0.28) }),
+      V('Rising cut', strike({ wf: 0.22, aw: 1.2, ae: -2.0, bo: -0.12, lb: 0.1 }), { t: 0.95, hitAt: 0.32, trail: arc(1.2, true, 0.22) }),
+      V('Horizontal cut', sweepBlade({ wf: 0.28, b0: -2.9, b1: -0.1, ang: 0.1, r0: 9, r1: 15, lg: 5 }), { t: 0.9, dmg: 1.05, hitAt: 0.4, trail: { about: 'hand', a0: -2.9, ccw: false, from: 0.28 } }),
+      V('Kesa cut', strike({ wf: 0.25, aw: -1.1, ae: 1.8, bo: -0.12, pw: 0, lb: 0.14, lg: 5 }), { t: 1.0, dmg: 1.1, hitAt: 0.35, trail: arc(-1.2, false, 0.25) }),
+      V('Tsuki', thrust({ pull: 0.34, r0: 8, r1: 19, ang: 0.0, bl: -0.04, lg: 12, hold: 0.4 }), { t: 1.0, dmg: 1.15, reach: 1.22, hitAt: 0.45, trail: 'thrust', hit: 'hitPierce', sfx: 'swingRapier' }),
+    ],
+  },
+  axe: {
+    idle: 0.9, run: 0.7, two: true, sfx: 'swingAxe', sfxAt: 0.45, hit: 'hitHeavy',
+    variants: [
+      V('Overhead chop', strike({ wf: 0.4, aw: -2.5, ae: 1.3, pw: 1.5, bo: -0.25, sf: 0.5, lg: 5, lw: -0.12, ls: 0.2 }), { hitAt: 0.6, trail: arc(-2.6, false, 0.4) }),
+      V('Side hew', strike({ wf: 0.38, aw: 2.7, ae: -0.1, bo: -0.2, pw: 1.2, sf: 0.7, lb: 0.14 }), { t: 1.0, dmg: 1.05, hitAt: 0.55, trail: arc(2.7, true, 0.38), sfx: 'swingScythe', sfxAt: 0.38 }),
+      V('Upward chop', strike({ wf: 0.33, aw: 1.2, ae: -2.3, pw: 1.2, bo: -0.2, sf: 0.65 }), { t: 0.95, dmg: 1.0, hitAt: 0.5, trail: arc(1.2, true, 0.33), sfxAt: 0.33 }),
+      V('Cyclone', spin({ wf: 0.2, aw: -0.6, turns: 1, lb: 0.14 }), { t: 1.5, dmg: 1.3, cost: 1.5, back: true, hitAt: 0.32, rehit: [0.66], trail: { a0: -0.6, ccw: true, from: 0.22, spin: true }, sfx: 'swingWhirl', shake: 2 }),
+    ],
+  },
+  hammer: {
+    idle: 1.1, run: 0.9, two: true, sfx: 'swingHammer', sfxAt: 0.68, hit: 'hitBlunt',
+    variants: [
+      V('Slam', strike({ wf: 0.5, aw: -2.6, ae: 1.45, pw: 1.5, bo: -0.1, sf: 0.6, lg: 4, lw: -0.18, ls: 0.26 }), { hitAt: 0.76, trail: arc(-2.7, false, 0.5) }),
+      V('Wide swing', strike({ wf: 0.45, aw: 2.7, ae: 0.2, bo: -0.1, pw: 1.4, sf: 0.65, lb: 0.16, lw: -0.1 }), { t: 1.0, dmg: 1.0, reach: 1.05, back: true, hitAt: 0.68, trail: arc(2.7, true, 0.45), sfx: 'swingScythe', sfxAt: 0.55 }),
+      V('Uppercut', strike({ wf: 0.4, aw: 1.3, ae: -2.4, pw: 1.3, bo: -0.15, sf: 0.65, lw: -0.08 }), { t: 0.95, dmg: 1.05, hitAt: 0.62, trail: arc(1.3, true, 0.4), sfxAt: 0.5 }),
+      V('Quake', strike({ wf: 0.55, aw: -2.8, ae: 1.5, pw: 1.7, bo: -0.1, sf: 0.55, lg: 14, lw: -0.22, ls: 0.3 }), { t: 1.45, dmg: 1.45, reach: 1.3, cost: 1.5, back: true, hitAt: 0.82, shake: 7, hit: 'quake', trail: arc(-2.9, false, 0.55), sfxAt: 0.72 }),
+    ],
+  },
+  scythe: {
+    idle: 0.5, run: 0.4, two: true, sfx: 'swingScythe', sfxAt: 0.3, hit: 'hitSlash',
+    variants: [
+      V('Low sweep', strike({ wf: 0.3, aw: 2.9, ae: 0.1, bo: -0.2, lb: 0.1, lw: -0.1, ls: 0.14 }), { hitAt: 0.42, trail: arc(2.9, true, 0.3) }),
+      V('Reap', strike({ wf: 0.3, aw: -2.6, ae: 1.2, bo: -0.25, pw: 1.1, sf: 0.8 }), { t: 1.0, dmg: 1.05, hitAt: 0.45, trail: arc(-2.7, false, 0.3) }),
+      V('Hook and drag', t => { const p = clamp01(t), r = p < 0.4 ? lerp(14, 19, easeOut(p / 0.4)) : lerp(19, 7, easeInOut((p - 0.4) / 0.6)); return { ang: 0.35, r, blade: lerp(-0.6, 0.5, easeInOut(p)), lunge: 5 * pulse(p * 1.6), lean: 0.06 }; },
+        { t: 1.05, dmg: 0.9, reach: 1.15, pull: true, hitAt: 0.35, trail: { about: 'hand', a0: -0.8, ccw: false, from: 0.3 } }),
+      V('Soul whirl', spin({ wf: 0.2, aw: 0.3, turns: 1, lb: 0.1 }), { t: 1.45, dmg: 1.25, cost: 1.5, back: true, hitAt: 0.3, rehit: [0.64], trail: { a0: 0.3, ccw: true, from: 0.22, spin: true }, shake: 1, sfx: 'swingWhirl' }),
+    ],
+  },
+  halberd: {
+    idle: -0.6, run: -0.5, two: true, sfx: 'swingAxe', sfxAt: 0.4, hit: 'hitHeavy',
+    variants: [
+      V('Sweep', strike({ wf: 0.35, aw: -2.5, ae: 1.0, bo: -0.2, lg: 6, lw: -0.08, ls: 0.16 }), { hitAt: 0.4, trail: arc(-2.6, false, 0.35) }),
+      V('Thrust', thrust({ pull: 0.34, r0: 7, r1: 19, lg: 8, bl: -0.03 }), { t: 0.95, dmg: 0.95, reach: 1.2, hitAt: 0.42, trail: 'thrust', hit: 'hitPierce', sfx: 'swingSpear', sfxAt: 0.34 }),
+      V('Overhead', strike({ wf: 0.4, aw: -2.4, ae: 1.2, pw: 1.4, bo: -0.1, sf: 0.6, lw: -0.1, ls: 0.16 }), { t: 1.1, dmg: 1.2, hitAt: 0.6, trail: arc(-2.5, false, 0.4), shake: 2 }),
+      V('Windmill', spin({ wf: 0.2, aw: 0.2, turns: 1, bo: -0.1, lb: 0.1 }), { t: 1.5, dmg: 1.2, cost: 1.5, back: true, hitAt: 0.32, rehit: [0.66], trail: { a0: 0.2, ccw: true, from: 0.22, spin: true }, sfx: 'swingWhirl' }),
+    ],
+  },
+  whip: {
+    idle: 1.1, run: 0.9, sfx: 'swingWhip', hit: 'hitWhip',
+    variants: [
+      V('Overhand crack', strike({ wf: 0.3, aw: -2.2, ae: 0.25, bo: -0.2 }), { hitAt: 0.34, aim: 0.05, cr: [0.45] }),
+      V('Sidearm lash', sweepBlade({ wf: 0.28, b0: -2.4, b1: -0.2, ang: 0.0, r0: 9, r1: 14, lg: 3 }), { t: 1.0, dmg: 1.0, hitAt: 0.36, aim: 0.0, cr: [0.5] }),
+      V('Downward snap', strike({ wf: 0.3, aw: -2.0, ae: 0.7, bo: -0.2, pw: 1.2 }), { t: 0.95, dmg: 1.1, hitAt: 0.38, aim: 0.9, cr: [0.5] }),
+      V('Double crack', t => {
+        const a = t < 0.18 ? lerp(REST, -1.5, easeInOut(t / 0.18)) : t < 0.42 ? lerp(-1.5, -0.1, easeOut((t - 0.18) / 0.24)) : t < 0.58 ? lerp(-0.1, -1.4, easeInOut((t - 0.42) / 0.16)) : lerp(-1.4, 0.0, easeOut((t - 0.58) / 0.3));
+        return { ang: a, r: 16, blade: a - 0.2, lean: 0.06 * pulse(t) };
+      }, { t: 1.45, dmg: 0.7, hitAt: 0.34, rehit: [0.56], aim: 0.0, cr: [0.4, 0.78] }),
+    ],
+  },
+  fist: {
+    idle: 0.2, run: 0.1, sfx: 'swingFist', hit: 'hitFist',
+    variants: [
+      V('Jab-cross', t => { const j = pulse(t / 0.5), b = t < 0.45 ? 0 : pulse((t - 0.45) / 0.55); return { ang: 0.0, r: 8 + 11 * j, blade: 0.0, lunge: 4 * Math.max(j, b), lean: 0.06 * Math.max(j, b), back: { ang: 0.0, r: t < 0.45 ? 9 : 8 + 11 * b, blade: 0 } }; },
+        { hitAt: 0.2, rehit: [0.58], trail: 'thrust' }),
+      V('Hook', withBack(strike({ wf: 0.3, aw: -1.7, ae: 0.25, r: 18, bo: 0, lb: 0.1 }), { ang: -0.3, r: 10, blade: 0 }), { t: 1.1, dmg: 1.15, hitAt: 0.4, trail: { about: 'sh', a0: -1.7, ccw: false, from: 0.3 } }),
+      V('Uppercut', withBack(strike({ wf: 0.3, aw: 1.2, ae: -1.1, r: 17, bo: 0, lb: 0.08, lg: 4 }), { ang: -0.2, r: 10, blade: 0 }), { t: 1.05, dmg: 1.2, hitAt: 0.4, trail: { about: 'sh', a0: 1.2, ccw: true, from: 0.3 }, sfx: 'swingHammer', sfxAt: 0.3, hit: 'hitBlunt' }),
+      V('Overhand', withBack(strike({ wf: 0.38, aw: -2.3, ae: 0.7, r: 20, bo: 0, pw: 1.3, lb: 0.14, lg: 5 }), { ang: 0.1, r: 9, blade: 0 }), { t: 1.25, dmg: 1.35, cost: 1.3, hitAt: 0.62, trail: { about: 'sh', a0: -2.3, ccw: false, from: 0.38 }, hit: 'hitBlunt', shake: 2 }),
+    ],
+  },
+};
+const weaponKind = sw => WEAPON_KINDS[sw && sw.kind] || WEAPON_KINDS.sword;
+const weaponVariant = (sw, i) => { const K = weaponKind(sw); return K.variants[(i | 0) % K.variants.length]; };
+
+// Full hero pose. o: { p: run phase, run, lean, breath, atk (0..1, or -1 when not attacking), tuck, kind: the weapon's kind }
+function poseStick(x0, y, f, o) {
+  const K = WEAPON_KINDS[o.kind] || WEAPON_KINDS.sword, Vr = o.atk >= 0 ? K.variants[(o.variant | 0) % K.variants.length] : null, sp = Vr ? Vr.swing(o.atk) : null;
+  const settle = sp ? easeInOut(clamp01((1 - o.atk) / 0.25)) : 1;        // the step and the lean ease back to the carried pose at the end of the swing
+  const x = x0 + (sp && sp.lunge ? sp.lunge * f * settle : 0);
+  const p = o.p || 0, br = o.breath || 0, lean = (o.lean || 0) + (sp && sp.lean ? sp.lean * settle : 0);
   // hips rise when a leg passes under the body and dip at each footfall
   const hipY = y - (o.run ? 23 - Math.abs(Math.cos(p)) * 2 : 25) + (o.tuck ? 6 : 0);
   const hip = { x, y: hipY };
@@ -1246,30 +1745,33 @@ function poseStick(x, y, f, o) {
   else feet = [{ x: x + f * 6, y }, { x: x - f * 5, y }];
   const legs = feet.map(ft => { const k = ik(hip.x, hip.y, ft.x, ft.y, 13.5, 13.5, -f); return [hip, k.j, k.e]; });
 
-  // back (free) arm swings opposite the front leg; elbows bow backwards
-  let bh;
-  if (o.tuck) bh = { x: sh.x + f * 9, y: sh.y + 9 };
-  else if (o.run) bh = { x: sh.x - f * 9 * Math.cos(p), y: sh.y + 13 - Math.abs(Math.sin(p)) * 2 };
-  else bh = { x: sh.x - f * 3, y: sh.y + 17 + br * 0.3 };
-  const back = ik(sh.x, sh.y, bh.x, bh.y, 9.5, 9.5, f);
-
-  // sword arm. ang is the hand's direction from the shoulder: 0 = straight ahead, negative = up.
+  // weapon arm. ang is the hand's direction from the shoulder: 0 = straight ahead, negative = up.
+  // The carried pose is worked out first; a swing blends in from it and back out to it, so nothing snaps when an attack starts or ends.
   let hand, blade;
-  if (o.atk >= 0) {
-    const t = o.atk;
-    const ang = t < 0.22 ? 0.6 + (-2.4 - 0.6) * (t / 0.22)              // quick wind-up over the shoulder
-                         : -2.4 + 3.4 * (1 - Math.pow(1 - (t - 0.22) / 0.78, 3));  // fast slash, eases out low
-    hand = { x: sh.x + f * Math.cos(ang) * 16, y: sh.y + Math.sin(ang) * 16 };
-    blade = ang - 0.3;
-  } else if (o.tuck) {
-    hand = { x: sh.x + f * 10, y: sh.y + 6 }; blade = -0.2;
-  } else {
+  if (o.tuck) { hand = { x: sh.x + f * 10, y: sh.y + 6 }; blade = -0.2; }
+  else {
     const sway = o.run ? Math.cos(p) * 3 : br * 0.3;
     hand = { x: sh.x + f * (8 + sway), y: sh.y + 15 };
-    blade = o.run ? 0.15 : 0.35;                                        // sword held low and forward
+    blade = o.run ? K.run : K.idle;                                     // carried low and forward
+  }
+  const w = sp ? Math.min(easeInOut(clamp01(o.atk / 0.14)), easeInOut(clamp01((1 - o.atk) / 0.2))) : 0;
+  if (sp) {
+    hand = { x: lerp(hand.x, sh.x + f * Math.cos(sp.ang) * sp.r, w), y: lerp(hand.y, sh.y + Math.sin(sp.ang) * sp.r, w) };
+    blade += wrapPI(sp.blade - blade) * w;                              // the short way round, so a spin never unwinds backwards at the end
   }
   const front = ik(sh.x, sh.y, hand.x, hand.y, 9.5, 9.5, f);
-  return { hip, neck, head, sh, legs, back, front, blade, f };
+
+  // back (free) arm swings opposite the front leg; elbows bow backwards. Two-handed weapons are gripped further down the shaft.
+  let bh;
+  if (K.two && !o.tuck) bh = { x: front.e.x - f * Math.cos(blade) * 9, y: front.e.y - Math.sin(blade) * 9 };
+  else if (o.tuck) bh = { x: sh.x + f * 9, y: sh.y + 9 };
+  else if (o.run) bh = { x: sh.x - f * 9 * Math.cos(p), y: sh.y + 13 - Math.abs(Math.sin(p)) * 2 };
+  else bh = { x: sh.x - f * 3, y: sh.y + 17 + br * 0.3 };
+  if (sp && sp.back) bh = { x: lerp(bh.x, sh.x + f * Math.cos(sp.back.ang) * sp.back.r, w), y: lerp(bh.y, sh.y + Math.sin(sp.back.ang) * sp.back.r, w) };
+  const back = ik(sh.x, sh.y, bh.x, bh.y, 9.5, 9.5, f);
+  let bblade = K.twin ? (o.run ? 0.35 : 0.5) : 0;                         // the second dagger
+  if (sp && sp.back && sp.back.blade !== undefined) bblade += wrapPI(sp.back.blade - bblade) * w;
+  return { hip, neck, head, sh, legs, back, front, blade, bblade, rawBlade: sp ? sp.blade : blade, v: Vr, f, atk: o.atk >= 0 ? o.atk : -1 };
 }
 function drawStickBody(J) {
   poly(J.sh, J.back.j, J.back.e);
@@ -1277,18 +1779,210 @@ function drawStickBody(J) {
   poly(J.hip, J.neck);
   poly(J.sh, J.front.j, J.front.e);
 }
+// How far the lash is out (ext 0.35..1), how straight it is (crack 0..1) and which way it points (ang), a of the way through the attack.
+function whipPose(J, a) {
+  const cr = (J.v && J.v.cr) || [0.45], aim = J.v && J.v.aim !== undefined ? J.v.aim : 0.05, up = cr.length > 1 ? 0.22 : 0.4;      // when the lash cracks, and where it points
+  let ext = 0.35, crack = 0;
+  if (a >= 0) for (const c of cr) { ext = Math.max(ext, 0.35 + 0.65 * (a < c - up ? 0 : a < c ? (a - (c - up)) / up : Math.max(0, 1 - (a - c) / 0.5))); crack = Math.max(crack, Math.max(0, 1 - Math.abs(a - c) / 0.11)); }
+  return { ext, crack, ang: lerp(J.blade, aim, crack) };
+}
+// Draws the weapon in the hero's hand (and the free hand for two-handed ones); returns where the tip is.
 function drawSword(J, sw, glow) {
-  const h = J.front.e, f = J.f;
+  const h = J.front.e, f = J.f, k = sw.kind || 'sword', L = sw.len;
   const dx = f * Math.cos(J.blade), dy = Math.sin(J.blade);
+  const nx = -dy * f, ny = dx * f;                                   // sideways, the same side whichever way the hero faces
+  const P = (s, o = 0) => ({ x: h.x + dx * s + nx * o, y: h.y + dy * s + ny * o });
+  const spr = weaponSprite(sw);
+  if (spr) {                                                         // the designed weapon (same art as its icon), held at the hand and turned along the swing
+    const g = spr.g;
+    const put = (hd, bl) => {                                         // draw the weapon at a hand, turned to angle bl; returns how long it is on screen
+      const th = Math.atan2(Math.cos(bl), -Math.sin(bl));
+      ctx.save();
+      if (glow) { ctx.shadowColor = sw.color; ctx.shadowBlur = 12; }
+      ctx.translate(hd.x, hd.y); ctx.scale(f, 1); ctx.rotate(th);
+      ctx.imageSmoothingQuality = 'high';
+      let len;
+      if (spr.blade) { ctx.scale(spr.s * spr.wk, spr.s); ctx.drawImage(spr.img, -g.hx, spr.minY - g.gy, 32, spr.H); len = spr.s * (g.gy - spr.tipY); }      // a sword: the stretch is in the picture, scaled evenly
+      else { len = L * g.lk; ctx.scale(g.sx, (len + 4) / (g.gy - g.ty)); ctx.drawImage(spr.img, -g.hx, -g.gy, 32, 32); }                       // long and slim: width and length scale separately
+      ctx.restore();
+      return len;
+    };
+    if (k === 'dagger') put(J.back.e, J.bblade);                      // twin daggers: one in each hand
+    const len = put(h, J.blade);
+    return { x: h.x + dx * len, y: h.y + dy * len };
+  }
+  const WOOD = '#8a6a3c', DARK = '#654';
+  const shaft = (a, b, col = WOOD, w = 3) => { ctx.strokeStyle = col; ctx.lineWidth = w; line(P(a).x, P(a).y, P(b).x, P(b).y); };
+  const fill = (pts, col = sw.color) => { ctx.fillStyle = col; ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.beginPath(); pts.forEach((p, i) => i ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y)); ctx.closePath(); ctx.fill(); ctx.stroke(); };
   ctx.save();
   if (glow) { ctx.shadowColor = sw.color; ctx.shadowBlur = 12; }
-  ctx.strokeStyle = sw.color; ctx.lineWidth = sw.id === 'great' ? 5 : 3;
-  line(h.x, h.y, h.x + dx * sw.len, h.y + dy * sw.len);
+  let tip = P(L);
+  switch (k) {
+    case 'spear':
+      shaft(-12, L - 10); fill([P(L - 12, -3.5), P(L + 7), P(L - 12, 3.5)]);
+      shaft(L - 12, L - 9, '#a33', 4); tip = P(L + 7); break;
+    case 'rapier': {
+      shaft(5, L, sw.color, 2);
+      ctx.strokeStyle = '#c9a227'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(P(2, -6).x, P(2, -6).y); ctx.quadraticCurveTo(P(8, 0).x, P(8, 0).y, P(2, 6).x, P(2, 6).y); ctx.stroke();
+      shaft(-5, 3, DARK); break;
+    }
+    case 'katana': {
+      const c = P(L * 0.55, -1.5), e = P(L, -5);
+      ctx.strokeStyle = sw.color; ctx.lineWidth = 2.6; ctx.beginPath(); ctx.moveTo(P(4).x, P(4).y); ctx.quadraticCurveTo(c.x, c.y, e.x, e.y); ctx.stroke();
+      ctx.fillStyle = '#c9a227'; ctx.beginPath(); ctx.arc(P(3).x, P(3).y, 3.2, 0, Math.PI * 2); ctx.fill();
+      shaft(-9, 2, '#222'); tip = e; break;
+    }
+    case 'axe':
+      shaft(-8, L); fill([P(L - 8, 0), P(L - 2, -13), P(L + 6, -10), P(L + 3, 0), P(L + 6, 10), P(L - 2, 13)]); break;
+    case 'hammer':
+      shaft(-8, L); fill([P(L - 7, -9), P(L + 7, -9), P(L + 7, 9), P(L - 7, 9)]); tip = P(L + 7); break;
+    case 'scythe': {
+      shaft(-10, L);
+      const a = P(L), b = P(L + 11, -15), c = P(L - 14, -22);
+      ctx.strokeStyle = sw.color; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.quadraticCurveTo(b.x, b.y, c.x, c.y); ctx.stroke();
+      ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(P(L - 2, -2).x, P(L - 2, -2).y); ctx.quadraticCurveTo(P(L + 6, -10).x, P(L + 6, -10).y, P(L - 12, -18).x, P(L - 12, -18).y); ctx.stroke();
+      tip = c; break;
+    }
+    case 'halberd':
+      shaft(-12, L - 8); fill([P(L - 10, -3), P(L + 8), P(L - 10, 3)]);
+      fill([P(L - 14, 1), P(L - 6, 13), P(L - 20, 11)]); fill([P(L - 16, -1), P(L - 11, -9), P(L - 20, -4)], '#778'); tip = P(L + 8); break;
+    case 'whip': {
+      const a = J.atk, tw = tAnim;
+      const { ext, crack, ang } = whipPose(J, a);
+      const ddx = f * Math.cos(ang), ddy = Math.sin(ang), amp = (a < 0 ? 2.5 : 7) * (1 - crack * 0.85);
+      shaft(-5, 6, DARK, 4);
+      ctx.strokeStyle = sw.color; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(h.x, h.y);
+      let q = h;
+      for (let i = 1; i <= 12; i++) {
+        const s = i / 12, w = Math.sin(s * 8 - tw * (a < 0 ? 3 : 14)) * amp * s;
+        q = { x: h.x + ddx * L * ext * s - ddy * f * w, y: h.y + ddy * L * ext * s + ddx * f * w };
+        ctx.lineTo(q.x, q.y);
+      }
+      ctx.stroke();
+      if (crack > 0.6) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2); ctx.fill(); }   // the snap
+      tip = q; break;
+    }
+    case 'fist':
+      for (const hd of [J.front.e, J.back.e]) { ctx.fillStyle = sw.color; ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(hd.x + f * 1.5, hd.y, 5.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+      tip = { x: h.x + f * 5, y: h.y }; break;
+    default:                                                          // sword
+      ctx.strokeStyle = sw.color; ctx.lineWidth = sw.id === 'great' ? 5 : 3;
+      line(h.x, h.y, h.x + dx * L, h.y + dy * L);
+      ctx.restore(); ctx.save();
+      ctx.strokeStyle = DARK; ctx.lineWidth = 3;                      // crossguard + pommel
+      line(h.x - dy * 5, h.y + dx * 5, h.x + dy * 5, h.y - dx * 5);
+      line(h.x, h.y, h.x - dx * 4, h.y - dy * 4);
+  }
   ctx.restore();
-  ctx.strokeStyle = '#654'; ctx.lineWidth = 3;                   // crossguard + pommel
-  line(h.x - dy * 5, h.y + dx * 5, h.x + dy * 5, h.y - dx * 5);
-  line(h.x, h.y, h.x - dx * 4, h.y - dy * 4);
-  return { x: h.x + dx * sw.len, y: h.y + dy * sw.len };
+  return tip;
+}
+
+// --- Armor on the hero: drawn on the body itself (it follows the spine, the arms bend inside the sleeves), in the colours of its icon ---
+const ARMOR_LOOK = [
+  { kind: 'rags',   main: '#8f7f6c', dark: '#5a4d3f', trim: '#5a4630' },
+  { kind: 'jerkin', main: '#b99358', dark: '#6b4a22', trim: '#ecdcae' },
+  { kind: 'vest',   main: '#7e5230', dark: '#3f2a17', trim: '#dcae70', under: '#cdbea0', sleeve: '#cdbea0' },
+  { kind: 'chain',  main: '#a5b1c0', dark: '#4d5a6b', trim: '#6f7886' },
+  { kind: 'scale',  main: '#4f8f78', dark: '#2f5f4e', trim: '#6fbb9b' },
+  { kind: 'plate',  main: '#bcc6d3', dark: '#7a8798', trim: '#e8eef6', gold: '#e0bd55', pauldron: true },
+  { kind: 'dragon', main: '#7a2a2e', dark: '#3a1214', trim: '#a6403f', bone: '#e3d6ae' },
+  { kind: 'aegis',  main: '#3b62ad', dark: '#2f4f90', trim: '#f3d56e', gold: '#e0bd55', pauldron: true },
+];
+const SECRET_LOOK = { kind: 'shroud', main: '#2c2252', dark: '#0c0a1b', trim: '#6c5aba', glow: '#43f2da' };
+const armorLook = h => { const it = h.equip && h.equip.armor; return it ? (it.rarity === 7 ? SECRET_LOOK : ARMOR_LOOK[armorIndex(it)]) : null; };
+const ARMOR_INK = '#17171f';
+// the torso's frame: origin at the hip, up along the spine; wt = half width at the shoulders, wh = at the hips
+function torsoFrame(J) {
+  const dx = J.neck.x - J.hip.x, dy = J.neck.y - J.hip.y;
+  return { L: Math.hypot(dx, dy) || 1, ang: Math.atan2(dx, -dy), wt: 8.2, wh: 6.4 };
+}
+// sleeves cover the upper arm (shoulder to elbow); the forearm and hand stay bare
+function armorSleeve(look, a, b) {
+  ctx.save(); ctx.lineCap = 'round';
+  ctx.strokeStyle = ARMOR_INK; ctx.lineWidth = 8.6; line(a.x, a.y, b.x, b.y);
+  ctx.strokeStyle = look.sleeve || look.main; ctx.lineWidth = 6.4; line(a.x, a.y, b.x, b.y);
+  if (look.kind === 'plate' || look.kind === 'aegis') {                  // a gold band on the sleeve
+    ctx.strokeStyle = look.gold; ctx.lineWidth = 1.2; ctx.translate(a.x + (b.x - a.x) * 0.62, a.y + (b.y - a.y) * 0.62); ctx.rotate(Math.atan2(b.y - a.y, b.x - a.x) + Math.PI / 2); line(-3.2, 0, 3.2, 0);
+  }
+  ctx.restore();
+}
+function drawCloak(J, look) {
+  const { L, ang } = torsoFrame(J), top = -L + 2, sway = Math.sin(tAnim * 2.1) * 1.5;
+  ctx.save(); ctx.translate(J.hip.x, J.hip.y); ctx.rotate(ang); ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(-5, top); ctx.quadraticCurveTo(-13 + sway, top + L * 0.55, -14 + sway, 21); ctx.lineTo(-7, 18 + sway * 0.4); ctx.lineTo(0, 22); ctx.lineTo(7, 18 - sway * 0.4); ctx.lineTo(14 + sway, 21); ctx.quadraticCurveTo(13 + sway, top + L * 0.55, 5, top); ctx.closePath();
+  ctx.fillStyle = look.dark; ctx.fill(); ctx.strokeStyle = look.trim; ctx.lineWidth = 1.4; ctx.stroke();
+  ctx.restore();
+}
+function drawArmor(J, look) {
+  const { L, ang, wt, wh } = torsoFrame(J), top = -L + 1.5, hem = look.kind === 'rags' ? 9 : 7;
+  ctx.save(); ctx.translate(J.hip.x, J.hip.y); ctx.rotate(ang); ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+  // the garment: neckline, shoulders, a waist that narrows, a short skirt over the hips
+  const body = () => {
+    ctx.beginPath(); ctx.moveTo(-wt, top + 1); ctx.lineTo(-3.2, top); ctx.quadraticCurveTo(0, top + 5.5, 3.2, top); ctx.lineTo(wt, top + 1);
+    ctx.quadraticCurveTo(wt - 1.6, -L * 0.45, wh, -1.5); ctx.lineTo(wh + 1.6, 2);
+    if (look.kind === 'rags') { for (let i = 0; i < 6; i++) ctx.lineTo(wh + 1.6 - (i + 1) * ((wh + 1.6) * 2 / 6), i % 2 ? hem - 3 : hem); }
+    else { ctx.lineTo(wh + 1.8, hem); ctx.lineTo(-wh - 1.8, hem); }
+    ctx.lineTo(-wh - 1.6, 2); ctx.lineTo(-wh, -1.5); ctx.quadraticCurveTo(-wt + 1.6, -L * 0.45, -wt, top + 1); ctx.closePath();
+  };
+  body(); ctx.fillStyle = look.main; ctx.fill();
+  ctx.save(); body(); ctx.clip();
+  const rows = (step, fn) => { for (let y = top + 4, r = 0; y < hem + 1; y += step, r++) for (let x = -wt - 2 + (r % 2) * step / 2; x < wt + 2; x += step) fn(x, y); };
+  switch (look.kind) {
+    case 'rags': ctx.fillStyle = '#6f8c5c'; ctx.fillRect(-2, -L * 0.55, 5, 4.2); ctx.strokeStyle = '#d8d0bc'; ctx.lineWidth = 0.6; ctx.setLineDash([1, 0.8]); ctx.strokeRect(-2, -L * 0.55, 5, 4.2); ctx.setLineDash([]); break;
+    case 'jerkin':
+      ctx.strokeStyle = look.dark; ctx.lineWidth = 0.9; line(0, top + 4, 0, hem);
+      ctx.strokeStyle = look.trim; ctx.lineWidth = 0.9; for (let y = top + 5; y < -4; y += 4) { line(-2.2, y, 2.2, y + 2.6); line(2.2, y, -2.2, y + 2.6); }
+      break;
+    case 'vest':
+      ctx.fillStyle = look.under; ctx.beginPath(); ctx.moveTo(-3.4, top + 1); ctx.lineTo(0, top + 9); ctx.lineTo(3.4, top + 1); ctx.lineTo(3.4, hem); ctx.lineTo(-3.4, hem); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = look.trim; ctx.lineWidth = 0.7; ctx.setLineDash([1.2, 1.1]); line(-5.4, top + 8, -5.4, -2); line(5.4, top + 8, 5.4, -2); ctx.setLineDash([]);
+      break;
+    case 'chain': ctx.strokeStyle = look.dark; ctx.lineWidth = 0.55; rows(3, (x, y) => { ctx.beginPath(); ctx.arc(x, y, 1.15, 0, 7); ctx.stroke(); }); break;
+    case 'scale': ctx.fillStyle = look.trim; ctx.strokeStyle = look.dark; ctx.lineWidth = 0.5; rows(3.2, (x, y) => { ctx.beginPath(); ctx.arc(x, y, 2.1, 0, Math.PI); ctx.fill(); ctx.stroke(); }); break;
+    case 'plate':
+      ctx.fillStyle = look.trim; ctx.beginPath(); ctx.moveTo(-wt + 1.4, top + 2.6); ctx.quadraticCurveTo(0, top + 8, wt - 1.4, top + 2.6); ctx.lineTo(wh - 0.6, -L * 0.3); ctx.quadraticCurveTo(0, -L * 0.18, -wh + 0.6, -L * 0.3); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = look.dark; ctx.lineWidth = 0.9; line(0, top + 6, 0, hem); ctx.strokeStyle = look.gold; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.moveTo(-wt + 1, top + 1.4); ctx.quadraticCurveTo(0, top + 7, wt - 1, top + 1.4); ctx.stroke();
+      ctx.strokeStyle = look.dark; ctx.lineWidth = 0.7; line(-wh - 2, 3.4, wh + 2, 3.4);
+      break;
+    case 'dragon':
+      ctx.fillStyle = look.trim; ctx.strokeStyle = look.dark; ctx.lineWidth = 0.45; rows(3, (x, y) => { ctx.beginPath(); ctx.arc(x, y, 1.9, 0, Math.PI); ctx.fill(); ctx.stroke(); });
+      ctx.fillStyle = '#c24c4a'; ctx.beginPath(); ctx.moveTo(-wt + 1.6, top + 2.6); ctx.quadraticCurveTo(0, top + 8, wt - 1.6, top + 2.6); ctx.lineTo(wh - 1, -L * 0.3); ctx.quadraticCurveTo(0, -L * 0.2, -wh + 1, -L * 0.3); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = look.dark; ctx.lineWidth = 0.8; ctx.stroke();
+      break;
+    case 'aegis':
+      ctx.fillStyle = look.dark; ctx.beginPath(); ctx.moveTo(0, top + 2); ctx.lineTo(7, top + 4.2); ctx.lineTo(7, -L * 0.45); ctx.quadraticCurveTo(7, -L * 0.1, 0, 0); ctx.quadraticCurveTo(-7, -L * 0.1, -7, -L * 0.45); ctx.lineTo(-7, top + 4.2); ctx.closePath(); ctx.fill();
+      ctx.strokeStyle = look.gold; ctx.lineWidth = 1.3; ctx.stroke();
+      ctx.fillStyle = look.trim; ctx.beginPath(); for (let i = 0; i < 10; i++) { const r = i % 2 ? 1.6 : 3.8, a = -Math.PI / 2 + i * Math.PI / 5; ctx.lineTo(Math.cos(a) * r, -L * 0.5 + Math.sin(a) * r); } ctx.closePath(); ctx.fill();
+      break;
+    case 'shroud':
+      ctx.strokeStyle = look.trim; ctx.lineWidth = 0.8; line(0, top + 5, 0, hem);
+      ctx.fillStyle = look.glow; ctx.beginPath(); ctx.ellipse(0, -L * 0.48, 2.4, 1.3, 0, 0, 7); ctx.fill(); ctx.fillStyle = look.dark; ctx.beginPath(); ctx.arc(0, -L * 0.48, 0.7, 0, 7); ctx.fill();
+      break;
+  }
+  ctx.restore();
+  // belt, then the outline of the garment, then what sits on the shoulders
+  if (look.kind === 'plate' || look.kind === 'aegis') { ctx.strokeStyle = look.gold; ctx.lineWidth = 1.5; line(-wh - 0.4, -2.2, wh + 0.4, -2.2); }
+  else if (look.kind !== 'shroud') { ctx.strokeStyle = look.kind === 'rags' ? look.trim : look.dark; ctx.lineWidth = look.kind === 'rags' ? 1.7 : 2.3; line(-wh - 0.4, -2.2, wh + 0.4, -2.2); }
+  if (look.kind === 'vest') { ctx.fillStyle = '#e0bd55'; ctx.fillRect(-1.6, -3.7, 3.2, 3); }
+  body(); ctx.strokeStyle = ARMOR_INK; ctx.lineWidth = 1.5; ctx.stroke();
+  if (look.pauldron) for (const sx of [-1, 1]) { ctx.beginPath(); ctx.arc(sx * (wt - 0.6), top + 2.2, 4.3, 0, 7); ctx.fillStyle = look.kind === 'aegis' ? look.dark : look.trim; ctx.fill(); ctx.strokeStyle = look.gold; ctx.lineWidth = 1.2; ctx.stroke(); }
+  if (look.kind === 'dragon') for (const sx of [-1, 1]) { ctx.beginPath(); ctx.moveTo(sx * (wt - 1), top + 1.4); ctx.lineTo(sx * (wt + 3.4), top - 4.6); ctx.lineTo(sx * (wt - 3.2), top + 3.4); ctx.closePath(); ctx.fillStyle = look.bone; ctx.fill(); ctx.strokeStyle = ARMOR_INK; ctx.lineWidth = 1; ctx.stroke(); }
+  if (look.kind === 'shroud') { ctx.fillStyle = look.glow; ctx.beginPath(); ctx.arc(0, top + 1.4, 1.4, 0, 7); ctx.fill(); }
+  ctx.restore();
+}
+
+// the katana's scabbard hangs from the belt on the back hip (the katana itself is in the hand)
+function drawScabbard(J, f) {
+  const { ang } = torsoFrame(J);
+  ctx.save(); ctx.translate(J.hip.x, J.hip.y); ctx.rotate(ang); ctx.lineCap = 'round';
+  const ax = f * 2.5, ay = -2.6, bx = -f * 24, by = 9;                                       // the mouth at the belt, the tip behind and below
+  ctx.strokeStyle = ARMOR_INK; ctx.lineWidth = 5.6; line(ax, ay, bx, by);
+  ctx.strokeStyle = '#2a2a38'; ctx.lineWidth = 3.8; line(ax, ay, bx, by);
+  ctx.strokeStyle = 'rgba(255,255,255,.35)'; ctx.lineWidth = 0.8; line(ax - f * 0.5, ay - 1, bx + f * 2, by - 1);
+  const t = (u, w, col) => { ctx.strokeStyle = col; ctx.lineWidth = w; line(ax + (bx - ax) * u, ay + (by - ay) * u, ax + (bx - ax) * (u + 0.06), ay + (by - ay) * (u + 0.06)); };
+  t(0.02, 4.2, '#aab3bf'); t(0.94, 4.2, '#aab3bf'); t(0.38, 4.4, '#0d0d12');             // the silver mouth and tip, the cord's knot
+  ctx.strokeStyle = '#0d0d12'; ctx.lineWidth = 1.3; ctx.beginPath(); ctx.moveTo(ax + (bx - ax) * 0.4, ay + (by - ay) * 0.4); ctx.quadraticCurveTo(ax + (bx - ax) * 0.3, ay + 8, ax + (bx - ax) * 0.18, ay + 6); ctx.stroke();
+  ctx.restore();
 }
 
 function drawHero(h) {
@@ -1323,8 +2017,8 @@ function drawHero(h) {
   const run = h.moving && !flipping && !h.dead;
   const breath = run ? 0 : Math.sin(tAnim * 2.6) * 1.2;
   const atk = h.attackT > 0 ? 1 - h.attackT / h.attackDur : -1;
-  const lean = (run ? 0.16 : 0.02) + (atk >= 0 ? Math.sin(atk * Math.PI) * 0.18 : 0) - (h.hurtT > 0.6 ? 0.25 : 0);
-  const J = poseStick(x, y, f, { p: h.walkT, run, lean, breath, atk, tuck: flipping });
+  const lean = (run ? 0.16 : 0.02) + 0 - (h.hurtT > 0.6 ? 0.25 : 0);   // the other kinds lean as their own swing says
+  const J = poseStick(x, y, f, { p: h.walkT, run, lean, breath, atk, tuck: flipping, kind: sw.kind, variant: h.attackVar | 0 });
   const ink = h.dead ? '#444' : '#111';
 
   // scarf trails from the neck (rope simulated in updateHero)
@@ -1337,7 +2031,16 @@ function drawHero(h) {
   }
 
   ctx.strokeStyle = ink; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  drawStickBody(J);
+  const look = armorLook(h);
+  if (look && look.kind === 'shroud') drawCloak(J, look);                                   // the cloak hangs behind the body
+  poly(J.sh, J.back.j, J.back.e);
+  if (look) armorSleeve(look, J.sh, J.back.j);
+  if (sw.id === 'katana') drawScabbard(J, f);
+  for (const l of J.legs) poly(...l);
+  poly(J.hip, J.neck);
+  if (look) drawArmor(J, look);
+  poly(J.sh, J.front.j, J.front.e);
+  if (look) armorSleeve(look, J.sh, J.front.j);
   const tip = drawSword(J, sw, gfx.glow && (sw.burn || sw.slow));
   if (gfx.glow && atk < 0 && Math.sin(tAnim * 1.3) > 0.97) {   // occasional glint
     ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(tip.x, tip.y, 2.5, 0, Math.PI * 2); ctx.fill();
@@ -1354,13 +2057,21 @@ function drawHero(h) {
   else { ctx.beginPath(); ctx.arc(hx + f * 4, hy - 2, 1.8, 0, Math.PI * 2); ctx.fill(); }
 
   // slash trail follows the blade's actual arc
-  if (atk > 0.22 && gfx.trail) {
-    const r = 16 + sw.len * 0.85, a0 = -2.4 - 0.3, a1 = J.blade;
+  const TR = J.v && J.v.trail;
+  if (TR === 'thrust') {                                    // a streak behind the point of a thrust or punch
+    if (atk > 0.28 && atk < 0.85 && gfx.trail) {
+      const a = tip, back = sw.kind === 'fist' ? 14 : 26;
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.globalAlpha *= 0.55 * (1 - (atk - 0.28) / 0.57); ctx.lineWidth = 3;
+      line(a.x, a.y, a.x - f * Math.cos(J.blade) * back, a.y - Math.sin(J.blade) * back);
+    }
+  } else if (TR && atk > TR.from && gfx.trail) {
+    const about = TR.about === 'hand' ? J.front.e : J.sh, r = TR.about === 'hand' ? Math.max(14, sw.len * 0.9) : TR.about === 'sh' ? 17 : 16 + sw.len * 0.85;
+    const a0 = TR.a0, a1 = TR.spin ? J.rawBlade : J.blade;            // a spin keeps counting past a full turn
     ctx.strokeStyle = sw.burn || sw.slow ? sw.color : 'rgba(255,255,255,0.8)';
-    ctx.globalAlpha *= 0.5 * (1 - (atk - 0.22) / 0.78 * 0.6); ctx.lineWidth = 4;
+    ctx.globalAlpha *= 0.5 * (1 - (atk - TR.from) / (1 - TR.from) * (TR.spin ? 0.3 : 0.6)); ctx.lineWidth = 4;
     ctx.beginPath();
-    if (f > 0) ctx.arc(J.sh.x, J.sh.y, r, a0, a1, false);
-    else ctx.arc(J.sh.x, J.sh.y, r, Math.PI - a0, Math.PI - a1, true);
+    if (f > 0) ctx.arc(about.x, about.y, r, a0, a1, TR.ccw);
+    else ctx.arc(about.x, about.y, r, Math.PI - a0, Math.PI - a1, !TR.ccw);
     ctx.stroke();
   }
   ctx.restore();
@@ -1375,8 +2086,8 @@ function drawHpBar(m, yOff) {
   if (m.dieT !== undefined || m.type === 'boss') return;
   ctx.fillStyle = '#300'; ctx.fillRect(m.x - 20, m.y - yOff, 40, 5);
   ctx.fillStyle = '#e33'; ctx.fillRect(m.x - 20, m.y - yOff, 40 * Math.max(0, m.hp) / m.maxHp, 5);
-  if (m.burnT > 0) { ctx.fillStyle = '#f73'; ctx.fillRect(m.x + 22, m.y - yOff, 5, 5); }
-  if (m.slowT > 0) { ctx.fillStyle = '#6cf'; ctx.fillRect(m.x + 22, m.y - yOff + (m.burnT > 0 ? 6 : 0), 5, 5); }
+  const dots = []; if (m.burnT > 0 || (m.wfx && m.wfx.fire)) dots.push('#f73'); if (m.slowT > 0) dots.push('#6cf'); if (m.wfx && m.wfx.poison) dots.push('#6fe36f'); if (m.wfx && m.wfx.bleed) dots.push('#e0405a'); if (m.stunT > 0) dots.push('#fff06a');
+  dots.forEach((c, i) => { ctx.fillStyle = c; ctx.fillRect(m.x + 22 + (i % 2) * 6, m.y - yOff + Math.floor(i / 2) * 6, 5, 5); });
 }
 
 function drawMinotaur(m, scale = 1, skin = '#6b3e26', crown = false) {
@@ -1385,12 +2096,12 @@ function drawMinotaur(m, scale = 1, skin = '#6b3e26', crown = false) {
   ctx.save();
   const breathe = 1 + Math.sin(tAnim * 3 + x) * 0.02;
   ctx.translate(x, y); ctx.scale(scale, scale * breathe); ctx.translate(-x, -y);
-  const swing = Math.sin(m.walkT) * 0.5;
-  const winding = m.state === 'windup' || m.state === 'slamWind' || m.state === 'smashWind';
-  const shake = winding ? Math.sin(performance.now() / 20) * 2 : 0;
+  const swing = Math.sin(m.walkT) * 0.5, sp = swingPos(m), club = m.type === 'ogre', an = m.type === 'boss' ? m.lastAtk : null;
+  const winding = sp < -0.2 && (m.state !== 'walk' || !!m.mel);
+  const shake = winding ? Math.sin(performance.now() / 20) * 2 * -sp : 0;
   const bx = x + shake;
-  const lean = m.state === 'charge' ? f * 10 : 0;
-  const lift = m.state === 'slamWind' || m.state === 'smashWind' ? -14 : 0;
+  const lean = m.state === 'charge' ? f * 10 : f * sp * (club ? 6 : an === 'sweep' ? 14 : 10);
+  const lift = sp < 0 ? sp * 14 : sp * 6;
 
   const body = statusTint(m, skin);
   ctx.lineCap = 'round';
@@ -1404,9 +2115,13 @@ function drawMinotaur(m, scale = 1, skin = '#6b3e26', crown = false) {
   ctx.fillStyle = 'rgba(0,0,0,0.15)';                         // belly shading
   ctx.beginPath(); ctx.ellipse(bx + lean * 0.5 - f * 5, y - 40, 8, 14, 0, 0, Math.PI * 2); ctx.fill();
   ctx.strokeStyle = body; ctx.lineWidth = 6;
-  line(bx + lean * 0.5 - 12, y - 56, bx - 20 - swing * 6, y - 34 + lift * 3);
-  line(bx + lean * 0.5 + 12, y - 56, bx + 20 + swing * 6, y - 34 + lift * 3);
-  const hx = bx + lean + f * 6, hy = y - 72;
+  const sx = bx + lean * 0.5;
+  const arm = side => {                                       // side: -1 left, +1 right of the body
+    if (club && side === f) return;                           // the club arm is drawn below
+    line(sx + side * 12, y - 56, sx + side * (20 + swing * side * 6) + (side === f ? f * Math.max(0, sp) * 12 : 0), y - 34 + lift * 3);
+  };
+  arm(-1); arm(1);
+  const hx = bx + lean + f * 6 + (club ? 0 : f * Math.max(0, sp) * 8), hy = y - 72 + (club ? 0 : Math.max(0, sp) * 8 - Math.max(0, -sp) * 4);
   ctx.fillStyle = body;
   ctx.beginPath(); ctx.ellipse(hx, hy, 12, 10, 0, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#c9a36b';
@@ -1422,7 +2137,19 @@ function drawMinotaur(m, scale = 1, skin = '#6b3e26', crown = false) {
     ctx.lineTo(hx + 4, hy - 14); ctx.lineTo(hx + 9, hy - 20); ctx.lineTo(hx + 9, hy - 9); ctx.closePath(); ctx.fill();
     ctx.fillStyle = '#e22'; ctx.beginPath(); ctx.arc(hx, hy - 13, 1.6, 0, Math.PI * 2); ctx.fill();
   }
-  ctx.fillStyle = m.state !== 'walk' ? '#f00' : '#000';
+  if (club) {                                                 // a knotted club: raised behind the head, then brought down
+    const rising = !(m.mel && m.mel.ph === 'rec'), th = sp < 0 ? 2.2 + 2.6 * sp : rising ? -0.4 + (sp + 1) / 2 * 2.9 : 2.2 + sp * 0.3;
+    const hox = sx + f * 12 + f * (sp < 0 ? 8 + 6 * sp : 8 + 22 * sp), hoy = y - 56 + (sp < 0 ? 22 + sp * 52 : 22 + sp * 6);
+    ctx.strokeStyle = body; ctx.lineWidth = 6; line(sx + f * 12, y - 56, hox, hoy);
+    const tx = hox + f * Math.sin(th) * 34, ty = hoy - Math.cos(th) * 34;
+    ctx.strokeStyle = '#5a3a1e'; ctx.lineWidth = 5; line(hox, hoy, tx, ty);
+    ctx.strokeStyle = '#7a5230'; ctx.lineWidth = 9; line(hox + (tx - hox) * 0.55, hoy + (ty - hoy) * 0.55, tx, ty);
+    ctx.fillStyle = '#c9c0a8'; ctx.beginPath(); ctx.arc(tx - f * 2, ty - 3, 1.6, 0, Math.PI * 2); ctx.arc(tx + f * 3, ty + 2, 1.4, 0, Math.PI * 2); ctx.fill();
+    if (sp > 0.2 && m.mel && m.mel.ph === 'strike') { ctx.strokeStyle = `rgba(255,255,255,${0.5 * sp})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(sx + f * 12, y - 56, 36, f > 0 ? -1.2 : Math.PI - 1.2, f > 0 ? 1.2 : Math.PI + 1.2); ctx.stroke(); }
+  } else if (sp > 0.25 && (m.mel && m.mel.ph === 'strike' || an === 'sweep')) {          // the horns cut an arc
+    ctx.strokeStyle = `rgba(255,240,220,${0.6 * sp})`; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(hx, hy + 4, 22, f > 0 ? -0.9 : Math.PI - 0.9, f > 0 ? 0.9 : Math.PI + 0.9); ctx.stroke();
+  }
+  ctx.fillStyle = winding || (m.state !== 'walk' && m.state !== 'atk') ? '#f00' : '#000';
   ctx.beginPath(); ctx.arc(hx + f * 3, hy - 3, 2.2, 0, Math.PI * 2); ctx.fill();
   if (winding) {
     if (gfx.glow) {
@@ -1438,20 +2165,27 @@ function drawMinotaur(m, scale = 1, skin = '#6b3e26', crown = false) {
 function drawGoblin(m) {
   const { x, y, facing: f } = m;
   drawShadow(x, y, 10);
-  const ph = m.walkT, c = statusTint(m, '#3d8b3d');
+  const sp = swingPos(m), striking = m.mel && m.mel.ph === 'strike', ph = m.walkT, c = statusTint(m, '#3d8b3d');
+  const crouch = sp < 0 ? -sp * 5 : 0, lean = f * (sp < 0 ? sp * 4 : sp * 9), bx = x + lean * 0.4;
   ctx.strokeStyle = c; ctx.lineWidth = 3; ctx.lineCap = 'round';
-  drawLegs(x, y - 16 + Math.abs(Math.cos(ph)) * 1.5, y, f, ph, true, 8.5);
+  drawLegs(x, y - 16 + Math.abs(Math.cos(ph)) * 1.5 + crouch * 0.6, y, f, ph, true, 8.5);
   const bob = Math.abs(Math.sin(ph)) * 2;
-  line(x, y - 16, x + f * 3, y - 31 - bob);
-  line(x + f * 2, y - 27 - bob, x + f * 11, y - 21 + Math.sin(ph) * 4);
-  ctx.strokeStyle = '#999'; line(x + f * 11, y - 21 + Math.sin(ph) * 4, x + f * 19, y - 29 + Math.sin(ph) * 4); // dagger
+  line(x, y - 16 + crouch * 0.6, bx + f * 3, y - 31 - bob + crouch);
+  const sx = bx + f * 2, sy = y - 27 - bob + crouch, mix = (a, b, t) => a + (b - a) * t;
+  const rest = { x: x + f * 11, y: y - 21 + Math.sin(ph) * 4, tx: f * 8, ty: -8 };       // the dagger hand at rest, cocked overhead, and thrust out
+  const back = { x: bx - f * 3, y: y - 46 + crouch, tx: -f * 2, ty: -13 }, out = { x: bx + f * 21, y: y - 28 + crouch, tx: f * 13, ty: -1 };
+  const A = striking ? back : rest, B = sp < 0 ? back : out, t = sp < 0 ? -sp : striking ? (sp + 1) / 2 : sp;      // a strike goes from cocked to thrust; everything else leaves from rest
+  const hand = { x: mix(A.x, B.x, t), y: mix(A.y, B.y, t), tx: mix(A.tx, B.tx, t), ty: mix(A.ty, B.ty, t) };
+  line(sx, sy, hand.x, hand.y);
+  ctx.strokeStyle = '#999'; line(hand.x, hand.y, hand.x + hand.tx, hand.y + hand.ty);     // dagger
+  if (striking && t > 0.15) { ctx.strokeStyle = `rgba(255,255,255,${0.7 * (1 - t)})`; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(back.x + back.tx, back.y + back.ty); ctx.quadraticCurveTo(bx + f * 6, y - 52, hand.x + hand.tx, hand.y + hand.ty); ctx.stroke(); }
   ctx.fillStyle = c;
-  const hx = x + f * 3, hy = y - 38 - bob, ear = Math.sin(tAnim * 8 + x) * 2;
+  const hx = bx + f * 3, hy = y - 38 - bob + crouch, ear = Math.sin(tAnim * 8 + x) * 2 + (sp < 0 ? sp * 5 : 0);
   ctx.beginPath(); ctx.arc(hx, hy, 8, 0, Math.PI * 2); ctx.fill();
   ctx.beginPath(); ctx.moveTo(hx - 6, hy - 3); ctx.lineTo(hx - 17, hy - 9 + ear); ctx.lineTo(hx - 5, hy + 2); ctx.fill();
   ctx.beginPath(); ctx.moveTo(hx + 6, hy - 3); ctx.lineTo(hx + 17, hy - 9 - ear); ctx.lineTo(hx + 5, hy + 2); ctx.fill();
-  ctx.fillStyle = '#ff0'; ctx.beginPath(); ctx.arc(hx + f * 3, hy - 1, 1.8, 0, Math.PI * 2); ctx.fill();
-  ctx.fillStyle = '#fff'; ctx.fillRect(hx + f * 2, hy + 3, f * 4, 1.5);   // teeth
+  ctx.fillStyle = sp < -0.2 ? '#f33' : '#ff0'; ctx.beginPath(); ctx.arc(hx + f * 3, hy - 1, 1.8, 0, Math.PI * 2); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.fillRect(hx + f * 2, hy + 3, f * 4, sp < -0.2 ? 3 : 1.5);   // teeth, bared when it winds up
   drawHpBar(m, 58);
 }
 
@@ -1459,7 +2193,7 @@ function drawSlime(m) {
   const { x, y } = m, s = m.size, z = m.hopZ || 0;
   drawShadow(x, y, 16 * s * (1 - z / 60));
   const land = (m.land || 0) / 0.2;
-  const sq = m.state === 'hop' ? 0.85 : 1 + Math.sin(tAnim * 6 + x) * 0.07 + land * 0.35;
+  const sq = m.state === 'crouch' ? 1.3 : m.state === 'hop' ? 0.85 : 1 + Math.sin(tAnim * 6 + x) * 0.07 + land * 0.35;
   ctx.fillStyle = statusTint(m, '#5b5');
   ctx.globalAlpha = 0.88;
   ctx.beginPath();
@@ -1486,19 +2220,20 @@ function drawArcher(m) {
   line(x, y - 26, x, y - 44);                                  // spine starts above the pelvis
   ctx.lineWidth = 2;
   for (let i = 0; i < 3; i++) line(x - 6, y - 40 + i * 6 + rattle, x + 6, y - 40 + i * 6 + rattle);   // ribs
-  const aim = m.state === 'aim', draw = aim ? Math.min(1, 1 - m.stateT / 0.7) : 0;
+  const aim = m.state === 'aim', draw = aim ? Math.min(1, 1 - m.stateT / 0.7) : 0, sp = m.mel ? swingPos(m) : 0;
+  const by = y - 38 + (sp < 0 ? sp * 20 : 0), bxo = f * (sp < 0 ? sp * 4 : sp * 12);               // bashing with the bow: raised overhead, then swung down in front
   ctx.lineWidth = 3;
-  line(x, y - 40, x + f * 16, y - 38);
+  line(x, y - 40, x + f * 16 + bxo, by);
   ctx.strokeStyle = '#8b5a2b'; ctx.lineWidth = 2;
-  const bcx = x + f * 12;
+  const bcx = x + f * 12 + bxo;
   ctx.beginPath();
-  if (f > 0) ctx.arc(bcx, y - 38, 12, -1.2, 1.2); else ctx.arc(bcx, y - 38, 12, Math.PI - 1.2, Math.PI + 1.2);
+  if (f > 0) ctx.arc(bcx, by, 12, -1.2, 1.2); else ctx.arc(bcx, by, 12, Math.PI - 1.2, Math.PI + 1.2);
   ctx.stroke();
   const tipX = bcx + f * Math.cos(1.2) * 12, pull = bcx + f * (Math.cos(1.2) * 12 - draw * 12);
   ctx.strokeStyle = '#eee'; ctx.lineWidth = 1;
-  line(tipX, y - 38 - Math.sin(1.2) * 12, pull, y - 38);
-  line(pull, y - 38, tipX, y - 38 + Math.sin(1.2) * 12);
-  if (aim) { ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2; line(pull, y - 38, pull + f * 20, y - 38); }
+  line(tipX, by - Math.sin(1.2) * 12, pull, by);
+  line(pull, by, tipX, by + Math.sin(1.2) * 12);
+  if (aim) { ctx.strokeStyle = '#ccc'; ctx.lineWidth = 2; line(pull, by, pull + f * 20, by); }
   ctx.fillStyle = c;
   ctx.beginPath(); ctx.arc(x, y - 52, 8, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = aim ? '#f33' : '#222';
@@ -1509,15 +2244,19 @@ function drawArcher(m) {
 
 function drawEnemy(m) {
   ctx.save();
-  if (m.dieT !== undefined) {                 // death: flash, topple, fade
+  if (m.dieT !== undefined) {                 // death: flash, then a fall of its own (slimes splat, goblins tumble, the rest topple), fade
     const p = m.dieT / m.dieMax;
     ctx.globalAlpha = Math.max(0, 1 - p);
-    ctx.translate(m.x, m.y); ctx.rotate(-m.facing * Math.min(1, p * 2) * 1.4); ctx.translate(-m.x, -m.y);
+    enemyDeathPose(m, p);
     m.flashT = p < 0.15 ? 1 : 0;
-  } else if (m.spawnT > 0) {                  // spawn: rise out of the ground
-    const p = m.spawnT / 0.5;
-    ctx.globalAlpha = 1 - p;
-    ctx.translate(0, p * 14);
+  } else {
+    if (m.spawnT > 0) {                       // spawn: rise out of the ground
+      const p = m.spawnT / 0.5;
+      ctx.globalAlpha = 1 - p;
+      ctx.translate(0, p * 14);
+    } else if (m.alertT > 0) ctx.translate(0, -Math.sin(m.alertT / 0.45 * Math.PI) * 4);          // it notices you: a little start
+    if (m.recoilT > 0) { ctx.translate(m.x, m.y); ctx.rotate(-m.facing * m.recoilT * 0.7); ctx.translate(-m.x - m.facing * m.recoilT * 18, -m.y); }   // knocked back by a blow
+    drawMobWindup(m);
   }
   const giant = m.scale > 1;
   if (giant) { ctx.save(); ctx.translate(m.x, m.y); ctx.scale(m.scale, m.scale); ctx.translate(-m.x, -m.y); }          // Giants are drawn bigger (their tags are not)
@@ -1527,13 +2266,28 @@ function drawEnemy(m) {
   else if (m.type === 'goblin') drawGoblin(m);
   else if (m.type === 'slime') drawSlime(m);
   else if (m.type === 'archer') drawArcher(m);
+  else if (m.type === 'wolf') drawQuad(m, { s: 1, c: '#8a8a94', eye: '#ffe060', tail: 4 });
+  else if (m.type === 'panther') drawQuad(m, { s: 1.25, c: '#2a2a34', eye: '#ffe060', tail: 12 });
+  else if (m.type === 'scorpion') drawScorpion(m);
+  else if (m.type === 'icesprite' || m.type === 'fireimp' || m.type === 'harpy') drawFlyer(m, m.type);
+  else if (m.type === 'bogLurker') drawLurker(m);
+  else if (m.type === 'treant') drawTreant(m);
+  else if (m.type === 'mummy') drawMummy(m);
+  else if (m.type === 'frostwolf') drawQuad(m, { s: 1.05, c: '#cfe8ff', eye: '#6fd0ff', tail: 6 });
+  else if (m.type === 'magmaslime') drawMagmaSlime(m);
+  else if (m.type === 'wisp') drawWisp(m);
+  else if (m.type === 'sporeshroom') drawShroom(m);
+  else if (m.type === 'cursedKnight') drawKnight(m);
+  else if (m.type === 'golem') drawGolem(m);
+  else if (m.type === 'skeleton') drawSkeleton(m);
   if (giant) ctx.restore();
+  if (m.leader || m.evoName) drawEvoTag(m);
   drawVariantTells(m);
   ctx.restore();
 }
 
 function drawDrop(d) {
-  const color = d.kind === 'gear' ? RARITIES[d.item.rarity].color : DROPS[d.kind].color;
+  const color = d.kind === 'gear' ? RARITIES[d.item.rarity].color : d.kind === 'rune' ? RUNES[d.rune].color : d.kind === 'essence' ? ESS[d.ess].color : DROPS[d.kind].color;
   const fadeOut = d.t < 3 ? 0.35 + 0.65 * Math.abs(Math.sin(d.t * 3)) : 1;   // gentle pulse before despawning
   const y = d.y - 8 + Math.sin(d.bob) * 3 - d.pop * 40;
   drawShadow(d.x, d.y, 7);
@@ -1559,6 +2313,14 @@ function drawDrop(d) {
     if (d.item.rarity >= 4) { const bg = ctx.createLinearGradient(0, y - 80, 0, y); bg.addColorStop(0, withAlpha(color, 0)); bg.addColorStop(1, withAlpha(color, 0.55)); ctx.fillStyle = bg; ctx.fillRect(d.x - 4, y - 80, 8, 80); }
     ctx.fillStyle = color; ctx.beginPath(); ctx.roundRect(d.x - 9, y - 7, 18, 14, 3); ctx.fill(); ctx.stroke();
     ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(d.x - 9, y - 1, 18, 2); ctx.fillStyle = '#fff'; ctx.fillRect(d.x - 1.5, y - 3, 3, 5);
+  } else if (d.kind === 'essence') {                           // a drop of liquid magic in a glowing bead
+    const pulse = 0.6 + 0.4 * Math.sin(tAnim * 5 + d.bob);
+    ctx.fillStyle = '#1d1a2c'; ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(d.x, y, 8, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = color; ctx.globalAlpha *= pulse; ctx.beginPath(); ctx.moveTo(d.x, y - 5); ctx.quadraticCurveTo(d.x + 4.5, y + 0.5, d.x, y + 4.5); ctx.quadraticCurveTo(d.x - 4.5, y + 0.5, d.x, y - 5); ctx.fill();
+  } else if (d.kind === 'rune') {                              // a small cut stone with its glyph glowing
+    ctx.fillStyle = '#262432'; ctx.strokeStyle = color; ctx.lineWidth = 1.6;
+    ctx.beginPath(); for (let i = 0; i < 6; i++) { const a = -Math.PI / 2 + i * Math.PI / 3; ctx.lineTo(d.x + Math.cos(a) * 9, y + Math.sin(a) * 9); } ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = color; ctx.globalAlpha *= 0.65 + 0.35 * Math.sin(tAnim * 4 + d.bob); ctx.beginPath(); ctx.moveTo(d.x, y - 4.5); ctx.lineTo(d.x + 3.2, y); ctx.lineTo(d.x, y + 4.5); ctx.lineTo(d.x - 3.2, y); ctx.closePath(); ctx.fill();
   } else if (d.kind === 'gem') {
     ctx.beginPath(); ctx.moveTo(d.x, y - 9); ctx.lineTo(d.x + 7, y); ctx.lineTo(d.x, y + 9); ctx.lineTo(d.x - 7, y); ctx.closePath(); ctx.fill(); ctx.stroke();
   } else {
@@ -1667,21 +2429,67 @@ function drawWorld() {
 
   ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2;
   for (const p of projectiles) {
+    if (p.knife || p.orb) { drawShot(p); continue; }
     const a = Math.atan2(p.vy, p.vx);
     line(p.x, p.y, p.x - Math.cos(a) * 16, p.y - Math.sin(a) * 16);
     ctx.fillStyle = '#999'; ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI * 2); ctx.fill();
   }
 }
 
+// World numbers (damage, MISS...) float over the fight and are nudged apart when they would land on each other.
+// Messages and banners (popup.screen) are laid out in lanes so they never sit on top of each other or on the HUD: big banners and messages stack down from the top centre
+// (between the two top panels), messages that were placed low on the screen stack up from just above the vitals. Long text wraps, repeats collapse into one, and only the newest few show.
+const TOAST_MAX_W = 440, TOAST_TOP = 112, TOAST_LOW = VH - 128, toastRects = [];      // toastRects: where the messages were drawn last frame (the tests check they never overlap)
+function wrapLines(text, font, maxW) {
+  ctx.font = font; const out = []; let line = '';
+  for (const w of String(text).split(' ')) { const t = line ? line + ' ' + w : w; if (line && ctx.measureText(t).width > maxW) { out.push(line); line = w; } else line = t; }
+  if (line) out.push(line);
+  return out.slice(0, 3);
+}
+function drawToasts() {
+  toastRects.length = 0;
+  const seen = new Set(), list = [];
+  for (let i = popups.length - 1; i >= 0; i--) { const p = popups[i]; if (!p.screen || seen.has(p.text)) continue; seen.add(p.text); list.unshift(p); }       // the newest of any repeated message
+  const top = list.filter(p => p.y <= VH * 0.6).slice(-4), low = list.filter(p => p.y > VH * 0.6).slice(-3);
+  const place = (arr, y0, dir) => {
+    let y = y0;
+    for (const p of arr.slice().reverse()) {                                  // the newest sits nearest the start of its lane
+      if (p.t0 === undefined) p.t0 = p.t;
+      const age = p.t0 - p.t, fin = clamp01(age / 0.18), fout = clamp01(p.t / 0.35), a = Math.min(fin, fout);
+      const size = p.big ? 21 : 14.5, font = `${p.big ? 800 : 600} ${size}px ${UI_FONT}`, lines = wrapLines(p.text, font, TOAST_MAX_W - 34), lh = size + 4;
+      const w = Math.min(TOAST_MAX_W, Math.max(...lines.map(l => ctx.measureText(l).width)) + 34), h = lines.length * lh + 12;
+      const cx = VW / 2, ty = dir > 0 ? y : y - h, slide = (1 - fin) * -10 * dir;
+      toastRects.push({ x: cx - w / 2, y: ty, w, h });
+      ctx.save(); ctx.globalAlpha = a; ctx.translate(0, slide);
+      const col = p.color || '#fff';
+      const g = ctx.createLinearGradient(0, ty, 0, ty + h); g.addColorStop(0, 'rgba(58,40,28,.92)'); g.addColorStop(1, 'rgba(28,19,14,.92)');
+      ctx.fillStyle = g; ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+      ctx.shadowColor = 'rgba(0,0,0,.45)'; ctx.shadowBlur = 8; ctx.shadowOffsetY = 2;
+      ctx.beginPath(); ctx.roundRect(cx - w / 2, ty, w, h, 9); ctx.fill(); ctx.shadowColor = 'transparent'; ctx.globalAlpha = a * 0.55; ctx.stroke(); ctx.globalAlpha = a;
+      ctx.fillStyle = col; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = font;
+      lines.forEach((l, i) => ctx.fillText(l, cx, ty + 6 + lh * i + lh / 2));
+      ctx.restore();
+      y += dir * (h + 6);
+    }
+  };
+  place(top, TOAST_TOP, 1); place(low, TOAST_LOW, -1);
+}
 function drawPopups(screen) {
+  if (screen) { drawToasts(); return; }
+  const placed = [];
   for (const p of popups) {
-    if (!!p.screen !== screen) continue;
-    ctx.globalAlpha = Math.min(1, p.t * 2);
-    const scale = p.pop !== undefined ? 1 + Math.max(0, 0.6 - p.pop * 4) * (p.crit ? 1.2 : 0.6) : 1;
-    ctx.fillStyle = p.color || '#fff'; ctx.textAlign = 'center';
-    ctx.font = `bold ${Math.round((p.big ? 28 : p.small ? 13 : 16) * scale)}px sans-serif`;
-    ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.6)';
-    ctx.strokeText(p.text, p.x, p.y); ctx.fillText(p.text, p.x, p.y);
+    if (p.screen) continue;
+    const grow = p.pop !== undefined ? 1 + Math.max(0, 0.6 - p.pop * 4) * (p.crit ? 1.2 : 0.6) : 1;
+    const size = Math.round((p.big ? 26 : p.small ? 13 : 16) * grow * (p.crit ? 1.15 : 1));
+    ctx.font = `800 ${size}px ${UI_FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const w = ctx.measureText(p.text).width + 6;
+    let y = p.y;
+    for (let k = 0; k < 6 && placed.some(r => Math.abs(r.x - p.x) < (r.w + w) / 2 && Math.abs(r.y - y) < size * 0.9); k++) y -= size * 0.9;       // keep clear of the numbers already drawn
+    placed.push({ x: p.x, y, w });
+    ctx.globalAlpha = Math.min(1, p.t * 2.2);
+    ctx.lineJoin = 'round'; ctx.lineWidth = p.crit ? 5 : 4; ctx.strokeStyle = p.crit ? 'rgba(90,30,0,.85)' : 'rgba(0,0,0,.7)';
+    ctx.strokeText(p.text, p.x, y);
+    ctx.fillStyle = p.color || '#fff'; ctx.fillText(p.text, p.x, y);
     ctx.globalAlpha = 1;
   }
 }
@@ -1724,11 +2532,17 @@ function drawPanelTo(ctx, x, y, w, h, o, S) {
   const r = o.r ?? 12;
   ctx.save();
   if (gfx.shadows) { ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 14; ctx.shadowOffsetY = 3; }
-  const gr = ctx.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, 'rgba(34,34,52,0.84)'); gr.addColorStop(1, 'rgba(12,12,20,0.82)');
+  const gr = ctx.createLinearGradient(0, y, 0, y + h); gr.addColorStop(0, 'rgba(82,58,41,0.93)'); gr.addColorStop(1, 'rgba(36,25,17,0.93)');
   ctx.fillStyle = gr; ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.fill();
   ctx.shadowColor = 'transparent'; ctx.shadowBlur = 0; ctx.shadowOffsetY = 0;
-  ctx.strokeStyle = o.edge || 'rgba(160,160,215,0.26)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y + 0.5, w - 1, h - 1, r); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.09)'; ctx.beginPath(); ctx.moveTo(x + r, y + 1.5); ctx.lineTo(x + w - r, y + 1.5); ctx.stroke();       // a thin highlight along the top edge
+  ctx.save(); ctx.beginPath(); ctx.roundRect(x, y, w, h, r); ctx.clip();                            // faint plank seams
+  ctx.strokeStyle = 'rgba(0,0,0,0.17)'; ctx.lineWidth = 1;
+  for (let px = x + 44; px < x + w - 8; px += 44) { ctx.beginPath(); ctx.moveTo(px + 0.5, y); ctx.lineTo(px + 0.5, y + h); ctx.stroke(); }
+  ctx.restore();
+  ctx.strokeStyle = o.edge || '#9a6f3c'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(x + 1, y + 1, w - 2, h - 2, r); ctx.stroke();            // the wooden frame
+  ctx.strokeStyle = 'rgba(18,10,6,0.85)'; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 2.5, y + 2.5, w - 5, h - 5, Math.max(2, r - 2)); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,226,170,0.2)'; ctx.beginPath(); ctx.moveTo(x + r, y + 3.5); ctx.lineTo(x + w - r, y + 3.5); ctx.stroke();       // a highlight along the top edge
+  if (w > 46 && h > 26) { ctx.fillStyle = '#efc86c'; for (const [nx, ny] of [[x + 6.5, y + 6.5], [x + w - 6.5, y + 6.5], [x + 6.5, y + h - 6.5], [x + w - 6.5, y + h - 6.5]]) { ctx.beginPath(); ctx.arc(nx, ny, 1.5, 0, Math.PI * 2); ctx.fill(); } }   // brass nails
   if (o.accent) { ctx.fillStyle = o.accent; ctx.beginPath(); ctx.roundRect(x + 5, y + 10, 3, h - 20, 2); ctx.fill(); }
   ctx.restore();
 }
@@ -1736,7 +2550,7 @@ function drawPanelTo(ctx, x, y, w, h, o, S) {
 function hudChip(text, x, y, color, size = 10.5) {
   ctx.font = `bold ${size}px ${UI_FONT}`;
   const w = Math.ceil(ctx.measureText(text).width) + 12;
-  ctx.fillStyle = 'rgba(8,8,14,0.7)'; ctx.beginPath(); ctx.roundRect(x, y - 11, w, 16, 8); ctx.fill();
+  ctx.fillStyle = 'rgba(40,26,17,0.85)'; ctx.beginPath(); ctx.roundRect(x, y - 11, w, 16, 8); ctx.fill();
   ctx.strokeStyle = color; ctx.globalAlpha = 0.7; ctx.lineWidth = 1; ctx.beginPath(); ctx.roundRect(x + 0.5, y - 10.5, w - 1, 15, 7.5); ctx.stroke(); ctx.globalAlpha = 1;
   ctx.fillStyle = color; ctx.textAlign = 'left'; ctx.fillText(text, x + 6, y + 0.5);
   return w;
@@ -1781,12 +2595,38 @@ function vitalBar(x, w, y, h, frac, c1, c2, side, label, mark) {
     ctx.fillStyle = '#fff'; ctx.fillText(t, x + w / 2, y + h - 3.5); ctx.textAlign = 'left';
   }
 }
-// Everything harmful that is on the hero right now. A new ailment is one more entry here and one more icon in AILMENT_ICON; the Cure-All clears them all.
+// Everything harmful that is on the hero right now. A new ailment is one more entry in AILS (variants.js) and one more icon here; a Healing Potion clears them all.
 const AILMENT_ICON = {
   poison(c, r) {                                                    // a skull with a drip
     c.fillStyle = '#e9ffe9'; c.beginPath(); c.arc(0, -1.5, r * 0.5, 0, Math.PI * 2); c.fill(); c.fillRect(-r * 0.27, r * 0.1, r * 0.54, r * 0.38);
     c.fillStyle = '#0d2a12'; c.beginPath(); c.arc(-r * 0.2, -r * 0.1, r * 0.14, 0, Math.PI * 2); c.arc(r * 0.2, -r * 0.1, r * 0.14, 0, Math.PI * 2); c.fill();
     c.fillRect(-1, r * 0.08, 2, r * 0.18); c.fillRect(-r * 0.12, r * 0.3, 1.3, r * 0.18); c.fillRect(r * 0.1, r * 0.3, 1.3, r * 0.18);
+  },
+  bleed(c, r) {                                                     // a falling drop
+    c.fillStyle = '#ffd6dc'; c.beginPath(); c.moveTo(0, -r * 0.62); c.quadraticCurveTo(r * 0.62, r * 0.12, 0, r * 0.62); c.quadraticCurveTo(-r * 0.62, r * 0.12, 0, -r * 0.62); c.fill();
+    c.fillStyle = '#8a1a2a'; c.beginPath(); c.arc(-r * 0.16, r * 0.18, r * 0.12, 0, Math.PI * 2); c.fill();
+  },
+  burn(c, r) {                                                      // a flame
+    c.fillStyle = '#fff1c8'; c.beginPath(); c.moveTo(0, -r * 0.66); c.quadraticCurveTo(r * 0.7, -r * 0.05, r * 0.38, r * 0.4); c.quadraticCurveTo(0, r * 0.7, -r * 0.38, r * 0.4); c.quadraticCurveTo(-r * 0.62, 0, -r * 0.14, -r * 0.3); c.quadraticCurveTo(-r * 0.12, -r * 0.5, 0, -r * 0.66); c.fill();
+    c.fillStyle = '#ff7a20'; c.beginPath(); c.arc(0, r * 0.25, r * 0.2, 0, Math.PI * 2); c.fill();
+  },
+  freeze(c, r) {                                                    // an ice crystal
+    c.fillStyle = '#e8fbff'; c.strokeStyle = '#2a6a8a'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(0, -r * 0.66); c.lineTo(r * 0.4, 0); c.lineTo(0, r * 0.66); c.lineTo(-r * 0.4, 0); c.closePath(); c.fill(); c.stroke();
+    c.beginPath(); c.moveTo(0, -r * 0.66); c.lineTo(0, r * 0.66); c.moveTo(-r * 0.4, 0); c.lineTo(r * 0.4, 0); c.stroke();
+  },
+  weak(c, r) {                                                      // a sword with a down arrow
+    c.strokeStyle = '#fff3d6'; c.lineWidth = 2; c.lineCap = 'round'; c.beginPath(); c.moveTo(-r * 0.35, r * 0.35); c.lineTo(r * 0.3, -r * 0.4); c.stroke();
+    c.beginPath(); c.moveTo(-r * 0.5, r * 0.15); c.lineTo(-r * 0.15, r * 0.5); c.stroke();
+    c.fillStyle = '#ff6a5a'; c.beginPath(); c.moveTo(r * 0.45, r * 0.0); c.lineTo(r * 0.7, r * 0.0); c.lineTo(r * 0.575, r * 0.3); c.closePath(); c.fill();
+  },
+  blind(c, r) {                                                     // an eye with a bar across it
+    c.fillStyle = '#f2f2fa'; c.beginPath(); c.ellipse(0, 0, r * 0.62, r * 0.36, 0, 0, Math.PI * 2); c.fill();
+    c.fillStyle = '#242436'; c.beginPath(); c.arc(0, 0, r * 0.2, 0, Math.PI * 2); c.fill();
+    c.strokeStyle = '#ff6a5a'; c.lineWidth = 2; c.beginPath(); c.moveTo(-r * 0.6, r * 0.5); c.lineTo(r * 0.6, -r * 0.5); c.stroke();
+  },
+  curse(c, r) {                                                     // a violet rune
+    c.strokeStyle = '#e6ccff'; c.lineWidth = 2; c.lineCap = 'round'; c.beginPath(); c.moveTo(0, -r * 0.62); c.lineTo(r * 0.46, -r * 0.2); c.lineTo(r * 0.46, r * 0.25); c.lineTo(0, r * 0.62); c.lineTo(-r * 0.46, r * 0.25); c.lineTo(-r * 0.46, -r * 0.2); c.closePath(); c.stroke();
+    c.beginPath(); c.moveTo(-r * 0.2, -r * 0.2); c.lineTo(r * 0.2, r * 0.2); c.moveTo(r * 0.2, -r * 0.2); c.lineTo(-r * 0.2, r * 0.2); c.stroke();
   },
   chill(c, r) {                                                     // a snowflake
     c.strokeStyle = '#eaf9ff'; c.lineWidth = 1.7; c.lineCap = 'round';
@@ -1797,6 +2637,7 @@ function activeAilments() {
   const out = [];
   if (hero.poison) out.push({ id: 'poison', name: 'Poisoned', color: '#5fe05f', stacks: hero.poison.stacks, t: hero.poison.t, max: POISON_TIME });
   if (hero.chillT > 0) out.push({ id: 'chill', name: 'Chilled', color: '#6fd0ff', stacks: 1, t: hero.chillT, max: Math.max(2.5, hero.chillT) });
+  for (const k of AIL_KEYS) if (ailT(k) > 0) out.push({ id: k, name: AILS[k].name, color: AILS[k].color, stacks: hero.ail[k].stacks, t: hero.ail[k].t, max: Math.max(hero.ail[k].max || 1, hero.ail[k].t) });
   return out;
 }
 // big round badges just above the health and stamina bars: a coloured ring that drains with the time left, the icon, the stack count and the seconds
@@ -1825,7 +2666,7 @@ function drawVitals(inVillage) {
   const total = (Rr + gap + bw) * 2 + 24;
   hudPanel(cx - total / 2, cy - bh / 2 - 7, total, bh + 14, { r: (bh + 14) / 2 });
   drawAilments(cx, cy - bh / 2 - 7 - 14);
-  drawPotionSlot(cx - total / 2 - 50, cy);                              // the selected potion sits just left of the health bar
+  if (hero.util === 'scroll') drawRecallChip(cx - total / 2 - 50, cy); else drawPotionSlot(cx - total / 2 - 50, cy);                              // the selected potion sits just left of the health bar
   // health (left of the circle) and stamina (right of it); both fill outwards from the circle
   vitalBar(cx - Rr - gap - bw, bw, by, bh, hpF, lowHp && !settings.comfort && Math.sin(tAnim * 5) > 0 ? '#ff8a8a' : '#f06468', '#b8333a', -1, `${Math.ceil(hero.hp)} / ${hero.maxHp}`, regenCap() < 1 ? regenCap() : 0);
   vitalBar(cx + Rr + gap, bw, by, bh, hero.stamina / maxStamina(), canAct ? '#76e08e' : '#9a9aa8', canAct ? '#2f9a52' : '#5e5e6c', 1, null, 0);
@@ -1890,11 +2731,11 @@ function drawHeroCard(inVillage) {
   ctx.fillStyle = '#fff'; ctx.fillText(fitText(hero.name, bw - gw - 30, 15, true, 11), L, Y + 24);
   const wi = hero.equip.weapon;
   ctx.fillStyle = RARITIES[wi.rarity].color; ctx.fillText(fitText(wi.name, bw, 12, true, 9), L, Y + 44);
-  let ey = Y + 52;
-  if (lamp) { ctx.fillStyle = '#ffd88a'; ctx.fillText(fitText(lamp.name, bw, 10.5), L, ey + 11); ey += 18; }
+  let ey = Y + 44;
+  if (lamp) { ctx.fillStyle = '#ffd88a'; ctx.fillText(fitText(lamp.name, bw, 10.5), L, ey + 16); ey += 16; }
   if (pts) {
     ctx.globalAlpha = 0.65 + 0.35 * Math.sin(tAnim * 4);
-    ctx.fillStyle = '#f5c451'; ctx.fillText(fitText(`${hero.points} stat point${hero.points === 1 ? '' : 's'}: press M`, bw, 12, true, 9), L, ey + 3);
+    ctx.fillStyle = '#f5c451'; ctx.fillText(fitText(`${hero.points} stat point${hero.points === 1 ? '' : 's'}: press ${keyLabel('character')}`, bw, 12, true, 9), L, ey + 17);
     ctx.globalAlpha = 1;
   }
 }
@@ -1904,6 +2745,7 @@ function drawHUD() {
   drawVitals(false);
   drawClock(VW - 164, 10);
   drawWaveChip(false);
+  drawQuestTracker();
 
   // minimap
   const mw = 150, mh = 100, mx = VW - mw - 14, my = VH - mh - 14, sx = mw / WW, sy = mh / WH;
@@ -1951,16 +2793,70 @@ function drawSplash() {
   ctx.globalAlpha = 1;
 }
 
-function stickSilhouette(x, y, ph, sc = 1, walking = true, col = '#000') {
-  ctx.save(); ctx.translate(x, y); ctx.scale(sc, sc);
-  const J = poseStick(0, 0, 1, { p: ph, run: walking, lean: walking ? 0.14 : 0.02, breath: walking ? 0 : Math.sin(tAnim * 2.6) * 1.2, atk: -1 });
-  ctx.strokeStyle = col; ctx.fillStyle = col; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  drawStickBody(J);
-  const f = 1, h = J.front.e, dx = Math.cos(J.blade), dy = Math.sin(J.blade);
-  line(h.x, h.y, h.x + dx * 26, h.y + dy * 26);
-  ctx.beginPath(); ctx.arc(J.head.x, J.head.y, 10, 0, Math.PI * 2); ctx.fill();
+// The hero as the intro, the title and the rebirth show them: a lit stickman with a face, spiky hair, a red scarf and cloak that move in the wind, boots, a belt and a sword.
+// lit (0..1) is how much light falls on them: low in the dark intro, where only the scarf and the eye stand out; raise lifts the sword overhead (rebirth); hover floats them.
+function stickHero(x, y, o = {}) {
+  const sc = o.sc || 1, tt = o.t ?? tAnim, lit = o.lit ?? 0.5, walking = !!o.walking, lift = o.lift || 0;
+  const C = (b, k = 1) => mixHex(b, '#0a0612', Math.max(0, Math.min(1, (1 - lit) * k)));          // a colour in this light (k < 1: it holds its colour better in the dark)
+  const ink = C('#1a1a24', 0.5), hov = o.hover ? Math.sin(tt * 2.2) * 4 + o.hover : 0;
+  ctx.save(); ctx.translate(x, y - hov); ctx.scale(sc, sc);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  if (o.glowCol && gfx.glow) { ctx.shadowColor = o.glowCol; ctx.shadowBlur = 16 / Math.max(1, sc * 0.7); }
+  const J = poseStick(0, 0, 1, { p: o.ph || 0, run: walking, lean: walking ? 0.14 : 0.02, breath: walking ? 0 : Math.sin(tt * 2.6) * 1.2, atk: -1 });
+  const limb = (a, b, c, col, w) => { ctx.strokeStyle = ink; ctx.lineWidth = w + 1.8; poly(a, b, c); ctx.strokeStyle = col; ctx.lineWidth = w - 0.6; poly(a, b, c); };
+  // arms: a raised sword (rebirth) or the carried pose
+  let fa = J.front, ba = J.back, blade = J.blade, hand = J.front.e;
+  if (o.raise) {
+    const r = 0.5 + 0.5 * Math.sin(tt * 1.7);
+    fa = ik(J.sh.x, J.sh.y, J.sh.x + 13, J.sh.y - 21 - r * 2, 9.5, 9.5, 1); ba = ik(J.sh.x, J.sh.y, J.sh.x - 12, J.sh.y - 19 + r * 2, 9.5, 9.5, 1);
+    blade = -Math.PI / 2 + 0.08; hand = fa.e;
+  }
+  // the cloak trails behind from the shoulders, the wind lifts it
+  const w1 = Math.sin(tt * 5.5), w2 = Math.sin(tt * 4.2 + 1.3), spd = walking ? 1 : 0.4;
+  ctx.fillStyle = C('#8a2a32', 0.6); ctx.strokeStyle = ink; ctx.lineWidth = 1.6;
+  ctx.beginPath(); ctx.moveTo(J.sh.x - 2, J.sh.y - 1);
+  ctx.quadraticCurveTo(J.sh.x - 14 - 6 * spd, J.sh.y + 12 - lift * 22, J.sh.x - 24 - 8 * spd + w1 * 3, J.sh.y + 30 - lift * 44 + w2 * 3);
+  ctx.lineTo(J.sh.x - 8 + w2 * 2, J.sh.y + 33 - lift * 30); ctx.lineTo(J.hip.x - 4, J.hip.y - 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  limb(J.sh, ba.j, ba.e, C('#2b3046', 0.7), 4.2);                                                    // back arm
+  ctx.fillStyle = C('#f7f3ee', 0.8); ctx.beginPath(); ctx.arc(ba.e.x, ba.e.y, 2.6, 0, Math.PI * 2); ctx.fill();
+  for (const l of J.legs) { limb(l[0], l[1], l[2], C('#2b3550', 0.7), 4.4); ctx.fillStyle = C('#2a2018', 0.7); ctx.beginPath(); ctx.ellipse(l[2].x + 2.5, l[2].y - 1.6, 5.2, 3, 0, 0, Math.PI * 2); ctx.fill(); }
+  // tunic and belt
+  ctx.strokeStyle = ink; ctx.lineWidth = 10.6; ctx.lineCap = 'butt'; poly(J.hip, J.neck);
+  ctx.strokeStyle = C('#2b3046', 0.7); ctx.lineWidth = 8.4; poly(J.hip, J.neck);
+  ctx.strokeStyle = C('#c9a050', 0.7); ctx.lineWidth = 2.6; line(J.hip.x - 4.4, J.hip.y - 4, J.hip.x + 4.4, J.hip.y - 4); ctx.lineCap = 'round';
+  // the sword, then the front arm over it
+  const bx = Math.cos(blade), by = Math.sin(blade), len = o.raise ? 22 : 30, tipX = hand.x + bx * len, tipY = hand.y + by * len;
+  ctx.strokeStyle = ink; ctx.lineWidth = 4.6; line(hand.x - bx * 4, hand.y - by * 4, tipX, tipY);
+  ctx.strokeStyle = C('#dfe6f0', 0.35); ctx.lineWidth = 2.6; line(hand.x, hand.y, tipX, tipY);
+  ctx.strokeStyle = C('#c9a050', 0.6); ctx.lineWidth = 3; line(hand.x - by * 5, hand.y + bx * 5, hand.x + by * 5, hand.y - bx * 5);
+  if (lit > 0.4 || o.raise) { const gl = 0.5 + 0.5 * Math.sin(tt * 6); ctx.fillStyle = `rgba(255,255,255,${0.5 + gl * 0.4})`; ctx.beginPath(); ctx.arc(hand.x + bx * (len * 0.7), hand.y + by * (len * 0.7), 1.8 + gl, 0, Math.PI * 2); ctx.fill(); }
+  limb(J.sh, fa.j, fa.e, C('#2b3046', 0.7), 4.2);
+  ctx.fillStyle = C('#f7f3ee', 0.8); ctx.beginPath(); ctx.arc(fa.e.x, fa.e.y, 2.8, 0, Math.PI * 2); ctx.fill();
+  // head: white like the in-game hero, with a face that looks ahead
+  const hd = J.head, tilt = o.raise ? -0.12 : 0;
+  ctx.save(); ctx.translate(hd.x, hd.y); ctx.rotate(tilt);
+  ctx.fillStyle = C('#f7f3ee', 0.8); ctx.strokeStyle = ink; ctx.lineWidth = 2.4; ctx.beginPath(); ctx.arc(0, 0, 10, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+  const blink = Math.sin(tt * 0.9 + 1) > 0.97;
+  if (lit < 0.3) { ctx.fillStyle = '#d6ecff'; if (gfx.glow) { ctx.shadowColor = '#9fd0ff'; ctx.shadowBlur = 8; } }    // in the dark: one pale eye
+  else ctx.fillStyle = '#1a1a24';
+  if (blink) ctx.fillRect(2, -1.6, 5, 1.5); else { ctx.beginPath(); ctx.ellipse(4.6, -1.6, 1.7, 2.2, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.shadowBlur = 0; ctx.strokeStyle = C('#1a1a24', 0.7); ctx.lineWidth = 1.4; line(1.6, -5.2, 7.4, -4); ctx.lineWidth = 1.2;   // a brow, and a small steady smile
+  ctx.beginPath(); ctx.arc(4, 3, 3.3, 0.35, Math.PI - 0.95); ctx.stroke();
+  ctx.fillStyle = `rgba(255,120,120,${0.25 * lit})`; ctx.beginPath(); ctx.arc(2, 3.4, 2.4, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
+  // the red scarf: knotted at the neck, two tails that stream in the wind (it is the one colour that survives the dark)
+  const nk = J.neck, sd = (walking ? 1.15 : 0.9) + lift * 0.25;
+  ctx.strokeStyle = ink; ctx.lineWidth = 6.2; line(nk.x - 5, nk.y + 1, nk.x + 5, nk.y + 1);
+  ctx.strokeStyle = C('#d23a3a', 0.25); ctx.lineWidth = 4.4; line(nk.x - 5, nk.y + 1, nk.x + 5, nk.y + 1);
+  for (let k = 0; k < 2; k++) {
+    const dy = k ? 7 : 2, wob = Math.sin(tt * (7 + k) + k * 1.7) * 4 * sd, rise = lift * (13 + k * 8);
+    ctx.strokeStyle = ink; ctx.lineWidth = 5.6; ctx.beginPath(); ctx.moveTo(nk.x - 4, nk.y + 1 + dy * 0.3); ctx.quadraticCurveTo(nk.x - 17 * sd, nk.y + 3 + dy - rise * 0.4 + wob, nk.x - 32 * sd, nk.y + dy - rise + wob * 1.6 - 2); ctx.stroke();
+    ctx.strokeStyle = C(k ? '#b22a2a' : '#e04848', 0.25); ctx.lineWidth = 3.6; ctx.beginPath(); ctx.moveTo(nk.x - 4, nk.y + 1 + dy * 0.3); ctx.quadraticCurveTo(nk.x - 17 * sd, nk.y + 3 + dy - rise * 0.4 + wob, nk.x - 32 * sd, nk.y + dy - rise + wob * 1.6 - 2); ctx.stroke();
+  }
+  ctx.restore();
+  return J;
 }
+function stickSilhouette(x, y, ph, sc = 1, walking = true, col = '#000') { return stickHero(x, y, { ph, sc, walking, lit: col === '#000' ? 0.1 : 0.9 }); }
 
 // The intro. Time-driven (everything is a function of t), so a replay can simply start part way in.
 //   0-10s  dusk over Aldermere: eight beacons on the ridge, a village with lit windows
@@ -2057,10 +2953,7 @@ function drawIntro(t) {
   const hk = ssm(17.4, 22.6, t), hxp = -50 + hk * (VW * 0.37 + 50), walking = t > 17.4 && t < 22.6;
   if (t > 17.2) {
     const hy = VH * 0.78 + Math.sin((hxp + t * 22) * 0.01) * 18 + 3;
-    stickSilhouette(hxp, hy, (hxp + 50) / 1.4 * Math.PI / (2 * HERO_STRIDE), 1.5, walking);
-    ctx.strokeStyle = '#a82a2a'; ctx.lineWidth = 3; ctx.lineCap = 'round';                // the red scarf is the only colour on them
-    const sx = hxp - 6, sy = hy - 52 * 1.5 / 1.5 * 1.4;
-    ctx.beginPath(); ctx.moveTo(sx, sy); ctx.quadraticCurveTo(sx - 18, sy + 3 + Math.sin(t * 9) * 3, sx - 34, sy - 2 + Math.sin(t * 8) * 6); ctx.stroke();
+    stickHero(hxp, hy, { ph: (hxp + 50) / 1.4 * Math.PI / (2 * HERO_STRIDE), sc: 1.5, walking, lit: 0.08 + 0.5 * ssm(20.4, 22.8, t), t, glowCol: 'rgba(255,170,110,0.55)' });    // dark at first: the red scarf and one pale eye, then the light finds their face
   }
   // ---- embers and ash after the Hollow
   if (hollow > 0) {
@@ -2137,11 +3030,82 @@ function drawTitle() {
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(0, 0, VW, VH);
   drawSky();
   drawTitleText();
-  stickSilhouette(VW / 2 - 200, VH - 40, 0, 2, false);
+  stickHero(VW / 2 - 200, VH - 40, { sc: 2, walking: false, lit: 0.85, t: tAnim, glowCol: 'rgba(255,190,120,0.5)' });
 }
 
-// --- Dev / cheat menu (` key) ---
-const dev = { god: false, oneHit: false, stamina: false, swords: false, hitboxes: false, speed: 1, freezeTime: false, noFog: false };
+// --- Console (` key): type a command and press Enter. The dev menu stays locked until `allowdevmenu` has been typed (per session), then `opendevmenu` opens it ---
+let devAllowed = false;
+const CONSOLE_CMDS = {
+  allowdevmenu: () => { devAllowed = true; return ['Dev menu activated. Type opendevmenu to open it.', 'ok']; },
+  opendevmenu: () => { if (devAllowed) showMenu('dev'); return null; },            // locked: nothing happens
+  clear: () => { conLines.length = 0; return null; },
+  save: () => {                                                                       // save the game right now, wherever you are
+    if (!hero || (state !== 'play' && state !== 'village') || hero.dead) return ['There is no game to save right now.', 'err'];
+    saveGame(false); return [`Game saved to slot ${currentSlot} (${hero.name}, level ${hero.level}, wave ${Math.max(0, wavesCleared())}).`, 'ok'];
+  },
+  help: () => ['Commands: save, clear, help, allowdevmenu', 'ok'],
+};
+const conLines = [], conHistory = []; let conHistPos = 0;
+function renderConsole() {
+  const log = document.getElementById('conLog');
+  log.innerHTML = conLines.map(([t, c]) => `<div class="${c}">${t.replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]))}</div>`).join('');
+  log.scrollTop = log.scrollHeight;
+}
+function runConsole(text) {
+  const raw = String(text).trim();
+  if (!raw) return;
+  conLines.push([`Console> ${raw}`, 'echo']);
+  const fn = CONSOLE_CMDS[raw.toLowerCase()], out = fn ? fn() : [`Unknown command: ${raw}`, 'err'];
+  if (out) conLines.push(out);
+  while (conLines.length > 40) conLines.shift();
+  if (openMenu === 'console') renderConsole();
+}
+document.getElementById('conIn').addEventListener('keydown', e => {
+  const inp = e.target;
+  if (e.code === 'Enter' || e.code === 'NumpadEnter') {
+    e.preventDefault();
+    const t = inp.value; inp.value = '';
+    if (t.trim()) { conHistory.push(t); if (conHistory.length > 30) conHistory.shift(); }
+    conHistPos = conHistory.length;
+    sfx('click'); runConsole(t);
+  } else if (e.code === 'Backquote') { e.preventDefault(); showMenu(null); }
+  else if (e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+    e.preventDefault();
+    conHistPos = Math.max(0, Math.min(conHistory.length, conHistPos + (e.code === 'ArrowUp' ? -1 : 1)));
+    inp.value = conHistory[conHistPos] || '';
+  }
+});
+document.getElementById('console').addEventListener('pointerdown', e => { if (e.target.id === 'console') showMenu(null); });
+
+// the name of the tune that starts playing, shown for a moment (so the music is noticed): each area, the village, the inn, the camp, a boss fight, a rebirth
+const TRACK_NAMES = { forest: 'Whispering Woods', desert: 'Wind Over the Dunes', snow: 'Frostbound Hymn', volcano: 'The Ember March', swamp: 'Murk Lullaby', jungle: 'Canopy Drums', ruins: 'Halls of the Hollow', highlands: 'Windholm Heights',
+  village: 'Hearthside', inn: 'A Warm Hearth', camp: 'Campfire Embers', boss: 'Battle Hymn', rebirth: 'The Return' };
+let lastTrack = '';
+Sound.setOnTheme((name, key, changed) => {
+  const label = TRACK_NAMES[name]; if (!label || typeof hero === 'undefined' || !hero || state === 'title' || state === 'intro') return;
+  const night = /_night$/.test(key), id = name + (night ? '_n' : '');
+  if (id === lastTrack) return; lastTrack = id;
+  popups.push({ text: `♪ ${label}${night ? ' (night)' : ''}`, x: VW / 2, y: VH - 92, t: 3.2, screen: true, small: true, color: '#cfe0ff' });
+});
+
+// --- Dev / cheat menu (opened from the console) ---
+// The dev menu's item spawner: pick a kind, the exact item, its grade and how its stats roll, and how many.
+const DEV_CATS = [['weapon', 'Weapon'], ['armor', 'Armor'], ['helmet', 'Helmet'], ['ring', 'Ring'], ['necklace', 'Necklace'], ['artifact', 'Artifact'], ['potion', 'Potion']];
+const devPlain = () => devPick.cat === 'potion';      // potions have no grade or level
+const devRune = { k: 0, qty: 1, tier: 0 }, devEss = { k: 0, qty: 1 };                      // the rune spawner has its own section
+const devPick = { cat: 'weapon', base: 0, rarity: 3, roll: 'random', unique: '', qty: 1, ilvl: 0, up: 0, sock: '' };      // ilvl 0 = the hero's level
+const devBases = cat => cat === 'weapon' ? SWORDS.map(s => `${s.name} (level ${s.lvl})`) : cat === 'potion' ? POTION_KEYS.map(k => POTIONS[k].name) : BASE_NAMES[cat];
+const devMake = (rarity = devPick.rarity, base = devPick.base) => {
+  const it = rollItem({
+    slot: devPick.cat, rarity, level: 99, ilvl: devPick.ilvl || (hero ? hero.level : 1), roll: devPick.roll === 'random' ? undefined : devPick.roll, unique: devPick.unique || undefined,
+    ...(devPick.cat === 'weapon' ? { base: SWORDS[base].id } : { baseIdx: base }),
+  });
+  for (let i = 0; i < (devPick.up | 0) && canUpgrade(it); i++) upgradeItem(it);                          // already upgraded to the chosen level (up to its grade's maximum)
+  if (devPick.sock) { const n = socketsOf(it); it.rn = Array.from({ length: n }, () => devPick.sock === 'random' ? RUNE_KEYS[Math.floor(Math.random() * RUNE_KEYS.length)] : devPick.sock); if (!n) delete it.rn; }      // every socket filled with the chosen rune
+  return it;
+};
+const devQty = () => Math.max(1, Math.min(40, devPick.qty | 0 || 1));
+const dev = { god: false, oneHit: false, stamina: false, hitboxes: false, speed: 1, freezeTime: false, noFog: false };
 function renderDev() {
   const tog = (k, label) => `<button data-dev="tog" data-k="${k}" class="${dev[k] ? 'on' : ''}">${label}</button>`;
   const btn = (act, label, extra = '') => `<button data-dev="${act}" ${extra}>${label}</button>`;
@@ -2149,15 +3113,45 @@ function renderDev() {
   document.getElementById('devBody').innerHTML = `
     <h3>TOGGLES</h3><div class="dev-grid">
       ${tog('god', 'God mode')}${tog('oneHit', 'One-hit kills')}${tog('stamina', 'Infinite stamina')}
-      ${tog('swords', 'Ignore weapon level limits')}${tog('hitboxes', 'Show hitboxes')}${tog('noFog', 'Disable fog-of-war')}</div>
+      ${tog('hitboxes', 'Show hitboxes')}${tog('noFog', 'Disable fog-of-war')}</div>
     <h3>GAME SPEED</h3><div class="dev-grid">
       ${[0.25, 0.5, 1, 2, 4].map(v => `<button data-dev="speed" data-v="${v}" class="${dev.speed === v ? 'on' : ''}">${v}×</button>`).join('')}</div>
     ${inPlay ? `
     <h3>HERO</h3><div class="dev-grid">
       ${btn('gold100', '+100 gold')}${btn('gold1000', '+1000 gold')}${btn('savenow', 'Save now')}
-      ${btn('heal', 'Full heal')}${btn('lvl1', '+1 level')}${btn('lvl10', '+10 levels')}${btn('pts', '+10 stat points')}${btn('maxlvl', 'Max level')}${btn('rebirth', '+1 rebirth (keeps all)')}${btn('kill', 'Kill hero')}</div>
-    <h3>GEAR</h3><div class="dev-grid">
-      ${RARITIES.map((r, i) => `<button data-dev="gear" data-t="${i}" style="border-color:${r.color}">${r.name}</button>`).join('')}${btn('fillpack', 'Fill backpack')}${btn('clearpack', 'Clear backpack')}</div>
+      ${btn('scroll', '+1 return scroll')}${btn('heal', 'Full heal')}${btn('lvl1', '+1 level')}${btn('lvl10', '+10 levels')}${btn('pts', '+10 stat points')}${btn('maxlvl', 'Max level')}${btn('rebirth', '+1 rebirth (keeps all)')}${btn('kill', 'Kill hero')}</div>
+    <h3>ITEM SPAWNER</h3><div class="dev-grid dev-pick">
+      <select id="devCat">${DEV_CATS.map(([k, n]) => `<option value="${k}" ${devPick.cat === k ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      <select id="devBase">${devBases(devPick.cat).map((n, i) => `<option value="${i}" ${devPick.base === i ? 'selected' : ''}>${n}</option>`).join('')}</select>
+      ${devPlain() ? '' : `<select id="devRarity">${RARITIES.map((r, i) => `<option value="${i}" ${devPick.rarity === i ? 'selected' : ''}>${r.name}</option>`).join('')}</select>
+      ${devPick.rarity === 7 ? `<select id="devUnique"><option value="">Random special effect</option>${Object.keys(UNIQUES).map(k => `<option value="${k}" ${devPick.unique === k ? 'selected' : ''}>${UNIQUES[k].name}</option>`).join('')}</select>` : ''}
+      <select id="devRoll">${[['random', 'Random stat rolls'], ['max', 'Best possible rolls'], ['min', 'Worst possible rolls']].map(([k, n]) => `<option value="${k}" ${devPick.roll === k ? 'selected' : ''}>${n}</option>`).join('')}</select>`}
+      <label class="dev-qty">Amount <input type="text" id="devQty" value="${devPick.qty}"></label>
+      ${devPlain() ? '' : `<label class="dev-qty">Item level <input type="text" id="devIlvl" value="${devPick.ilvl || ''}" placeholder="${hero ? hero.level : 1}"></label>
+      <label class="dev-qty">Upgrade level <input type="text" id="devUp" value="${devPick.up || ''}" placeholder="0 (max ${upgradeMax({ rarity: devPick.rarity })})"></label>
+      <select id="devSock"><option value="">Sockets left empty</option><option value="random" ${devPick.sock === 'random' ? 'selected' : ''}>Sockets: random runes</option>${RUNE_KEYS.map(k => `<option value="${k}" ${devPick.sock === k ? 'selected' : ''}>Sockets: ${RUNES[k].title}</option>`).join('')}</select>`}
+      <span class="dev-ico" ${devPlain() ? '' : `style="border-color:${RARITIES[devPick.rarity].color}"`}>${devPick.cat === 'potion'
+        ? `<svg viewBox="0 0 28 28" width="40" height="40"><path d="M11 3h6v5l4 8a5.2 5.2 0 0 1-4.7 8h-4.6A5.2 5.2 0 0 1 7 16l4-8z" fill="${POTIONS[POTION_KEYS[devPick.base]].color}" stroke="#17171f" stroke-width="1"/><rect x="10.5" y="2" width="7" height="3" rx="1" fill="#c9a36a" stroke="#17171f" stroke-width=".8"/></svg>`
+        : slotSvg(devPick.cat, RARITIES[devPick.rarity].color, devMake())}</span></div>
+    <div class="dev-grid">
+      ${devPick.cat === 'potion' ? `${btn('give', 'Add potions')}${btn('potmax', 'Max out potions')}`
+        : `${btn('give', 'Add to inventory')}${btn('equip', 'Equip now')}${btn('fillthis', 'Fill backpack with this')}${btn('allgrades', 'One of every grade')}${btn('allcat', `Every ${DEV_CATS.find(c => c[0] === devPick.cat)[1].toLowerCase()} at this grade`)}`}
+      ${btn('clearpack', 'Clear backpack')}</div>
+    <h3>RUNE SPAWNER</h3><div class="dev-grid dev-pick">
+      <select id="devRuneSel">${RUNE_KEYS.map((k, i) => `<option value="${i}" ${devRune.k === i ? 'selected' : ''}>${RUNES[k].title} (${runeLine(k).split(': ')[1]})</option>`).join('')}</select>
+      <select id="devRuneTier"><option value="">All tiers (for the buttons below)</option>${RUNE_TIERS.map((T, i) => `<option value="${i + 1}" ${devRune.tier === i + 1 ? 'selected' : ''}>Only ${T.name} runes</option>`).join('')}</select>
+      <label class="dev-qty">Amount <input type="text" id="devRuneQty" value="${devRune.qty}"></label>
+      <span class="dev-ico" style="border-color:${RUNES[RUNE_KEYS[devRune.k]].tc}">${runeSvg(RUNE_KEYS[devRune.k], 40)}</span></div>
+    <div class="dev-grid">${btn('runeadd', 'Add runes')}${btn('runerand', 'Add a random rune (as a drop rolls)')}${btn('runemax', 'Max out every rune')}${btn('runeone', 'One of every rune')}${btn('runekind', 'One of each tier of this rune')}${btn('runeclear', 'Clear all runes')}</div>
+    <div class="hint" style="margin:2px 0 6px">You have: ${RUNE_KEYS.filter(k => runeCount(k)).map(k => `${RUNES[k].title} ${runeCount(k)}`).join(' · ') || 'no runes'}</div>
+    <h3>ESSENCE SPAWNER</h3><div class="dev-grid dev-pick">
+      <select id="devEssSel">${ESS_KEYS.map((k, i) => `<option value="${i}" ${devEss.k === i ? 'selected' : ''}>${ESS[k].title}</option>`).join('')}</select>
+      <label class="dev-qty">Amount <input type="text" id="devEssQty" value="${devEss.qty}"></label>
+      <span class="dev-ico" style="border-color:${ESS[ESS_KEYS[devEss.k]].color}">${essSvg(ESS_KEYS[devEss.k], 40)}</span></div>
+    <div class="dev-grid">${btn('essadd', 'Add essences')}${btn('essall', 'One of every essence')}${btn('essmax', 'Max out every essence')}${btn('essclear', 'Clear all essences')}</div>
+    <div class="hint" style="margin:2px 0 6px">You have: ${ESS_KEYS.filter(k => essCount(k)).map(k => `${ESS[k].title} ${essCount(k)}`).join(' · ') || 'no essences'}</div>
+    <h3>QUESTS</h3><div class="dev-grid">${QUEST_KINDS.map(k => btn('quest', k, `data-t="${k}"`)).join('')}</div>
+    <h3>AILMENTS</h3><div class="dev-grid">${AIL_KEYS.map(k => btn('ail', AILS[k].name, `data-t="${k}"`)).join('')}${btn('ailclear', 'Cure all')}</div>
     <h3>WAVES</h3><div class="dev-grid">
       ${btn('clear', 'Kill all enemies')}${btn('next', 'Skip wave')}
       <input type="text" id="devWave" value="${wave + 1}"> ${btn('goto', 'Go to wave')}</div>
@@ -2175,6 +3169,25 @@ function renderDev() {
     <div class="hint">Now: wave ${wave} · level ${hero.level} · ${enemies.length} enemies · ${world.B.name}</div>`
     : '<div class="hint">Start or load a game to use the hero, wave and spawn cheats.</div>'}`;
 }
+document.getElementById('devBody').addEventListener('change', e => {      // the item spawner's dropdowns and amount
+  const id = e.target.id, v = e.target.value;
+  if (id === 'devEssSel') devEss.k = +v;
+  else if (id === 'devEssQty') devEss.qty = Math.max(1, Math.min(ESS_MAX, parseInt(v, 10) || 1));
+  else if (id === 'devRuneSel') devRune.k = +v;
+  else if (id === 'devRuneTier') devRune.tier = +v || 0;
+  else if (id === 'devRuneQty') devRune.qty = Math.max(1, Math.min(RUNE_MAX, parseInt(v, 10) || 1));
+  else if (id === 'devCat') { devPick.cat = v; devPick.base = 0; }
+  else if (id === 'devBase') devPick.base = +v;
+  else if (id === 'devRarity') devPick.rarity = +v;
+  else if (id === 'devRoll') devPick.roll = v;
+  else if (id === 'devUnique') devPick.unique = v;
+  else if (id === 'devQty') devPick.qty = Math.max(1, Math.min(40, parseInt(v, 10) || 1));
+  else if (id === 'devIlvl') devPick.ilvl = Math.max(0, Math.min(99, parseInt(v, 10) || 0));
+  else if (id === 'devUp') devPick.up = Math.max(0, Math.min(40, parseInt(v, 10) || 0));
+  else if (id === 'devSock') devPick.sock = RUNES[v] || v === 'random' ? v : '';
+  else return;
+  sfx('click'); renderDev();
+});
 document.getElementById('devBody').addEventListener('click', e => {
   const b = e.target.closest('[data-dev]');
   if (!b) return;
@@ -2192,8 +3205,30 @@ document.getElementById('devBody').addEventListener('click', e => {
   if (act === 'pts') hero.points += 10;
   if (act === 'maxlvl') { while (hero.level < levelCap()) gainXp(hero.xpNext, hero); hero.xp = 0; }
   if (act === 'rebirth') { hero.rebirth = rebirths() + 1; applyRebirthPerks(); recalcGear(); }
-  if (act === 'gear') { const it = rollItem({ rarity: +t, level: hero.level }); if (!addToBag(it)) dropGear(it, hero.x + 60, hero.y); }
-  if (act === 'fillpack') while (hero.inv.length < INV_MAX) hero.inv.push(rollItem({ tier: depthOf(), level: hero.level }));
+  const giveItem = it => { if (!addToBag(it)) dropGear(it, hero.x + 40 + Math.random() * 60, hero.y + (Math.random() - 0.5) * 40); return it; };      // a full backpack drops it on the floor
+  const said = text => popups.push({ text, x: VW / 2, y: 120, t: 1.6, screen: true, small: true, color: '#8f8' });
+  if (act === 'give' && devPick.cat === 'potion') { const P = POTIONS[POTION_KEYS[devPick.base]]; hero[P.field] = Math.min(POTION_MAX, (hero[P.field] | 0) + devQty()); said(`${P.name}: ${hero[P.field]}`); }
+  else if (act === 'give') { let last; for (let i = 0; i < devQty(); i++) last = giveItem(devMake()); said(`Added ${devQty()} × ${last.name}`); }
+  const runeTiered = k => !devRune.tier || RUNES[k].tier === devRune.tier;                  // the tier box narrows the bulk buttons
+  if (act === 'runeadd') { const k = RUNE_KEYS[devRune.k]; addRune(k, Math.max(1, Math.min(RUNE_MAX, devRune.qty | 0 || 1))); said(`${RUNES[k].title}: ${runeCount(k)}`); }
+  if (act === 'runerand') { const k = rollRuneKey(); addRune(k); said(`Rolled ${RUNES[k].title}`); }
+  if (act === 'runemax') { hero.runes = hero.runes || {}; for (const k of RUNE_KEYS) if (runeTiered(k)) hero.runes[k] = RUNE_MAX; said(devRune.tier ? `Every ${RUNE_TIERS[devRune.tier - 1].name} rune at its maximum` : 'Every rune at its maximum'); }
+  if (act === 'runeone') { for (const k of RUNE_KEYS) if (runeTiered(k)) addRune(k); said('One of every rune added'); }
+  if (act === 'runekind') { const b = RUNES[RUNE_KEYS[devRune.k]].base; RUNE_TIERS.forEach((_, i) => addRune(runeKey(b, i + 1))); said(`One of each tier of ${RUNE_BASE[b].name}`); }
+  if (act === 'runeclear') { hero.runes = {}; said('All runes cleared'); }
+  if (act === 'scroll') { hero.recalls = Math.min(RECALL_MAX, (hero.recalls | 0) + 1); said(`Return Scrolls: ${hero.recalls}`); }
+  if (act === 'quest') { const q = { id: questId(), kind: t, n: 0, ...questDef(t) }; if (hero.quests.active.length < QUEST_MAX) hero.quests.active.push(q); else hero.quests.claim.push({ ...q, n: q.goal }); said(`Quest: ${q.title}`); }
+  if (act === 'potmax') for (const k of POTION_KEYS) hero[POTIONS[k].field] = POTION_MAX;
+  if (act === 'essadd') { const k = ESS_KEYS[devEss.k]; addEss(k, devEss.qty); said(`${ESS[k].title}: ${essCount(k)}`); }
+  if (act === 'essall') { for (const k of ESS_KEYS) addEss(k); said('One of every essence added'); }
+  if (act === 'essmax') { hero.ess = hero.ess || {}; for (const k of ESS_KEYS) hero.ess[k] = ESS_MAX; said('Every essence at its maximum'); }
+  if (act === 'essclear') { hero.ess = {}; said('All essences cleared'); }
+  if (act === 'ail') { addAilment(t); said(`${AILS[t].name}`); }
+  if (act === 'ailclear') { cureAilments(); said('Ailments cleared'); }
+  if (act === 'equip') { const it = devMake(); if (addToBag(it)) equipFromBag(it.id, it.slot === 'ring' ? 'ring1' : undefined); else dropGear(it, hero.x + 60, hero.y); said(`Equipped ${it.name}`); }
+  if (act === 'fillthis') { while (hero.inv.length < INV_MAX) hero.inv.push(devMake()); said('Backpack filled'); }
+  if (act === 'allgrades') { for (let r = 0; r < RARITIES.length; r++) giveItem(devMake(r)); said('One of every grade added'); }
+  if (act === 'allcat') { devBases(devPick.cat).forEach((_, i) => giveItem(devMake(devPick.rarity, i))); said('Every item added'); }
   if (act === 'clearpack') hero.inv = [];
   if (act === 'gold100') hero.gold += 100;
   if (act === 'gold1000') hero.gold += 1000;
@@ -2212,7 +3247,7 @@ document.getElementById('devBody').addEventListener('click', e => {
     else spawnEnemy(t, near(), { spawnT: 0.3 });
   }
   if (act === 'boss') { const w = wave; wave = Math.max(WAVES_PER_SET, wave); spawnBoss(t); wave = w; }
-  if (act === 'drop') dropItem(t, hero.x + hero.facing * 50, hero.y - 20);
+  if (act === 'drop') dropItem(t, hero.x + hero.facing * 50, hero.y - 20, t === 'rune' ? { rune: RUNE_KEYS[devRune.k], t: 40 } : t === 'essence' ? { ess: ESS_KEYS[devEss.k], t: 40 } : {});      // a rune drops as the one picked in the rune spawner
   if (act === 'biome') { const z = t === 'rand' ? randomBiome() : +t; setBiome(z); Sound.music(BIOMES[z].music); }
   if (act === 'time') tod = +t;
   if (act === 'freeze') dev.freezeTime = !dev.freezeTime;
@@ -2225,9 +3260,16 @@ function drawHitboxes() {
   ctx.save(); ctx.lineWidth = 1.5;
   ctx.strokeStyle = 'rgba(255,60,60,0.9)';
   for (const m of enemies) { ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 12, 0, Math.PI * 2); ctx.stroke(); }    // contact damage
-  for (const m of enemies) { ctx.save(); ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,160,60,0.8)'; ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 20, 0, Math.PI * 2); ctx.stroke(); ctx.restore(); }   // within this of the hero's feet a swing always lands
-  ctx.strokeStyle = 'rgba(80,200,255,0.9)';                                                                  // sword reach: the arc in front, from just behind the shoulder
-  { const a0 = hero.facing > 0 ? -Math.PI / 2 : Math.PI / 2, a1 = hero.facing > 0 ? Math.PI / 2 : Math.PI * 1.5, back = Math.asin(10 / hero.sword.range) * hero.facing; ctx.beginPath(); ctx.arc(hero.x, hero.y, hero.sword.range, a0 - back, a1 + back); ctx.stroke(); }
+  for (const m of enemies) {                                                                               // an enemy's body: what the weapon has to touch (orange), and the contact circle (dashed) that is always hit
+    const b = enemyBody(m), my = hero.y; ctx.save(); ctx.strokeStyle = 'rgba(255,160,60,0.9)';
+    ctx.beginPath(); ctx.arc(m.x, my - 4 - b.r, b.r, 0, Math.PI * 2); ctx.arc(m.x, my - b.h + b.r - 4, b.r, 0, Math.PI * 2); ctx.moveTo(m.x - b.r, my - 4 - b.r); ctx.lineTo(m.x - b.r, my - b.h + b.r - 4); ctx.moveTo(m.x + b.r, my - 4 - b.r); ctx.lineTo(m.x + b.r, my - b.h + b.r - 4); ctx.stroke();
+    ctx.setLineDash([4, 4]); ctx.strokeStyle = 'rgba(255,160,60,0.5)'; ctx.beginPath(); ctx.arc(m.x, m.y, m.r + 10, 0, Math.PI * 2); ctx.stroke(); ctx.restore();
+  }
+  ctx.strokeStyle = 'rgba(80,200,255,0.95)';                                                                 // the weapon's hit area (the carried weapon when not attacking)
+  for (const s of weaponShapes(hero.attackT > 0 ? 1 - hero.attackT / hero.attackDur : -1)) {
+    ctx.save(); ctx.lineCap = 'round'; ctx.lineWidth = Math.max(2, s.r * 2); ctx.globalAlpha = 0.3; ctx.strokeStyle = '#4cf'; line(s.x1, s.y1, s.x2, s.y2); ctx.restore();
+    ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(s.x2, s.y2, s.r, 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.strokeStyle = 'rgba(255,255,255,0.8)';                                                                 // arrow hurtbox
   ctx.beginPath(); ctx.arc(hero.x, hero.y - 35, 18, 0, Math.PI * 2); ctx.stroke();
   ctx.strokeStyle = 'rgba(255,220,80,0.8)';                                                                  // pickup radius
@@ -2452,10 +3494,12 @@ function loop(now) {
     if (state === 'intro') introT += dt;
     if (state === 'title') tAnim += dt;
     if (state === 'camp') updateCamp(dt);
-    if (state === 'village' && !paused) updateVillage(Math.min(0.05, dt));
+    wheelSlow += ((wheelOpen ? 0.07 : 1) - wheelSlow) * Math.min(1, dt * 14);        // the wheel slows the world to a near stop (not quite a pause), and it speeds back up when it closes
+    const sdt = dt * wheelSlow;
+    if (state === 'village' && !paused) updateVillage(Math.min(0.05, sdt));
     if (rebirthFx) updateRebirthFx(dt);
     if (state === 'play' && !paused && !rebirthFx) {
-      update(Math.min(0.05, dt));
+      update(Math.min(0.05, sdt));
     }
     render();
     crash = null;

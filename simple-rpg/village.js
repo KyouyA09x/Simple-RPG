@@ -3,7 +3,7 @@
 // (`world`, `enemies`, `wave`...) is left exactly as it was and play resumes where it stopped.
 // villagers.js holds the drawing; this file holds the layout, villager routines, hero control, shops and saving.
 
-const VIL_W = 1800, VIL_H = 1000, VIL_ROAD = 548, VIL_LANE = 905;
+const VIL_W = 2400, VIL_H = 1080, VIL_ROAD = 548, VIL_LANE = 905;
 const VIL_ZOOM = 1.5;           // the village is drawn this much bigger than the battlefield, so people and buildings read clearly
 let vil = null;                 // the village being visited, or null
 let villageSkip = -1;           // boss wave whose village was already visited (it only appears once per set)
@@ -27,43 +27,38 @@ const LAMPS = [null,
   { name: 'Radiant Lantern',  bonus: 130, cost: 1000 },
 ];
 const POTION_HEAL = 0.45, POTION_MAX = 15;                  // up to 15 of each kind
-// Potions come in kinds. Q drinks the one you have selected, R switches. Add a kind here (and what it does in drinkPotion) to add a potion.
+// Potions come in kinds (only the Healing Potion for now: it heals and also cures every ailment). Q drinks. Add a kind here (and what it does in drinkPotion) to add a potion.
 const POTIONS = {
   heal: { name: 'Healing Potion', short: 'Heal', color: '#d9534f', field: 'potions' },
-  cure: { name: 'Cure-All Potion', short: 'Cure', color: '#4fd69c', field: 'cures' },
 };
 const POTION_KEYS = Object.keys(POTIONS);
 const potionCount = k => (hero && hero[POTIONS[k].field]) | 0;
 const potionCost = () => Math.round(22 + wave * 2.2);
-const cureCost = () => Math.round(30 + wave * 2.8);
-// every harmful effect on the hero that a Cure-All removes. New ailments (bleed, burn, weakness...) go here.
-const hasAilment = () => !!(hero.poison || hero.chillT > 0);
+// every harmful effect on the hero that a Healing Potion removes. New ailments go in AILS (variants.js).
+const hasAilment = () => !!(hero.poison || hero.chillT > 0 || (hero.ail && Object.keys(hero.ail).length));
 function cureAilments() { clearPoison(); hero.chillT = 0; }
 function applyLamp() { hero.lightBonus = (LAMPS[hero.lamp | 0] || { bonus: 0 }).bonus; }
 
 function potionSay(text, color) { popups.push({ text, x: VW / 2, y: VH - 112, t: 1.4, screen: true, small: true, color }); }
-function switchPotion() {
-  if (!hero || hero.dead || paused || (state !== 'play' && state !== 'village')) return;
-  const prev = hero.potionSel;
-  hero.potionSel = POTION_KEYS[(POTION_KEYS.indexOf(hero.potionSel) + 1) % POTION_KEYS.length];
-  const P = POTIONS[hero.potionSel];
-  hero.potionAnim = { from: prev, to: hero.potionSel, t0: tAnim };
-  sfx('switch'); potionSay(`${P.name}: ${potionCount(hero.potionSel)}`, P.color);
+function useUtility() { if (hero.util === 'scroll') useRecall(); else drinkPotion(); }          // Q: whichever utility is equipped
+function equipUtility(id) {
+  if (id !== 'potion' && id !== 'scroll') return;
+  if (hero.util === id) return;
+  hero.util = id; hero.potionAnim = null; sfx('switch');
+  potionSay(id === 'scroll' ? 'Return Scroll equipped' : 'Healing Potion equipped', id === 'scroll' ? '#cfc0ff' : '#7fd08a');
 }
 function drinkPotion() {
   if (!hero || hero.dead || paused || (state !== 'play' && state !== 'village')) return;
-  const kind = POTIONS[hero.potionSel] ? hero.potionSel : 'heal', P = POTIONS[kind];
-  if (potionCount(kind) <= 0) { potionSay(`No ${P.name}s left`, '#f88'); sfx('tired'); return; }
-  if (kind === 'heal' && hero.hp >= hero.maxHp) { potionSay('Already at full health', '#ccc'); return; }
-  if (kind === 'cure' && !hasAilment()) { potionSay('Nothing to cure', '#ccc'); return; }
+  const kind = 'heal', P = POTIONS[kind];
+  if (potionCount(kind) <= 0) { potionSay(`No ${P.name}s left`, '#f88'); sfx('denied'); return; }
+  if (hero.hp >= hero.maxHp && !hasAilment()) { potionSay('Already at full health', '#ccc'); return; }
   if ((hero.potionCd || 0) > 0) return;
-  hero[P.field]--; hero.potionCd = 1;
-  if (kind === 'heal') {
-    const heal = Math.round(hero.maxHp * POTION_HEAL);
-    hero.hp = Math.min(hero.maxHp, hero.hp + heal);
-    potionSay(`+${heal} HP`, '#7fd08a');
-  } else { cureAilments(); potionSay('Cured!', P.color); }
-  sfx('potion');
+  hero[P.field]--; hero.potionCd = 1; questEvent('potion');
+  const cursed = ailT('curse') > 0, heal = Math.round(hero.maxHp * POTION_HEAL * (cursed ? 0.5 : 1)), cured = hasAilment();
+  hero.hp = Math.min(hero.maxHp, hero.hp + heal);
+  if (cured) cureAilments();
+  potionSay(`+${heal} HP${cured ? ' · cured' : ''}`, '#7fd08a');
+  sfx('potion'); sfx('gulp');
   if (state === 'play') burst(hero.x, hero.y - 30, P.color, 14, 90, 3, -30, true);
 }
 
@@ -92,7 +87,7 @@ function drawPotionSlot(x, cy) {
   ctx.textAlign = 'right'; const t = fitText(String(n), 26, 11, true, 8);
   ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(t, x + w - 5, y + h - 5); ctx.fillStyle = n ? '#fff' : '#f88'; ctx.fillText(t, x + w - 5, y + h - 5);
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `bold 8px ${UI_FONT}`; ctx.fillText('Q', x + 5, y + 10);
-  ctx.textAlign = 'center'; ctx.fillStyle = '#7d7b92'; ctx.font = `8.5px ${UI_FONT}`; ctx.fillText('R switch', mid, y + h + 10); ctx.textAlign = 'left';
+  ctx.textAlign = 'left';
 }
 
 // Stat reset (innkeeper): pay gold to take back every spent stat point and spend them again.
@@ -156,6 +151,8 @@ const SHOP_ROW = {                                     // the row north of the r
   store:   { w: 190, wh: 70, rh: 46, sign: 'sack' },
   armoury: { w: 190, wh: 72, rh: 46, sign: 'shield' },
   jewel:   { w: 160, wh: 64, rh: 42, sign: 'gem', flowers: true },
+  craft:   { w: 180, wh: 72, rh: 48, sign: 'hammer', paint: { wall: '#c9bba4', roof: '#5a4638', trim: '#3a2a20' } },       // the Crafting Hall: shuttered for now
+  enchant: { w: 170, wh: 70, rh: 50, sign: 'rune', paint: { wall: '#cfc6e4', roof: '#4b3a8c', trim: '#33265c' } },       // Ysolde's house: lavender walls and a deep violet roof, whatever the biome
 };
 const YARD_W = { garden: 230, lawn: 430, smith: 300, wood: 310 };       // widths of the yards south of the road
 
@@ -165,7 +162,7 @@ function buildVillage() {
   const E = r() < 0.5 ? 1 : -1;                          // the gate is on the east (1) or west (-1) side; you arrive from the other
   const v = {
     B, st, seed, E, name: st.name, t: 0, fade: 1, leaveT: 0, solids: [], hsolids: [], statics: [], buildings: [], b: {}, npcs: [], animals: [], hens: [],
-    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 3 + Math.floor(Math.random() * 5), cure: 2 + Math.floor(Math.random() * 3) },
+    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 4 + Math.floor(Math.random() * 5) },
     near: null, talk: null, shop: null, kidMode: 'ball', kidT: 25, tag: { it: 0, imm: 0 }, kickCd: 0, chaseT: 0, chaser: null, lastKicker: null,
     stats: { stuck: 0, snaps: 0 }, smokeT: 0, soundT: 0, doneLeave: false,
   };
@@ -192,9 +189,9 @@ function buildVillage() {
   const order = shuffle(Object.keys(SHOP_ROW));
   const sumW = order.reduce((a, k) => a + SHOP_ROW[k].w, 0), gapN = (VIL_W - 260 - sumW) / (order.length - 1);
   let cursor = 130;
-  for (const id of order) { const s = SHOP_ROW[id]; mkB(id, cursor + s.w / 2, 336 + Math.floor(r() * 24), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers }); cursor += s.w + gapN; }
+  for (const id of order) { const s = SHOP_ROW[id]; mkB(id, cursor + s.w / 2, 336 + Math.floor(r() * 24), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers, ...(s.paint || {}) }); cursor += s.w + gapN; }
   v.shopOrder = order;
-  const { alch, store, armoury, jewel } = v.b;
+  const { alch, store, armoury, jewel, enchant } = v.b;
 
   // ---- shop counters and a bit of clutter at the left corner of every shop ----
   const counter = (b, w, kind, awn) => {
@@ -202,7 +199,7 @@ function buildVillage() {
     add(p.y, () => VPROP.counter(p)); rect(p.x - w / 2, p.y - 14, p.x + w / 2, p.y + 4);
     v.hsolids.push({ x0: p.x - w / 2 - 20, y0: b.y + 2, x1: p.x - w / 2, y1: p.y + 4 }, { x0: p.x + w / 2, y0: b.y + 2, x1: p.x + w / 2 + 20, y1: p.y + 4 });   // the shopkeeper's side of the counter is closed to you
   };
-  counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b'); counter(armoury, 120, 'armour', '#2f6aa8'); counter(jewel, 100, 'jewel', '#2f8a6a');
+  counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b'); counter(armoury, 120, 'armour', '#2f6aa8'); counter(jewel, 100, 'jewel', '#2f8a6a'); counter(enchant, 108, 'enchant', '#5b3fa8');
   const barrel = (x, y, o = {}) => { prop('barrel', x, y, o); circle(x, y - 4, 11); };
   const crates = (x, y) => { prop('crates', x, y); rect(x - 20, y - 14, x + 19, y + 1); };
   for (const id of order) {
@@ -323,14 +320,19 @@ function buildVillage() {
   };
   let guard = 0;
   v.trees = [];
-  while (v.trees.length < 84 && guard++ < 1100) {
+  while (v.trees.length < 140 && guard++ < 2000) {
     const edge = r() < 0.7;
     const x = edge ? (r() < 0.5 ? 20 + r() * (VIL_W - 40) : (r() < 0.5 ? 20 + r() * 90 : VIL_W - 110 + r() * 90)) : 30 + r() * (VIL_W - 60);
-    const y = edge ? (r() < 0.55 ? 100 + r() * 95 : (r() < 0.5 ? 935 + r() * 55 : 130 + r() * 840)) : 130 + r() * 840;
+    const y = edge ? (r() < 0.55 ? 100 + r() * 95 : (r() < 0.5 ? VIL_H - 65 + r() * 55 : 130 + r() * (VIL_H - 160))) : 130 + r() * (VIL_H - 160);
     if (!okSpot(x, y) || v.trees.some(t => Math.hypot(t.x - x, t.y - y) < 46)) continue;
     const p = { k: kinds[Math.floor(r() * kinds.length)], x, y, s: 0.85 + r() * 0.5, v: r(), ph: r() * 6.28 };
     v.trees.push(p); add(y, () => drawProp(p));
     if (x > 56 && x < VIL_W - 56 && y > 135 && y < VIL_H - 56) circle(x, y - 2, 9 * Math.min(1.3, p.s));   // trees on the map edge are scenery only (the edge clamp would wedge the hero into them)
+  }
+  for (let i = 0; i < 16; i++) {                         // the wider village has flower meadows in the open spaces
+    const x = 160 + r() * (VIL_W - 320), y = 150 + r() * (VIL_H - 260);
+    if (!okSpot(x, y) || v.trees.some(t => Math.hypot(t.x - x, t.y - y) < 70)) continue;
+    patch(x, y, 55 + r() * 60, 26 + r() * 26, B.grass[1], 0.5, { n: 46, rx: 80, ry: 34, cols: ['#f28ab2', '#f4e04d', '#ffffff', '#b99bff'], w: 2.4, h: 2.4 });
   }
   v.ground = bakeVillageGround(v);
 
@@ -340,6 +342,7 @@ function buildVillage() {
   v.ball = { x: (v.lawn.x0 + v.lawn.x1) / 2, y: 680, vx: 0, vy: 0, z: 0 };
   v.lawnC = { x: (v.lawn.x0 + v.lawn.x1) / 2, y: (v.lawn.y0 + v.lawn.y1) / 2 };
   makeStock(v);
+  makeQuestOffers(v);
   v.solidsH = v.solids.concat(v.hsolids);
   return v;
 }
@@ -415,6 +418,151 @@ const MORE_LINES = {
   nell: ['One day I will fight monsters too. I will be much better than Pip.', 'Granny Orla says I may have her old stick. It is very long.', 'If you see my ball, it is red. If you see Pip, it is probably his fault.', 'We play until the lamps come on. Then Mum shouts.'],
   tam: ['The ball went into the hay again. Pip says he did not kick it. He did.', 'Do you think the beast is scared of us? I would be scared of us.', 'My dad says you are very brave. My mum says you are very late for dinner.', 'I am the fastest in the village. ...After Nell.'],
 };
+// ---------------------------------------------------------------- more to say, and more to do
+// Beyond the first words: extra lines for everyone, rumours, "what do you do", stories, and the NPCs talking to each other. Chatting, tipping and playing raise a friendship (hearts);
+// at five hearts a villager gives you something once. Friendship and gifts are saved with the game.
+const EXTRA_LINES = {
+  mira: ['If a potion fizzes, it is working. If it screams, step back.', 'I tasted every one of these. Twice. For science. Mostly.', 'Poison, chills, a nasty cut... there is a bottle for each. Not all of them taste better than the problem.'],
+  tobin: ['A lantern is just a small sun you can carry. Do not tell the sun I said so.', 'Every hero buys the same three things: rope, lantern, regret. I only sell two.', 'Fog, night, deep ruins... light is the cheapest armour there is.'],
+  dagna: ['Mail is a promise to your ribs. Keep it.', 'A dent is a story. A hole is a funeral. I fix both. Mostly the first.', 'I do not do pretty. I do alive.'],
+  lysa: ['A ring on every finger and still your pockets will be empty. That is how you know it is good jewellery.', 'This stone brings luck. That one brings a lot of questions. I sell both.', 'Look closely at the clasp. That is where the quality hides.'],
+  ysolde: ['Faint runes are cheap, and every Eternal one began as a Faint one. Remember that when you lose a few.', 'A rune never forgets the hand that shaped it. That is why they hum when you hold them.', 'Do not hoard. A rune in a pouch is a song nobody hears.', 'If the altar refuses, it is not cruelty. It is a stone that is not ready.'],
+  hilda: ['The best soup is the one you eat after a long road. I have never made it better than that.', 'There is always a bed. There is always a bowl. That is the whole business.', 'I hear every rumour. I repeat none of them. Except the good ones.'],
+  brann: ['A blade is only as honest as the one who sharpens it.', 'Upgrade a sword too many times and it sulks. Ask me how I know.', 'Spend gold on iron, not regret.'],
+  pim: ['Carrots are patient. Cabbages are stubborn. Roses are drama.', 'Every dawn I tell the plants good morning. The beans never answer. The beans are rude.', 'A garden is just a slow conversation with the weather.'],
+  rurik: ['Cut it clean, stack it neat, burn it warm. That is all of woodcraft.', 'Trees do not mind being cut if you ask them first. I always ask.', 'The splitting maul has a name. I will not tell you what it is.'],
+  orla: ['The village is quiet because the young ones are loud elsewhere.', 'Your boots tell me a long story. Go on, sit and tell me the rest.', 'I have outlived three innkeepers and one very rude goat.'],
+  eira: ['A return is not an ending, {name}. It is the part of the song that circles back.', 'Level does not forget. Neither does the shrine.', 'The Mythical pieces cling to you. You are lucky to be liked by such things.'],
+  voss: ['I have counted the gate posts every morning for eleven years. They have not moved.', 'A guard is a patient man with a sharp stick.', 'Nothing is quiet here forever, hero. That is what the stick is for.'],
+  pip: ['I am the fastest in the village. Nell says she is. She is not.', 'When I grow up I will have a sword and a dog and a very big ball.'],
+  nell: ['Pip says I cannot be a hero because I am small. I say heroes start small. Like acorns.', 'Tam is the strongest kicker. But I am the sneakiest.'],
+  tam: ['I can kick it over the roof. Almost. Next time.', 'Mum says I eat too many carrots. Old Pim says that is impossible.'],
+};
+const RUMORS = [
+  'They say the beast on the road changes with every set of waves. Bring something that bites back.',
+  'A trader from {biome} swore the stones there hum at night. I did not ask which stones.',
+  'Eira says the shrine hums louder when a hero is close to the top.',
+  'Wave {wave} already? The last hero stopped well before that. Folk still talk about them.',
+  'Ysolde has been buying every rune she can find. The rune dealers are nervous.',
+  'Brann is working on something big. Or he dropped his hammer. Hard to tell.',
+  'The kids found a shiny coin by the well. Pip says it is cursed. It is not. I checked.',
+  "Mira's cauldron went green last night. Nobody will admit to anything.",
+  'Sergeant Voss swears he heard singing from the gate at midnight. Voss does not drink.',
+  'Orla says the Wardens left a message in the old road stones. Nobody can read it.',
+  'A merchant says the beasts out there hate fire. Bring a burning blade, they said.',
+  'The hens have been laying double. Rurik says it is the weather. Pim says it is the beast.',
+  'If you want a good ring, wait for Lysa\'s next shipment. If you want a cheap one, wait longer.',
+  'They say a Secret piece once dropped in the Hollow and walked itself home. I doubt it.',
+  'The innkeeper has put an extra blanket on every bed. A cold night is coming, or Hilda knows something.',
+  'Tier {tier} beasts, they say. Strong enough that even Brann went quiet.',
+];
+const ASK_WORK = {
+  mira: ['I brew Healing Potions from three herbs and one secret. The secret is patience.', 'One bottle mends the body and clears every ailment, from a bleed to a curse. I would not sell you a worse one.'],
+  tobin: ['Lanterns, rope, anything that keeps you alive after dark. Light is the best armour.', 'I buy low, sell high, and give every hero the benefit of the doubt.'],
+  dagna: ['I test every piece on a straw dummy first. Then on Brann. Then on you.', 'Armour is a conversation between steel and the thing that wants to hurt you. I make sure steel wins.'],
+  lysa: ['Rings, necklaces and artifacts. Everything small, everything lucky, everything priced accordingly.', 'I find the stones, the dwarves cut them, and I sell the story along with the ring.'],
+  ysolde: ['I coax runes out of the stone and teach them to hold their shape. Then I let you carry them. Responsibly.', 'The shelf is what I have. The altar is what I do. Bring me what you carry and I will see how far it can go.'],
+  hilda: ['I keep the beds, the fire and the peace. In that order on a good day.', 'Rest here and the day starts fresh and your journey is safely written down. That is the whole trick.'],
+  brann: ['Weapons to buy, gear to temper, spare iron to sell. The anvil does the rest.', 'Every blade I make was a lump of ore with ambitions.'],
+  pim: ['Cabbages, carrots and an unreasonable number of flowers. The beast leaves them alone. I do not know why.', 'I water at dawn and gossip with the beans at noon.'],
+  rurik: ['I fell the trees, split the logs and stack them neat. The inn burns more than you would think.', 'Cut one, plant ten. That is the deal I made with the forest.'],
+  orla: ['I knit, I read the notice board, and I tell the young ones they are wrong. Someone has to.', 'Elders are mostly the ones who sat down first.'],
+  eira: ['I keep the Shrine of Return. Reach the top and I can send you back down, stronger.', 'I do not make anyone return. I only open the door and hold the light.'],
+  voss: ['I guard the gate. I count the posts. The beast on the road keeps me honest.', 'Heroes go out. Most come back. I make sure the ones who do not are remembered.'],
+  pip: ['We are playing ball! You can play too! ...Do you know how to kick?', 'I am the goalie! Nell is the other goalie! Tam kicks and nobody is happy.'],
+  nell: ['We are playing tag! Everybody is it! Nobody is winning!', 'I am the fastest. Do not tell Pip. He gets sulky.'],
+  tam: ['I am the best kicker. Do not ask Pip, he is jealous.', 'The ball keeps going in the hay. Pip says it is a rule.'],
+  _: ['Oh, this and that. The village keeps me busy.', 'Mostly I try to stay out of the beast\'s way.'],
+};
+const STORIES = [
+  'Aldermere was eight kingdoms, joined by a single road. The Wardens walked it every day, one from each kingdom, and every evening they lit a fire on the ridge to tell the others all was well.',
+  'My grandmother said the Hollow was always there, sleeping under the road like a cat under a porch. Nobody told it to wake up. Nobody told it to go back to sleep either.',
+  'There was a Warden once who could not be killed. Eight times the beasts took him and eight times he stood up. The ninth time he did not. We still lay a place for him at the fire.',
+  'The old song goes: eight fires, eight roads, eight hearts. When the last fire goes out, someone new lights the first. I always thought it was only a song.',
+  'When I was small, a stranger walked out of the dusk with a red scarf and no name. They stayed one night, ate three bowls of soup and left before dawn. I think about them often.',
+  'Heroes come back, you know. Not always the way they left. A kind of loop in the road. The shrine knows. Eira keeps count.',
+];
+const PAIR_CHAT = {
+  'mira|tobin': ["Tobin, you owe me for the lantern oil!", 'Put it on my tab, Mira!'],
+  'brann|dagna': ['Dagna, your helm dented my hammer.', 'Then your hammer is too soft!'],
+  'orla|pim': ['Pim, your tomatoes were delicious. Take it as a compliment.', 'Bless you, Orla. They only grow for you.'],
+  'hilda|rurik': ['Rurik, more firewood for the inn?', 'Two cartloads by noon, Hilda.'],
+  'lysa|ysolde': ['Ysolde, that stone is humming again.', 'That is rather the point, Lysa.'],
+  'eira|voss': ['Sergeant, any heroes today?', 'One. Looks promising.'],
+  'dagna|lysa': ['Lysa, do you have a clasp for this buckle?', 'For you, Dagna? Naturally.'],
+  'hilda|mira': ['Mira, the soup is ready!', 'Not now Hilda, the cauldron is at a delicate stage!'],
+  'brann|rurik': ['Rurik, I need charcoal. A lot.', 'I need an axe. A good one. Fair trade.'],
+  'nell|pip': ['Tag! You are it!', 'No fair, I was not ready!'],
+  'pip|tam': ['Pass it here!', 'You kicked it into the hay AGAIN!'],
+  'nell|tam': ['Race you to the well!', 'You always cheat!'],
+};
+const PAIR_GENERIC = [['Morning, {b}!', 'Morning, {a}! Lovely day for it.'], ['Have you seen the hero about?', 'Hard to miss them. Mind the sword!'], ['Busy day?', 'Always. And yours?'], ['Did you hear that noise last night?', 'The wind, I hope.'], ['Mind the road, {b}.', 'And you, {a}.'], ['Any news from the gate?', 'Quiet. Too quiet, Voss says.']];
+const BOND_MAX = 8, BOND_GIFT = 5, tipCost = () => 25 + Math.floor(wave / 2);
+const bondOf = id => (hero && hero.bond && hero.bond[id]) | 0;
+const hearts = id => '♥'.repeat(bondOf(id)) + '♡'.repeat(BOND_MAX - bondOf(id));
+function bondAdd(id, k) { hero.bond = hero.bond || {}; hero.bond[id] = Math.min(BOND_MAX, bondOf(id) + k); }
+const giveItem = (slot, rar) => { const it = rollItem({ slot, rarity: rar, level: hero.level + 2 }); if (addToBag(it)) return `${it.name}`; hero.gold += 120; return '120 gold (your pack was full)'; };
+const giveGold = g => { hero.gold += g; hero.goldPulse = 0.6; return `${g} gold`; };
+const givePots = h => { hero.potions = Math.min(POTION_MAX, (hero.potions | 0) + h); return `${h} Healing Potion${h > 1 ? 's' : ''}`; };
+const giveRune = () => { const k = rollRuneKey(1.5, 3); addRune(k); return `a ${RUNES[k].title}`; };
+const GIFTS = {
+  mira: () => givePots(3), tobin: () => giveGold(60 + wave * 6), dagna: () => giveItem('armor', 3), lysa: () => giveItem('ring', 3), ysolde: giveRune, hilda: () => givePots(3),
+  brann: () => giveItem('weapon', 3), pim: () => givePots(2), rurik: () => giveGold(50 + wave * 5), orla: () => giveGold(80 + wave * 4), eira: giveRune, voss: () => givePots(2),
+  pip: () => giveGold(30 + wave * 2), nell: () => giveGold(30 + wave * 2), tam: () => giveGold(30 + wave * 2), _: () => giveGold(50),
+};
+function giveGift(n) {
+  hero.gifts = hero.gifts || {}; hero.gifts[n.id] = 1;
+  const what = (GIFTS[n.id] || GIFTS._)(); sfx('gift'); saveGame(true, true);
+  popups.push({ text: `${n.name} gave you ${what}`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#ffd86a' });
+  return `\n${n.name} gives you ${what}.`;
+}
+const chatButtons = n => {
+  const b = [['news', 'Ask for news']];
+  if (n.kid) b.push(['ball', 'Play ball with them']);
+  if (n.id === 'orla') b.push(['story', 'Ask for a story']);
+  b.push(['tip', `Give a tip (${tipCost()} gold)`, hero.gold < tipCost()], ['back', 'Never mind']);
+  return b;
+};
+function chatAct(k, n) {
+  const v = vil, pick = a => a[Math.floor(Math.random() * a.length)], first = !n['did_' + k];
+  const fill = t => t.replace(/\{name\}/g, hero.name).replace(/\{village\}/g, v.name).replace(/\{biome\}/g, v.B.name).replace(/\{wave\}/g, String(wave)).replace(/\{tier\}/g, String(tierOf(wave)));
+  let text = '', add = 0;
+  if (k === 'news') { text = pick(RUMORS); add = first ? 1 : 0; }
+  else if (k === 'work') { text = pick(ASK_WORK[n.id] || ASK_WORK._); add = first ? 1 : 0; }
+  else if (k === 'story') { n.storyI = (n.storyI | 0) + 1; text = STORIES[(n.storyI - 1 + (hero.name.length | 0)) % STORIES.length]; add = first ? 1 : 0; }
+  else if (k === 'ball') {
+    const kids = v.npcs.filter(x => x.kid && !x.inside);
+    for (const x of kids) { x.cheerT = 1.8; x.pt = 0; } n.kickT = 0.3; n.pt = 0; sfxNear(n, 'kick', 1); v.ball.vx = (hero.x < n.x ? -1 : 1) * 120; v.ball.vy = 20; v.ball.z = 6;
+    text = pick(['"Wheee! Nice one!" The ball sails over the grass and everyone cheers.', '"Again! Again!" The kids crowd round you, laughing.', '"You kick like a hero!" says ' + n.name + ', beaming.']); add = first ? 1 : 0;
+  } else if (k === 'tip') {
+    const c = tipCost(); if (hero.gold < c) { sfx('denied'); return; }
+    hero.gold -= c; hero.goldPulse = 0.6; add = 2; sfx('coin'); text = pick(['"Oh! That is far too kind, {name}. Thank you."', '"I will put that to good use. Bless you, {name}."', '"For me? Well... I will not say no."', '"You are too good to us, {name}."']);
+  }
+  n['did_' + k] = true; if (add) { bondAdd(n.id, add); if (k !== 'tip') sfx('select'); }
+  const gift = bondOf(n.id) >= BOND_GIFT && !(hero.gifts || {})[n.id] ? giveGift(n) : '';
+  openTalk(`${fill(text)}${gift}`, chatButtons(n));
+}
+// villagers who pass each other stop for a word: one speaks, the other answers a moment later
+function pairChats(v, dt) {
+  const q = v.replies || (v.replies = []);
+  for (let i = q.length - 1; i >= 0; i--) { const r = q[i]; if (v.t >= r.t) { q.splice(i, 1); if (!r.n.inside && !r.n.bubble) { r.n.bubble = r.text; r.n.bubbleT = 2.8; r.n.talking = true; sfxNear(r.n, r.n.kid ? 'giggle' : 'murmur', 0.6); } } }
+  v.pairT = (v.pairT || 0) - dt; if (v.pairT > 0) return; v.pairT = 1.2;
+  if (!hero) return;
+  const cd = v.pairCd || (v.pairCd = {}), list = v.npcs.filter(n => !n.inside && n.alpha > 0.8 && !n.goHome && !n.bubble && !n.talking && Math.hypot(n.x - hero.x, n.y - hero.y) < 520);
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i], b = list[j];
+    if (Math.hypot(a.x - b.x, a.y - b.y) > 72) continue;
+    const key = [a.id, b.id].sort().join('|'); if ((cd[key] || 0) > v.t) continue; cd[key] = v.t + 160 + Math.random() * 120;
+    const pair = PAIR_CHAT[key], gen = PAIR_GENERIC[Math.floor(Math.random() * PAIR_GENERIC.length)];
+    let [l1, l2] = pair || gen; const first = pair && pair.length && key.split('|')[0] !== a.id ? [b, a] : [a, b];
+    const fill = t => t.replace(/\{a\}/g, first[0].name).replace(/\{b\}/g, first[1].name);
+    first[0].bubble = fill(l1); first[0].bubbleT = 2.8; first[0].talking = true; sfxNear(first[0], first[0].kid ? 'giggle' : 'murmur', 0.6);
+    first[0].f = first[1].x >= first[0].x ? 1 : -1; first[1].f = first[0].x >= first[1].x ? 1 : -1;
+    q.push({ t: v.t + 1.9, n: first[1], text: fill(l2) });
+    return;
+  }
+}
+
 function makeNpcs(v) {
   const night = night01() > 0.55;
   const mk = (id, name, role, x, y, o) => {
@@ -458,6 +606,13 @@ function makeNpcs(v) {
     lines: ['Rings and charms. Small things, big luck.', 'Every stone has a story. Most of them are about money.', 'A good ring will find your weak spot and cover it.'],
     chat: ['Sparkle, sparkle...', 'Lovely stones today!', 'Mind the glass!'],
     script: () => [{ t: [4, 8], face: -1 }, { do: 'wipe', t: [2, 3] }, { go: [jewStand[0] + 50, jewStand[1]] }, { t: [3, 6], face: 1 }, { go: jewStand }],
+  });
+  const ysStand = [b.enchant.x - 30, b.enchant.y + 27];
+  mk('ysolde', 'Ysolde', 'Enchantress', ysStand[0], ysStand[1], {
+    shop: 'enchant', look: { dress: '#233a7a', hat: 'cone', hatColor: '#1d2a5e', hair: '#b8f0ff', cheek: true }, f: 1,
+    lines: ['Every rune is a promise a stone made to the world. I only teach it to keep it.', 'A Faint rune is a whisper. An Eternal one is a roar. Most never hear it.', 'Runes want a home in good gear. Bring them to Brann and he will set them in.', 'Improving a rune is delicate work. Sometimes the stone refuses, and it settles a step lower.'],
+    chat: ['Hush now, little stone...', 'The runes are restless today.', 'Mind the glow!'],
+    script: () => [{ t: [4, 8], face: -1 }, { do: 'wipe', t: [2, 3] }, { go: [ysStand[0] + 52, ysStand[1]] }, { t: [3, 6], face: 1 }, { go: ysStand }],
   });
   mk('hilda', 'Hilda', 'Innkeeper', b.inn.x - 70, b.inn.y + 30, {
     special: 'inn', look: { dress: '#b04a5a', apron: '#f0ead8', hat: 'kerchief', hatColor: '#e8d8a8', hair: '#7a4a2a', cheek: true },
@@ -528,7 +683,7 @@ function makeNpcs(v) {
     chat: ['Move along, citizens.', 'All quiet.', 'Halt. ...Oh, it is you.'],
     script: () => [{ do: 'lean', t: [9, 15], face: -v.E }, { go: [v.gate.x - 98 * v.E, v.gate.y + 26] }, { t: [4, 6], face: -v.E }, { go: [v.gate.x - 98 * v.E, v.gate.y - 28] }],
   });
-  for (const n of v.npcs) if (MORE_LINES[n.id]) n.lines = n.lines.concat(MORE_LINES[n.id]);
+  for (const n of v.npcs) n.lines = n.lines.concat(MORE_LINES[n.id] || (EXTRA_LINES[n.id] || []).slice(0, 3));
   // the notice board is a talk target too
   v.sleepAt = { x: b.inn.x + 118, y: b.inn.y + 40 };
 }
@@ -588,17 +743,22 @@ function walkTo(n, tx, ty, dt, v, spd) {
   const st = Math.min(d, spd * dt);
   const c = vilCollide(v, n.x + dx / d * st, n.y + dy / d * st, n.r, n.x, n.y);
   const moved = Math.hypot(c.x - n.x, c.y - n.y);
-  if (Math.abs(dx) > 1.5) n.f = dx > 0 ? 1 : -1;
-  n.x = c.x; n.y = c.y; n.moving = moved > 0.01;
-  n.walkT += dt * stepRate(spd, 11 * (n.scale || 1));
+  if (Math.abs(dx) > Math.max(1.5, Math.abs(dy) * 0.4)) faceTo(n, dx > 0 ? 1 : -1);        // turn only for a real sideways move
+  n.x = c.x; n.y = c.y;
+  if (moved > 0.01) { n.mvHold = 0.18; n.walkT += dt * stepRate(spd, 11 * (n.scale || 1)); } else n.mvHold = (n.mvHold || 0) - dt;          // feet only step when the body moves; a one-frame stop is not a stop
+  n.moving = n.mvHold > 0;
   n.stuckT = moved < st * 0.3 ? (n.stuckT || 0) + dt : 0;
   if (n.stuckT > 1.6) {                                   // never stay wedged
     v.stats.stuck++; n.stuckT = 0; n.moving = false;
     if (n.kind === 'dog') return true;                    // the dog just gives up on a spot it can't reach
-    v.stats.snaps++; (v.stats.who = v.stats.who || []).push(`${n.id || n.kind}@${Math.round(n.x)},${Math.round(n.y)}->${Math.round(tx)},${Math.round(ty)}`); n.x = tx; n.y = ty; return true;
+    if ((n.stuckN = (n.stuckN | 0) + 1) <= 2) { n.replan = true; return false; }               // first try another way round
+    n.stuckN = 0; v.stats.snaps++; (v.stats.who = v.stats.who || []).push(`${n.id || n.kind}@${Math.round(n.x)},${Math.round(n.y)}->${Math.round(tx)},${Math.round(ty)}`); n.x = tx; n.y = ty; return true;
   }
   return false;
 }
+
+// turning round takes a moment: nobody flips more than about three times a second
+function faceTo(n, f) { if (n.f === f) return; const t = typeof vil !== 'undefined' && vil ? vil.t : 0; if (n.faceAt !== undefined && t >= n.faceAt && t - n.faceAt < 0.3) return; n.f = f; n.faceAt = t; }
 
 // Going home: walk to the door (the path finder takes them round the walls); coming out, the children head for the lawn.
 function homeRoute(n, v, dir) {
@@ -672,7 +832,7 @@ function runScript(n, dt, v) {
   const s = n.cur;
   if (s.go) {
     n.pose = s.pose || (n.carry ? 'carry' : 'stand');
-    if (!s.path) s.path = planPath(v, n, s.go);
+    if (!s.path || n.replan) { s.path = planPath(v, n, s.go); n.replan = false; }
     const wp = s.path[0];
     if (walkTo(n, wp[0], wp[1], dt, v, s.speed || n.speed)) { s.path.shift(); if (!s.path.length) { n.moving = false; n.cur = null; } }
     else if (n.pose === 'sweep' && n.moving && Math.random() < dt * 4) vfx(v, { x: n.x + n.f * 22, y: n.y - 1, vx: n.f * 12, vy: -12, grav: 0, life: 0.7, size: 2.2, color: 'rgba(200,190,160,0.5)' });
@@ -707,14 +867,14 @@ function npcTick(n, dt, v) {
   // greet the hero when they walk up, and chat every now and then
   const hd = Math.hypot(hero.x - n.x, hero.y - n.y);
   if (hd > 280) n.greeted = false;
-  if (!n.greeted && hd < 105 && !n.moving && !n.goHome) { n.greeted = true; n.greetT = 1.5; }
+  if (!n.greeted && hd < 105 && !n.moving && !n.goHome) { n.greeted = true; n.greetT = 1.5; sfxNear(n, n.kid ? 'giggle' : 'hello', 0.8); }
   if (n.greetT > 0) { n.greetT -= dt; if (!n.moving && n.pose !== 'carry') { n.pose = 'wave'; n.pt += dt; n.f = hero.x >= n.x ? 1 : -1; } }
   n.chatT -= dt;
   if (n.bubbleT > 0) { n.bubbleT -= dt; if (n.bubbleT <= 0) { n.bubble = null; n.talking = false; } }
   else if (n.chatT <= 0 && hd < 260 && n.chat.length && !n.goHome) {
     n.chatT = 9 + Math.random() * 12;
     n.bubble = n.kid && v.kidMode === 'tag' && Math.random() < 0.5 ? (v.tag.it === v.npcs.indexOf(n) ? "You can't catch me!" : 'Run!') : n.chat[Math.floor(Math.random() * n.chat.length)];
-    n.bubbleT = 3.2; n.talking = true;
+    n.bubbleT = 3.2; n.talking = true; sfxNear(n, 'murmur', 0.6);
     if (n.kid && Math.random() < 0.6) sfxNear(n, 'giggle', 0.7);
   }
 }
@@ -725,10 +885,10 @@ function kidTick(n, dt, v) {
   const clampLawn = () => { n.x = Math.max(L.x0, Math.min(L.x1, n.x)); n.y = Math.max(L.y0, Math.min(L.y1, n.y)); };
   const run = (tx, ty, spd) => {
     const dx = tx - n.x, dy = ty - n.y, d = Math.hypot(dx, dy);
-    if (d < 3) { n.moving = false; return true; }
+    if (d < 3) { n.mvHold = (n.mvHold || 0) - dt; n.moving = n.mvHold > 0; return true; }
     const st = Math.min(d, spd * dt); n.x += dx / d * st; n.y += dy / d * st; clampLawn();
-    if (Math.abs(dx) > 1) n.f = dx > 0 ? 1 : -1;
-    n.moving = true; n.walkT += dt * stepRate(spd, 11 * n.scale); return false;
+    if (Math.abs(dx) > Math.max(1.5, Math.abs(dy) * 0.4)) faceTo(n, dx > 0 ? 1 : -1);
+    n.moving = true; n.mvHold = 0.18; n.walkT += dt * stepRate(spd, 11 * n.scale); return false;
   };
   n.pt += dt;
   if (n === kids[0]) {                                                // one kid runs the group state
@@ -766,20 +926,27 @@ function kidTick(n, dt, v) {
     n.pose = 'stand';
     const it = v.npcs[v.tag.it], isIt = it === n;
     if (isIt) {
-      let best = null, bd = 1e9;
-      for (const k of kids) if (k !== n) { const d = Math.hypot(k.x - n.x, k.y - n.y); if (d < bd) { bd = d; best = k; } }
+      n.chaseT = (n.chaseT || 0) - dt;
+      if (!n.chaseK || n.chaseT <= 0 || n.chaseK.inside || n.chaseK === n) {                    // keep to one runner for a moment instead of switching every frame
+        let b0 = null, d0 = 1e9; for (const k of kids) if (k !== n) { const d = Math.hypot(k.x - n.x, k.y - n.y); if (d < d0) { d0 = d; b0 = k; } }
+        n.chaseK = b0; n.chaseT = 0.8;
+      }
+      const best = n.chaseK, bd = best ? Math.hypot(best.x - n.x, best.y - n.y) : 1e9;
       if (best) {
         run(best.x, best.y, 80);
         if (bd < 15 && v.tag.imm <= 0) { v.tag.it = v.npcs.indexOf(best); v.tag.imm = 1.2; best.bubble = 'Tag! You are it!'; best.bubbleT = 2; best.talking = true; sfxNear(best, 'giggle', 0.8); }
       }
     } else if (it && !it.inside) {
-      const dx = n.x - it.x, dy = n.y - it.y, d = Math.hypot(dx, dy) || 1;
-      let tx = n.x + dx / d * 60 + Math.sin(v.t * 1.3 + idx) * 25, ty = n.y + dy / d * 60 + Math.cos(v.t * 1.1 + idx) * 20;
-      // steer away from the lawn edges so nobody gets pinned in a corner
-      const cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2;
-      if (n.x < L.x0 + 25 || n.x > L.x1 - 25) tx = cx + (Math.random() - 0.5) * 60;
-      if (n.y < L.y0 + 18 || n.y > L.y1 - 18) ty = cy + (Math.random() - 0.5) * 40;
-      run(tx, ty, 82);
+      n.fleeT = (n.fleeT || 0) - dt;
+      if (n.fleeT <= 0 || n.fleeTx === undefined) {                                           // pick a spot to run to and keep to it for a little while
+        const dx = n.x - it.x, dy = n.y - it.y, d = Math.hypot(dx, dy) || 1;
+        let tx = n.x + dx / d * 60 + Math.sin(v.t * 1.3 + idx) * 25, ty = n.y + dy / d * 60 + Math.cos(v.t * 1.1 + idx) * 20;
+        const cx = (L.x0 + L.x1) / 2, cy = (L.y0 + L.y1) / 2;                                  // steer away from the lawn edges so nobody gets pinned in a corner
+        if (n.x < L.x0 + 25 || n.x > L.x1 - 25) tx = cx + (Math.random() - 0.5) * 60;
+        if (n.y < L.y0 + 18 || n.y > L.y1 - 18) ty = cy + (Math.random() - 0.5) * 40;
+        n.fleeTx = Math.max(L.x0, Math.min(L.x1, tx)); n.fleeTy = Math.max(L.y0, Math.min(L.y1, ty)); n.fleeT = 0.5 + Math.random() * 0.3;
+      }
+      run(n.fleeTx, n.fleeTy, 82);
     }
   } else {                                                           // rest in a ring on the grass
     const k = kids.indexOf(n), a = (k / Math.max(1, kids.length)) * Math.PI * 2 + 0.6, tx = v.lawnC.x + Math.cos(a) * 38, ty = v.lawnC.y + Math.sin(a) * 18;
@@ -871,8 +1038,8 @@ function updateVillageHero(dt, v) {
   hero.hp = Math.min(hero.maxHp, hero.hp + hero.maxHp * 0.02 * dt);              // safe ground: health returns quickly
   let dx = 0, dy = 0;
   if (v.leaveT <= 0 && !v.skip) {
-    if (keys.KeyA || keys.ArrowLeft) dx--; if (keys.KeyD || keys.ArrowRight) dx++;
-    if (keys.KeyW || keys.ArrowUp) dy--; if (keys.KeyS || keys.ArrowDown) dy++;
+    if (held('left')) dx--; if (held('right')) dx++;
+    if (held('up')) dy--; if (held('down')) dy++;
   }
   hero.moving = !!(dx || dy);
   pushOutOfPeople(v);                                                   // someone walked into you: step aside rather than overlap
@@ -911,15 +1078,16 @@ function updateVillage(dt) {
     if (sk.t > 0.9 && sk.t < SLEEP_WAKE - 0.2 && (sk.snoreT -= dt) <= 0) { sk.snoreT = 0.95; sfx('snore'); }
     if (sk.t >= SLEEP_WAKE && !sk.done) {
       sk.done = true; tod = sk.to; dayCount += sk.days; curNight = night01(); settleVillage(v);
-      if (sk.rest) { hero.hp = hero.maxHp; hero.stamina = maxStamina(); saveGame(false); sfx('save'); popups.push({ text: 'Rested and fully healed · progress saved', x: VW / 2, y: 150, t: 2.6, big: true, screen: true, color: '#fff' }); }
+      if (sk.rest) { hero.hp = hero.maxHp; hero.stamina = maxStamina(); saveGame(false); sfx('save'); sfx('wake'); popups.push({ text: `Day ${dayCount} · ${campClockLabel(tod)}: rested, healed and saved`, x: VW / 2, y: 150, t: 3, big: true, screen: true, color: '#fff' }); }
       else popups.push({ text: `${sk.label}: ${campClockLabel(tod)} · Day ${dayCount}`, x: VW / 2, y: 150, t: 2.6, big: true, screen: true, color: '#fff' });
       if (night01() < 0.3) Sound.call('birdsong');
     }
-    if (sk.t >= SLEEP_LEN) v.skip = null;
+    if (sk.t >= SLEEP_LEN) { v.skip = null; Sound.music('village'); }
   }
   if (v.leaveT > 0) { v.leaveT -= dt; if (v.leaveT <= 0 && !v.doneLeave) { v.doneLeave = true; leaveVillage(); return; } }
   updateVillageHero(dt, v);
   for (const n of v.npcs) npcTick(n, dt, v);
+  pairChats(v, dt);
   for (const a of v.animals) animalTick(a, dt, v);
   for (const h of v.hens) animalTick(h, dt, v);
   for (const p of v.plants) p.wet = Math.max(0, p.wet - dt * 0.4);
@@ -932,6 +1100,7 @@ function updateVillage(dt) {
   let best = null, bd = 1e9;
   const consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y); if (d < r && d < bd) { bd = d; best = { kind, ref, x, y, label, tag }; } };
   for (const n of v.npcs) if (!n.inside && n.alpha > 0.5 && !n.goHome) consider('npc', n, n.x, n.y, n.shop ? 72 : 64, n.name, n.role);
+  if (v.b.craft && !v.talk) consider('craft', null, v.b.craft.door.x, v.b.craft.door.y + 6, 62, 'Crafting Hall', 'Opening soon');
   if (Math.abs(hero.x - v.gate.x) < 110 && Math.abs(hero.y - v.gate.y) < 80) consider('gate', null, v.gate.x - 24 * v.E, v.gate.y - 40, 999, 'The road', 'Leave the village');
   consider('board', null, v.board.x, v.board.y - 40, 70, 'Notice board', 'Read');
   if (!best) consider('dog', v.dog, v.dog.x, v.dog.y - 14, 46, 'Biscuit', 'Pet');     // the dog never steals the prompt from a person
@@ -962,7 +1131,7 @@ function enterVillage() {
   state = 'village';
   saveGame(true);                                           // the village is the save point of the set
   popups.push({ text: `— ${vil.name} —`, x: VW / 2, y: 190, t: 3.2, big: true, screen: true, color: '#fff' });
-  Sound.music('village');
+  Sound.music('village'); sfx('bell');
   Sound.setScene({ biome: 'village', night: curNight > 0.5, wind: 0.02, rain: 0, pitch: 450 });
   sfx('unlock');
 }
@@ -970,15 +1139,15 @@ function leaveVillage() {
   if (!vil) return;
   saveGame(true, true);                                     // purchases are banked before the boss
   const ret = vil.ret;
-  vil = null; villageSkip = wave + 1;
+  const recalled = vil.recalled; vil = null; villageSkip = wave + 1;
   state = 'play';
   hero.x = ret.x; hero.y = ret.y; hero.moving = false; hero.walkT = 0;
   hero.scarf.forEach(p => { p.x = hero.x; p.y = hero.y - 50; });
   cam.x = clampN(hero.x - VW / 2, 0, WW - VW); cam.y = clampN(hero.y - VH / 2 - 20, 0, WH - VH);
   for (const k in keys) keys[k] = false;
-  waveTimer = 1.6; acc = 0; sceneT = 0;
+  waveTimer = 1.6; sceneT = 0;
   popups = popups.filter(p => p.screen);
-  popups.push({ text: 'The road ahead is guarded...', x: VW / 2, y: 190, t: 2.6, big: true, screen: true, color: '#f88' });
+  popups.push({ text: recalled ? 'Back to the road...' : 'The road ahead is guarded...', x: VW / 2, y: 190, t: 2.6, big: true, screen: true, color: '#f88' });
   Sound.music(BIOMES[zone % BIOMES.length].music);
 }
 
@@ -991,6 +1160,7 @@ const HELLO = {
   hilda: ['Welcome to {village}, dear. Hilda keeps the inn, and the fire, and the peace.', '{name}! The road has been hard on you, I can tell. Sit, sit.'],
   brann: ['Hm. {name}. Brann. Forge is hot, so be quick.', 'A hero. Good. Heroes break a lot of iron.'],
   dagna: ['Dagna, armourer. Let me look at what you are wearing... hm. We can do better.', 'Welcome, {name}. Steel is cheaper than a funeral.'],
+  ysolde: ['Ah. A new face, and not a rune on them. Come in, {name}. Ysolde, enchantress.', 'Welcome to my sanctum, {name}. Mind the glow, and do not touch anything that hums.'],
   lysa: ['Oh, hello! Lysa. Small things, big luck. Have a look.', 'Welcome, {name}. Careful, everything here is worth more than it looks.'],
   pim: ['Well met, {name}! Mind the cabbages.', 'A visitor! Come to admire the garden?'],
   rurik: ['Rurik. Woodcutter. Watch your feet.', 'Hello there, {name}. Mind the chips.'],
@@ -1003,6 +1173,12 @@ function contextLines(n) {
   const all = (c, t) => { if (c) out.push(t); };
   all(h.points > 0, 'You have ' + h.points + ' stat point' + (h.points === 1 ? '' : 's') + ' unspent, {name}. Press M and put them to use before you head out.');
   all(hpf < 0.5, 'You look worse for wear, {name}. Mind yourself out there.');
+  const wk = typeof weather !== 'undefined' && weather ? weather.kind : 'clear';
+  all(wk === 'rain' || wk === 'drizzle', 'Wet one, is it not? Mind the mud, {name}.'); all(wk === 'storm', 'Thunder again. Best keep to the inn tonight, {name}.'); all(wk === 'snowfall' || wk === 'blizzard', 'Snow again. At least it keeps the beasts quiet.');
+  all(wk === 'fog', 'Fog like milk. Do not wander off the road, {name}.'); all(wk === 'sandstorm', 'Grit in everything. Even the soup.'); all(wk === 'heat' || wk === 'mirage', 'Hot enough to fry an egg on the well.');
+  all(h.gold >= 2000, 'That is a lot of gold to carry down a beast road, {name}. Spend a little here, I say.'); all(h.level >= levelCap(), 'You have reached the top, {name}. Eira at the shrine can show you what comes next.');
+  all(hasAilment(), 'You do not look well, {name}. A healing potion clears every ailment, you know.'); all(rebirths() >= 1, 'Reborn already? I could swear I remember you from before. Or I imagine it.');
+  all(bondOf(id) >= 3, 'Always good to see you, {name}. ...Do not tell the others I said so.'); all(bondOf(id) >= 6, 'You are a friend of this village, {name}. We look after our own.'); all(bondOf(id) >= BOND_MAX, 'Eight hearts! There is nobody in {village} who would not stand beside you, {name}.');
   all(wave >= 19, 'Wave {wave} already. Tier {tier} beasts out there. You are braver than most.');
   if (id === 'mira') { all(!h.potions, 'No potions on you? That is how heroes end up in a ditch. Buy a few.'); all(h.potions >= POTION_MAX, 'A full satchel of potions. Good. Now do not waste them.'); all(hasAilment() && !h.cures, 'Poisoned, and not a Cure-All on you? Take one of mine. Please.'); all(!h.cures && h.level >= 8, 'A Cure-All potion clears poison and chills. Press R to switch to it, Q to drink.'); all(night, 'Night brews best. The fumes are... livelier.'); }
   if (id === 'tobin') { all(night, 'A lantern at night is worth ten swords, mark me.'); all((h.lamp | 0) >= 3, 'The Radiant Lantern! My finest. Lights up half the road.'); all((h.lamp | 0) === 0 && h.gold >= 140, 'You can afford a lantern now. The dark hides things that bite.'); all(h.gold < 30, 'Empty pockets? Come back when the beasts have been generous.'); }
@@ -1010,6 +1186,7 @@ function contextLines(n) {
   if (id === 'brann') { all(h.inv.length >= INV_MAX - 2, 'Your pack is nearly bursting. Sell me the junk.'); all(h.gold >= 600, 'Coin to burn? Let me temper that gear for you.'); all(night, 'Fire never sleeps. Neither do I, when there is iron to turn.'); }
   if (id === 'dagna') { all(!h.equip.armor, 'No armour at all? Brave. Foolish, but brave. Have a look.'); all(!h.equip.helmet, 'A hero without a helm. One knock and that is the end of the story.'); }
   if (id === 'lysa') { all(!h.equip.ring1 && !h.equip.ring2, 'Bare fingers! A ring will fix that. Take your pick.'); all(!h.equip.necklace, 'Not a necklace on you. I have just the thing.'); }
+  if (id === 'ysolde') { all(!RUNE_KEYS.some(k => runeCount(k)), 'Not one rune in your pouch? The first is the cheapest. Well. Cheap-ish.'); all(RUNE_KEYS.some(k => RUNES[k].tier >= 4 && runeCount(k)), 'A Brilliant rune! You carry real power, {name}.'); all(night, 'Runes glow brightest after dark. Look at them.'); all(h.gold >= 5000, 'That is a heavy purse. Runes are the finest way to lighten it.'); }
   if (id === 'pim') { all(morning, 'Best time to water is the morning. The plants drink it up.'); all(night, 'You should be indoors in this dark. I will see to the beds tomorrow.'); }
   if (id === 'rurik') { all(night, 'Cannot chop in the dark, can I? The axe knows when to rest.'); all(wave >= 10, 'The trees by the road thin out every set. Whatever is out there, it is hungry.'); }
   if (id === 'orla') { all(night, 'The night air is bad for old bones. Come and tell me a story in the morning.'); all(h.level >= 10, 'Level {name}... such a hero. In my day we just had a stout stick.'); }
@@ -1034,10 +1211,12 @@ function talkText(n) {
 const TIME_STOPS = [['Dawn', 0.27], ['Sunrise', 0.30], ['Morning', 0.38], ['Midday', 0.50], ['Sunset', 0.76], ['Dusk', 0.82], ['Night', 0.90], ['Midnight', 0.0]];
 const timeUntil = at => ((at - tod) % 1 + 1) % 1;                       // how much of a day until the clock reaches `at`, always forwards
 const SLEEP_LEN = 4.2, SLEEP_WAKE = 2.3;                                 // seconds in all; the clock jumps at SLEEP_WAKE
+const REST_AT = 7 / 24;                                                  // resting at the inn always ends the next morning at 7:00
 function startTimeSkip(at) {
   const v = vil; if (!v || v.skip) return;
-  const d = at === null ? 0 : (timeUntil(at) || 1);                       // null = a plain rest: the clock stays where it is
+  const d = at === null ? timeUntil(REST_AT) + (tod < REST_AT ? 1 : 0) : (timeUntil(at) || 1);       // null = rest: on to 7:00 of the next day, even from the small hours
   v.skip = { from: tod, span: d, to: (tod + d) % 1, days: Math.floor(tod + d + 1e-9), t: 0, done: false, rest: at === null, snoreT: 0, label: at === null ? 'Rested' : (TIME_STOPS.find(x => Math.abs(x[1] - at) < 1e-6) || ['later'])[0] };
+  Sound.music('inn');
   sfx('yawn');
 }
 // the world catches up with the new time: people are home or out, as they would be at that hour
@@ -1059,10 +1238,12 @@ function settleVillage(v) {
 function villageInteract() {
   const v = vil; if (!v || !v.near || v.leaveT > 0 || v.skip || paused) return;
   const t = v.near;
-  if (t.kind === 'dog') { v.dog.petT = 3; v.dog.pose = 'sit'; v.dog.f = hero.x >= v.dog.x ? 1 : -1; v.dog.moving = false; sfx('chirp'); sfxNear(v.dog, 'bark', 0.5); for (let i = 0; i < 4; i++) vfx(v, { x: v.dog.x + (Math.random() - 0.5) * 16, y: v.dog.y - 26, vx: (Math.random() - 0.5) * 20, vy: -30, life: 1, size: 3, color: '#ff7a9a' }); return; }
+  if (t.kind === 'dog') { v.dog.pets = (v.dog.pets | 0) + 1; if (v.dog.pets % 3 === 0 && hero.gold >= 5) { hero.gold -= 5; sfx('treat'); popups.push({ text: 'Biscuit loves the treat (-5 gold)', x: VW / 2, y: 120, t: 2, screen: true, small: true, color: '#ffd86a' }); v.dog.mode = 'follow'; v.dog.fT = 45; v.dog.cool = 0; } v.dog.petT = 3; v.dog.pose = 'sit'; v.dog.f = hero.x >= v.dog.x ? 1 : -1; v.dog.moving = false; sfx('chirp'); sfxNear(v.dog, 'bark', 0.5); for (let i = 0; i < 4; i++) vfx(v, { x: v.dog.x + (Math.random() - 0.5) * 16, y: v.dog.y - 26, vx: (Math.random() - 0.5) * 20, vy: -30, life: 1, size: 3, color: '#ff7a9a' }); return; }
   if (t.kind === 'npc') { const n = t.ref; n.f = hero.x >= n.x ? 1 : -1; hero.facing = n.x >= hero.x ? 1 : -1; n.moving = false; }
+  if (t.kind === 'npc') Sound.voice(voicePitch(t.ref)); else if (t.kind === 'board') sfx('paper'); else sfx('menuOpen');
   v.talk = t; openTalk();
 }
+const voicePitch = n => (n.look && n.look.dress ? 330 : 190) * (n.kid ? 1.6 : 1) * (0.9 + ([...(n.id || 'x')].reduce((a, c) => a + c.charCodeAt(0), 0) % 7) / 35);
 function openTalk(text, override) {
   const v = vil, t = v.talk; if (!t) return;
   let name = '', role = '', body = text, btns = [];
@@ -1072,25 +1253,31 @@ function openTalk(text, override) {
     if (n.shop === 'store') btns.push(['shop', 'Browse wares']);
     if (n.shop === 'armour') btns.push(['shop', 'Browse armour']);
     if (n.shop === 'jewel') btns.push(['shop', 'Browse jewellery']);
+    if (n.shop === 'enchant') btns.push(['shop', 'Runes and enchanting']);
     if (n.shop === 'smith') btns.push(['shop:smithBuy', 'Buy weapons'], ['shop:smithUp', 'Upgrade gear'], ['shop:smithSell', 'Sell gear']);
     if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], ['wait', 'Wait for a time of day...'], ['respec', `Reset stat points (${respecCost()} gold)`]);
     if (n.special === 'guard') btns.push(['go', 'Head out to face the boss']);
     if (n.special === 'shrine') btns.push(['shop:rebirth', hero.level >= levelCap() ? 'The Shrine of Return (rebirth)' : `The Shrine of Return (see what rebirth gives)`]);
-    btns.push(['bye', 'Goodbye']);
+    btns.push(['chat', `Chat ${hearts(n.id)}`], ['bye', 'Goodbye']);
     n.talking = true;
   } else if (t.kind === 'gate') {
     name = 'The Road'; role = 'Leave the village';
     body = body || `The road beyond the gate leads to the boss (wave ${wave + 1}). Your progress is saved when you leave. Head out?`;
     btns = [['go', 'Head out'], ['bye', 'Stay a while']];
+  } else if (t.kind === 'craft') {
+    name = 'Crafting Hall'; role = 'Opening soon';
+    body = body || 'The shutters are closed and something heavy is being hammered inside. A note on the door reads: "Forging and crafting are coming. Please be patient."';
+    btns = [['bye', 'Close']];
   } else if (t.kind === 'board') {
     name = 'Notice board'; role = vil.name;
     body = body || ['NOTICE: The road beyond the gate is dangerous. Heroes are advised to rest, resupply and heal before departing.', 'WANTED: Brave souls to deal with the beast on the road. Reward: our eternal gratitude.', 'LOST: One red ball. If found, return to the children. -- Pip', 'FOR SALE: Lanterns. Inquire with Tobin at the General Store.', 'REMINDER: Biscuit the dog is not a guard dog. Please stop asking him to guard things.'][Math.floor(Math.random() * 5)];
-    btns = [['bye', 'Close']];
+    btns = [['shop:quests', hero.quests.claim.length ? 'Read the quest board (a reward is waiting!)' : 'Read the quest board'], ['bye', 'Close']];
   }
   const col = t.kind === 'npc' ? (t.ref.look.body || t.ref.look.dress || '#8a8aa0') : '#c9a86a';
   const badge = t.kind === 'npc' ? `<span class="avatar" style="background:${col}">${escapeHtml(name.replace(/^(Old|Granny|Sgt\.)\s+/, '').charAt(0))}</span>` : '';
   document.getElementById('talkName').innerHTML = `${badge}${escapeHtml(name)} <small>${escapeHtml(role)}</small>`;
   document.getElementById('talkText').textContent = body;
+  document.getElementById('talkBtns').classList.toggle('grid', (override || btns).length > 4);        // many choices sit in two columns, so nothing needs scrolling
   document.getElementById('talkBtns').innerHTML = (override || btns).map(([k, l, off], i) => `<button data-talk="${k}" ${off ? 'disabled' : ''}><kbd>${i + 1}</kbd>${escapeHtml(l)}</button>`).join('');
   showMenu('talk');
 }
@@ -1099,7 +1286,9 @@ document.getElementById('talk').addEventListener('click', e => {
   sfx('click');
   const v = vil, t = v.talk;
   if (k === 'bye') { if (t && t.kind === 'npc') t.ref.talking = false; v.talk = null; showMenu(null); }
-  else if (k === 'go') { v.talk = null; v.leaveT = 0.9; showMenu(null); }
+  else if (k === 'go') { v.talk = null; v.leaveT = 0.9; sfx('gate'); showMenu(null); }
+  else if (k === 'chat') { const n = t.ref; openTalk(`${hearts(n.id)}`, chatButtons(n)); }
+  else if (['news', 'work', 'tip', 'ball', 'story'].includes(k) && t && t.kind === 'npc') chatAct(k, t.ref);
   else if (k === 'back') openTalk();
   else if (k === 'wait') {
     openTalk('Hours go by quickly in a warm room. When shall I wake you?', [...TIME_STOPS.map(([label, at]) => {
@@ -1108,8 +1297,8 @@ document.getElementById('talk').addEventListener('click', e => {
     }), ['back', 'Never mind']]);
   }
   else if (k.startsWith('time:')) { v.talk = null; showMenu(null); startTimeSkip(parseFloat(k.slice(5))); }
-  else if (k === 'shop') { v.shop = t.ref.shop; showMenu('shop'); }
-  else if (k.startsWith('shop:')) { v.shop = k.slice(5); v.rbArm = false; showMenu('shop'); }
+  else if (k === 'shop') { v.shop = t.ref.shop; sfx('shopBell'); showMenu('shop'); }
+  else if (k.startsWith('shop:')) { v.shop = k.slice(5); v.rbArm = false; sfx('shopBell'); showMenu('shop'); }
   else if (k === 'rest') {
     v.talk = null; showMenu(null); startTimeSkip(null);
   }
@@ -1129,33 +1318,59 @@ document.getElementById('talk').addEventListener('click', e => {
 
 function renderShop() {
   const v = vil; if (!v || !v.shop) return;
+  const big = ['smithUp', 'enchant', 'smithBuy', 'armour', 'jewel', 'smithSell', 'smith', 'quests'].includes(v.shop);
+  document.querySelector('.shop-panel').classList.toggle('upgrade', big);                       // the wide windows: boxes on the left, the chosen piece on the right (nothing to scroll down to)
+  document.querySelector('.shop-panel').classList.toggle('tiles', v.shop === 'alch' || v.shop === 'store');
+  document.querySelector('.shop-panel').classList.toggle('enchant', v.shop === 'enchant');
   if (v.shop === 'rebirth') { renderRebirth(); return; }
   if (v.shop === 'smith' || v.shop === 'smithSell') { renderSellShop(); return; }
   if (v.shop === 'smithBuy' || v.shop === 'armour' || v.shop === 'jewel') { renderGearShop(v.shop); return; }
   if (v.shop === 'smithUp') { renderUpgradeShop(); return; }
+  if (v.shop === 'enchant') { renderEnchantShop(); return; }
+  if (v.shop === 'quests') { renderQuestBoard(); return; }
   const alch = v.shop === 'alch';
   document.getElementById('shopTitle').textContent = alch ? "MIRA'S POTIONS" : "TOBIN'S GENERAL STORE";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
-  let rowNo = 0;
-  const row = (id, name, desc, price, stockTxt, can, label) => `<div class="item"><div class="ic ${id}"></div><div class="im"><b>${name}</b><small>${desc}</small></div>
-    <div class="pr"><span class="price">${price.toLocaleString()} g</span><small>${stockTxt}</small></div>
-    <button data-buy="${id}" ${can ? '' : 'disabled'}><kbd>${++rowNo}</kbd>${label}</button></div>`;
-  let html = '';
+  const sel = (v.tSel || (v.tSel = {}));
   if (alch) {
-    const price = potionCost(), left = v.stock.potion | 0, have = hero.potions | 0;
-    const can = hero.gold >= price && left > 0 && have < POTION_MAX;
-    html += row('potion', 'Healing Potion', `Restores ${Math.round(POTION_HEAL * 100)}% of your health. You carry ${have} of ${POTION_MAX}.`, price, left > 0 ? `${left} in stock` : 'Sold out', can, have >= POTION_MAX ? 'Full' : left <= 0 ? 'Sold out' : 'Buy');
-    const cp = cureCost(), cl = v.stock.cure | 0, ch = hero.cures | 0;
-    html += row('cure', 'Cure-All Potion', `Removes poison and chill, and every other ailment. Press R to switch potions, Q to drink. You carry ${ch} of ${POTION_MAX}.`, cp, cl > 0 ? `${cl} in stock` : 'Sold out', hero.gold >= cp && cl > 0 && ch < POTION_MAX, ch >= POTION_MAX ? 'Full' : cl <= 0 ? 'Sold out' : 'Buy');
-  } else {
-    const tier = (hero.lamp | 0) + 1, L = LAMPS[tier];
-    if (L) html += row('lamp', L.name, `Widens the circle of light around you at night and in fog by +${L.bonus}. ${hero.lamp ? 'Replaces your current lantern.' : ''}`, L.cost, `Lantern ${tier} of ${LAMPS.length - 1}`, hero.gold >= L.cost, 'Buy');
-    else html += '<div class="hint" style="text-align:center">You already carry the finest lantern Tobin has ever sold.</div>';
-    const cur = LAMPS[hero.lamp | 0];
-    html += `<div class="hint">Your light: base ${BASE_LIGHT_RADIUS}${cur ? ` + ${cur.bonus} (${cur.name})` : ''}.</div>`;
+    const price = potionCost(), left = v.stock.potion | 0, have = hero.potions | 0, can = hero.gold >= price && left > 0 && have < POTION_MAX, P = POTIONS.heal;
+    const tiles = [{ id: 'potion', svg: potionSvg(P.color, 44), name: 'Healing Potion', color: P.color, sub: left > 0 ? `${price} g · ${left} left` : 'Sold out', on: true, dim: left <= 0 }];
+    const detail = tHead(potionSvg(P.color, 56), 'Healing Potion', P.color, `You carry ${have} of ${POTION_MAX}`) +
+      `<div class="tdesc">Restores ${Math.round(POTION_HEAL * 100)}% of your health <b>and cures every ailment</b>: poison, chill, bleeding, burning, freezing, weakness, blindness and curses. A curse halves the healing. Drink with <kbd>Q</kbd>.</div>
+      <div class="srow"><span>Price</span><b>${price.toLocaleString()} g</b></div><div class="srow"><span>In stock</span><b>${left}</b></div>
+      <div class="ubuy"><button class="go" data-buy="potion" ${can ? '' : 'disabled'}>${have >= POTION_MAX ? 'Your satchel is full' : left <= 0 ? 'Sold out' : `Buy · ${price.toLocaleString()} g`}</button></div>`;
+    document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 3);
+    return;
   }
-  document.getElementById('shopBody').innerHTML = html;
+  const own = hero.lamp | 0, next = own + 1, scroll = sel.store === 'scroll', pick = LAMPS[sel.store] && sel.store >= 1 ? sel.store : Math.min(next, LAMPS.length - 1);
+  const tiles = LAMPS.map((L, i) => i < 1 ? null : { id: String(i), svg: lampSvg(i <= own ? '#ffd86a' : i === next ? '#ffe9a8' : '#8a7a58', 44), name: L.name, color: i <= own ? '#ffd86a' : i === next ? '#f4e2a0' : '#9a8a68', sub: i <= own ? 'Owned' : `${L.cost.toLocaleString()} g`, on: !scroll && i === pick, dim: i > next, badge: i === own ? 'In use' : '' }).filter(Boolean);
+  tiles.push({ id: 'scroll', svg: scrollSvg(44), name: 'Return Scroll', color: '#cfc0ff', sub: `${recallCost().toLocaleString()} g · you have ${hero.recalls | 0}`, on: scroll });
+  if (scroll) {
+    const have = hero.recalls | 0, cost = recallCost(), can = hero.gold >= cost && have < RECALL_MAX;
+    document.getElementById('shopBody').innerHTML = tileShop(tiles, tHead(scrollSvg(56), 'Return Scroll', '#cfc0ff', `You carry ${have} of ${RECALL_MAX}`) +
+      `<div class="tdesc">Read it anywhere on the road (equip it with the hold-<kbd>${escapeHtml(keyLabel('utility'))}</kbd> wheel, then press <kbd>${escapeHtml(keyLabel('potion'))}</kbd>) and after a few seconds you are back in the village, <b>whatever the wave</b>: to heal, shop, bank your gold and turn in quests. Leaving the village puts you back where you stood. It will not work while a boss is on the field, and being hit breaks the spell.</div>
+      <div class="srow"><span>Price</span><b>${cost.toLocaleString()} g</b></div>
+      <div class="ubuy"><button class="go" data-buy="scroll" ${can ? '' : 'disabled'}>${have >= RECALL_MAX ? 'You carry the most you can' : `Buy · ${cost.toLocaleString()} g`}</button></div>`, 3);
+    return;
+  }
+  const L = LAMPS[pick], cur = LAMPS[own], buyable = pick === next && hero.gold >= L.cost;
+  const detail = tHead(lampSvg('#ffe9a8', 56), L.name, '#ffd86a', `Lantern ${pick} of ${LAMPS.length - 1}`) +
+    `<div class="tdesc">Widens the circle of light around you at night and in fog.</div>
+    <div class="srow"><span>Your light</span><b>${BASE_LIGHT_RADIUS + (cur ? cur.bonus : 0)}${pick > own ? ` <i>→</i> <em>${BASE_LIGHT_RADIUS + L.bonus}</em>` : ''}</b></div>
+    <div class="srow"><span>Price</span><b>${pick <= own ? 'Owned' : L.cost.toLocaleString() + ' g'}</b></div>
+    <div class="ubuy"><button class="go" data-buy="lamp" ${buyable ? '' : 'disabled'}>${pick <= own ? 'You already have this' : pick > next ? 'Buy the lantern before it first' : `Buy · ${L.cost.toLocaleString()} g`}</button></div>`;
+  document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 3);
 }
+// boxes on the left, the chosen thing with its details and the Buy button on the right (the same layout as the forge and the enchanting rooms)
+const tHead = (svg, name, color, sub) => `<div class="uhead"><div class="uic big" style="border-color:${color}">${svg}</div><div><b style="color:${color}">${escapeHtml(name)}</b><small>${sub}</small></div></div>`;
+const tileBtn = t => `<button class="utile${t.on ? ' on' : ''}${t.dim ? ' dim' : ''}" data-tpick="${t.id}" style="--rc:${t.color}" title="${escapeHtml(t.title || t.name)}">${t.badge ? `<i class="worn">${t.badge}</i>` : ''}<div class="uic" style="border-color:${t.color}">${t.svg}</div><span class="una" style="color:${t.color}">${escapeHtml(t.name)}</span><small>${t.sub}</small></button>`;
+// empty slots after the real boxes (at least two rows), so a shelf with nothing on it still looks like a shelf
+const padTiles = (html, cols = 4) => { const n = typeof html === 'number' ? html : (html.match(/class="utile/g) || []).length, total = Math.max(cols * 2, Math.ceil(n / cols) * cols); return '<div class="utile rtile empty"></div>'.repeat(total - n); };
+const tileShop = (tiles, detail, cols = 4) => `<div class="upg tshop"><div class="upg-detail tdetail">${detail}</div><div class="upg-grid" style="grid-template-columns:repeat(${cols}, minmax(0, 1fr))">${tiles.map(tileBtn).join('')}${padTiles(tiles.length, cols)}</div></div>`;
+function emptyEnchant(tabs, msg) { document.getElementById('shopBody').innerHTML = `<div class="ench">${tabs}<div class="upg"><div class="upg-detail rdetail"><div class="rnote">${msg}</div></div><div class="upg-grid">${padTiles(0, 4)}</div></div></div>`; }
+const scrollSvg = (px = 40) => `<svg viewBox="0 0 28 28" width="${px}" height="${px}"><path d="M7 5 H21 V23 H7 Z" fill="#efe6c8" stroke="#6a5a3a" stroke-width="1.2"/><path d="M5 4 H23 V7 H5 Z M5 21 H23 V24 H5 Z" fill="#b8a070" stroke="#6a5a3a" stroke-width="1"/><path d="M10 12 L14 8 L18 12 M14 8 V18" fill="none" stroke="#8a50d0" stroke-width="1.8" stroke-linecap="round"/></svg>`;
+const potionSvg = (c, px = 40) => `<svg viewBox="0 0 28 28" width="${px}" height="${px}"><path d="M11 3h6v5l4 8a5.2 5.2 0 0 1-4.7 8h-4.6A5.2 5.2 0 0 1 7 16l4-8z" fill="${c}" stroke="#17171f" stroke-width="1"/><rect x="10.5" y="2" width="7" height="3" rx="1" fill="#c9a36a" stroke="#17171f" stroke-width=".8"/><path d="M10 17a4.5 4.5 0 0 0 3 4" fill="none" stroke="#fff" stroke-opacity=".5" stroke-width="1.4"/></svg>`;
+const lampSvg = (c, px = 40) => `<svg viewBox="0 0 28 28" width="${px}" height="${px}"><path d="M10 6h8l2 4v9a2 2 0 0 1-2 2h-8a2 2 0 0 1-2-2v-9z" fill="#2a2a32" stroke="#17171f" stroke-width="1"/><path d="M11 11h6v8h-6z" fill="${c}"/><path d="M12 4h4v2h-4zM11 21h6v2h-6z" fill="#6a6a78"/><circle cx="14" cy="15" r="9" fill="${c}" fill-opacity=".18"/></svg>`;
 // ---------------------------------------------------------------- gear for sale: Brann's weapons, Dagna's armour, Lysa's jewellery
 // Stock is rolled when you arrive (a little better the deeper you are) and is gone once bought; the next village has new stock.
 const gearPrice = it => Math.max(18, Math.round(it.value * 3.4));
@@ -1168,7 +1383,9 @@ function makeStock(v) {
   };
   v.stock.smith = ['weapon', 'weapon', 'weapon', 'weapon'].map(roll);
   v.stock.armour = ['armor', 'armor', 'helmet', 'helmet'].map(roll);
-  v.stock.jewel = ['ring', 'ring', 'necklace', 'necklace'].map(roll);
+  v.stock.jewel = ['ring', 'ring', 'necklace', 'artifact'].map(roll);
+  v.stock.runes = [];                                                           // the Enchantress's shelf: six different runes, the luck ones rarer, nothing above Brilliant (an Eternal rune has to be made at her altar)
+  for (let i = 0; v.stock.runes.length < 6 && i < 80; i++) { const k = rollRuneKey(2.5, 4); if (!v.stock.runes.some(e => e.k === k)) v.stock.runes.push({ k, price: runePrice(k) }); }
 }
 const gearScore = it => Object.entries(it.stats).reduce((a, [k, x]) => a + x / GEAR_STATS[k].max, 0);
 const statLine = it => Object.entries(it.stats).map(([k, x]) => `${GEAR_STATS[k].name} ${GEAR_STATS[k].fmt(x)}`).join(' · ');
@@ -1177,60 +1394,231 @@ function renderGearShop(kind) {
   const v = vil, stockKey = kind === 'smithBuy' ? 'smith' : kind, list = v.stock[stockKey] || [];
   document.getElementById('shopTitle').textContent = { smithBuy: "BRANN'S FORGE: WEAPONS", armour: "DAGNA'S ARMOURY", jewel: "LYSA'S JEWELLERY" }[kind];
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
-  let html = '', n = 0;
-  list.forEach((e, i) => {
-    if (!e) return;
-    const it = e.item, R = RARITIES[it.rarity], worn = hero.equip[slotOf(it)];
-    const lock = it.slot === 'weapon' && it.req > hero.level, bagFull = hero.inv.length >= INV_MAX, can = hero.gold >= e.price && !bagFull;
-    const better = gearScore(it) > (worn ? gearScore(worn) : 0) + 1e-9;
-    const base = it.slot === 'weapon' ? SWORDS.find(x => x.id === it.base) : null;
-    html += `<div class="item"><div class="ic" style="border-color:${R.color}">${slotSvg(it.slot, R.color)}</div><div class="im"><b style="color:${R.color}">${escapeHtml(it.name)}</b>
-      <small>${R.name} ${SLOT_LABEL[it.slot].toLowerCase()}${base ? ` · base damage ${base.dmg}${lock ? ` · <span style="color:#f88">needs level ${it.req}</span>` : ''}` : ''}${better ? ' · <span style="color:#7fd08a">better than yours</span>' : ''}<br>${escapeHtml(statLine(it))}${it.unique ? '' : ''}</small></div>
-      <div class="pr"><span class="price">${e.price.toLocaleString()} g</span></div><button data-buy="buy:${stockKey}:${i}" ${can ? '' : 'disabled'}><kbd>${++n}</kbd>${bagFull ? 'Bag full' : 'Buy'}</button></div>`;
-  });
-  if (!n) html = '<div class="hint" style="text-align:center">Everything is sold. New stock arrives with the next village.</div>';
-  document.getElementById('shopBody').innerHTML = html;
+  const have = list.map((e, i) => e && { ...e, i }).filter(Boolean);
+  if (!have.length) { document.getElementById('shopBody').innerHTML = tileShop([], '<div class="tdesc">Everything is sold. New stock arrives with the next village.</div>', 4); return; }
+  const sel = v.tSel || (v.tSel = {}), cur = have.find(e => e.i === sel[kind]) || have[0]; sel[kind] = cur.i;
+  const tiles = have.map(e => { const R = RARITIES[e.item.rarity]; return { id: String(e.i), svg: slotSvg(e.item.slot, R.color, e.item), name: e.item.name, color: R.color, sub: `${e.price.toLocaleString()} g`, on: e === cur, badge: `Lv ${e.item.ilvl || 1}` }; });
+  const it = cur.item, R = RARITIES[it.rarity], worn = hero.equip[slotOf(it)], bagFull = hero.inv.length >= INV_MAX, can = hero.gold >= cur.price && !bagFull;
+  const better = gearScore(it) > (worn ? gearScore(worn) : 0) + 1e-9, base = it.slot === 'weapon' ? SWORDS.find(x => x.id === it.base) : null;
+  const detail = tHead(slotSvg(it.slot, R.color, it), it.name, R.color, `${R.name} ${SLOT_LABEL[it.slot].toLowerCase()} · Item level ${it.ilvl || 1}${better ? ' · <span style="color:#7fd08a">better than yours</span>' : ''}`) +
+    `<div class="ustats">${base ? weaponLine(it) : ''}${statRows(it, worn || { stats: {} })}</div>${worn ? `<div class="hint cmpnote">compared with <b style="color:${RARITIES[worn.rarity].color}">${escapeHtml(worn.name)}</b></div>` : ''}
+    <div class="ubuy"><button class="go" data-buy="buy:${stockKey}:${cur.i}" ${can ? '' : 'disabled'}>${bagFull ? 'Your bag is full' : `Buy · ${cur.price.toLocaleString()} g`}</button></div>`;
+  document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 4);
 }
-// Brann improves gear: each level adds 10% to every stat on the piece
+
+// Ysolde the Enchantress sells runes (dear, and never above Brilliant) and improves the ones you carry at her altar, one tier at a time.
+// A failed improvement costs the gold and the rune falls a tier (a Faint rune just stays Faint), like a failed upgrade at the forge.
+function renderEnchantShop() {
+  const v = vil, R0 = k => RUNES[k];
+  document.getElementById('shopTitle').textContent = "YSOLDE'S ENCHANTING SANCTUM";
+  document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
+  const tab = ['up', 'fx', 'ess'].includes(v.enchTab) ? v.enchTab : 'buy', owned = RUNE_KEYS.filter(k => runeCount(k) > 0), total = owned.reduce((a, k) => a + runeCount(k), 0);
+  const tabs = `<div class="etabs"><button data-etab="buy" class="${tab === 'buy' ? 'on' : ''}"><i>✦</i> Rune shelf</button><button data-etab="up" class="${tab === 'up' ? 'on' : ''}"><i>✧</i> Rune altar</button><button data-etab="fx" class="${tab === 'fx' ? 'on' : ''}"><i>⚔</i> Imbue weapons</button><button data-etab="ess" class="${tab === 'ess' ? 'on' : ''}"><i>❂</i> Essence altar</button><span class="ehave">${total} rune${total === 1 ? '' : 's'} · ${essTotal()} essence${essTotal() === 1 ? '' : 's'}</span></div>`;
+  const stat = k => { const S = GEAR_STATS[R0(k).stat]; return `<div class="srow"><span>${S.name}</span><b>${S.fmt(R0(k).val)}</b></div>`; };
+  const tile = (k, pick, on, sub) => `<button class="utile rtile${on ? ' on' : ''}" data-epick="${pick}" style="--rc:${R0(k).tier > 1 ? R0(k).tc : R0(k).color};--rk:${R0(k).color}" title="${escapeHtml(runeLine(k))}"><div class="uic">${runeSvg(k, 46)}</div><span class="una" style="color:${R0(k).tier > 1 ? R0(k).tc : R0(k).color}">${escapeHtml(R0(k).title)}</span><small>${sub}</small></button>`;
+  let tiles = '', detail = '';
+  if (tab === 'buy') {
+    const list = (v.stock.runes || []).map((e, i) => e && { ...e, i }).filter(Boolean);
+    if (!list.length) { emptyEnchant(tabs, 'The shelf is bare. Ysolde will have new runes when you reach the next village.'); return; }
+    const sel = list.find(e => e.i === v.enchBuySel) || list[0]; v.enchBuySel = sel.i;
+    tiles = list.map(e => tile(e.k, 'buy:' + e.i, e === sel, `${e.price.toLocaleString()} g`)).join('');
+    const k = sel.k, R = R0(k), can = hero.gold >= sel.price && runeCount(k) < RUNE_MAX;
+    detail = `<div class="upg-detail rdetail" style="--rc:${R.tier > 1 ? R.tc : R.color}"><div class="uhead"><div class="uic big">${runeSvg(k, 62)}</div><div><b style="color:${R.tier > 1 ? R.tc : R.color}">${escapeHtml(R.title)}</b>
+      <small>Tier ${R.tier} of ${RUNE_TIERS.length} · you hold ${runeCount(k)}</small></div></div>
+      <div class="ustats">${stat(k)}</div>
+      <div class="rnote">Set into any Uncommon or better piece at Brann's forge. ${R.tier < RUNE_TIERS.length ? `It can be improved at the altar to ${escapeHtml(R0(runeNext(k)).title)}.` : 'It is the finest tier a rune can reach.'}</div>
+      <div class="ubuy"><button class="go" data-ebuy="${sel.i}" ${can ? '' : 'disabled'}>${runeCount(k) >= RUNE_MAX ? 'You hold the most you can' : `Buy · ${sel.price.toLocaleString()} g`}</button></div></div>`;
+  } else if (tab === 'up') {
+    if (!owned.length) { emptyEnchant(tabs, 'You carry no runes. Monsters leave them now and then (bosses most often), and Ysolde sells them on her shelf.'); return; }
+    if (!owned.includes(v.enchSel)) v.enchSel = owned[0];
+    const k = v.enchSel, R = R0(k), nk = runeNext(k);
+    tiles = owned.map(c => tile(c, 'up:' + c, c === k, `×${runeCount(c)} · ${R0(c).tname}`)).join('');
+    const chance = runeUpChance(k), cost = runeUpCost(k), can = canRuneUp(k) && hero.gold >= cost, msg = v.enchMsg ? `<div class="umsg ${v.enchMsg.kind}">${escapeHtml(v.enchMsg.text)}</div>` : '';
+    const lower = R.tier > 1 ? R0(runeKey(R.base, R.tier - 1)).title : null;
+    const stats = nk ? `<div class="srow"><span>${GEAR_STATS[R.stat].name}</span><b>${GEAR_STATS[R.stat].fmt(R.val)} <i>→</i> <em>${GEAR_STATS[R.stat].fmt(R0(nk).val)}</em></b></div>` : stat(k);
+    detail = `<div class="upg-detail rdetail" style="--rc:${R.tier > 1 ? R.tc : R.color}"><div class="uhead"><div class="uic big">${runeSvg(k, 62)}</div><div><b style="color:${R.tier > 1 ? R.tc : R.color}">${escapeHtml(R.title)}</b>
+      <small>Tier ${R.tier} of ${RUNE_TIERS.length} · you hold ${runeCount(k)}</small></div></div>
+      ${nk ? `<div class="rup"><div class="uic">${runeSvg(k, 44)}</div><span>✦</span><div class="uic">${runeSvg(nk, 44)}</div></div><div class="ulevel">Improve to <b style="color:${R0(nk).tc}">${escapeHtml(R0(nk).title)}</b></div>` : '<div class="ulevel">This rune has reached its finest tier</div>'}
+      <div class="ustats">${stats}</div>
+      ${nk ? `<div class="uodds"><div class="obar"><div class="ofill" style="width:${Math.round(chance * 100)}%"></div></div><div class="otxt"><b>${Math.round(chance * 100)}%</b> to succeed
+        <small>${lower ? `If it fails, the rune falls to ${escapeHtml(lower)}` : 'If it fails, nothing is lost but the gold'}${gearStat('upLuck') ? ` · includes +${Math.round(gearStat('upLuck') * 50)}% from your upgrade luck` : ''}</small></div></div>` : ''}${msg}
+      <div class="ubuy"><button class="go" data-eup="${k}" ${can ? '' : 'disabled'}>${!nk ? 'Fully improved' : runeCount(nk) >= RUNE_MAX ? 'You hold the most of the next tier' : `Improve · ${cost.toLocaleString()} g`}</button></div></div>`;
+  } else if (tab === 'fx') {                                                                // imbue: put an essence you found into a weapon
+    const weps = []; for (const it of [hero.equip.weapon, hero.equip.weapon2, ...hero.inv]) if (it && it.slot === 'weapon' && !weps.some(w => w.id === it.id)) weps.push(it);
+    const sel = weps.find(i => i.id === v.fxSel) || weps[0]; v.fxSel = sel.id;
+    const mine = ESS_KEYS.filter(k => essCount(k) > 0), cur = sel.fx ? essKey(sel.fx.k, sel.fx.lv) : null;
+    const pick = mine.includes(v.fxEss) ? v.fxEss : mine[0] || null; v.fxEss = pick;
+    tiles = weps.map(it => { const R = RARITIES[it.rarity], F = it.fx && WFX[it.fx.k], wield = it === hero.equip.weapon;
+      return `<button class="utile rtile${it === sel ? ' on' : ''}" data-epick="fxw:${escapeHtml(it.id)}" style="--rc:${F ? F.color : R.color}" title="${escapeHtml(it.name)}">${wield ? '<i class="worn">Wielded</i>' : ''}<div class="uic" style="border-color:${R.color}">${slotSvg('weapon', R.color, it)}</div><span class="una" style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</span><small style="${F ? 'color:' + F.color : ''}">${F ? F.name + ' ' + ROMAN[it.fx.lv] : 'No effect'}</small></button>`; }).join('');
+    const R = RARITIES[sel.rarity], sw = SWORDS.find(s => s.id === sel.base), dmg = (sw ? sw.dmg : 10) + Math.round(sel.stats.dmg || 0);
+    const msg = v.fxMsg ? `<div class="umsg ${v.fxMsg.kind}">${escapeHtml(v.fxMsg.text)}</div>` : '';
+    const E = pick && ESS[pick], fee = pick ? imbueFee(sel, pick) : 0, same = pick && cur === pick;
+    detail = `<div class="upg-detail rdetail" style="--rc:${E ? E.color : R.color}"><div class="uhead"><div class="uic big" style="border-color:${R.color}">${slotSvg('weapon', R.color, sel)}</div><div><b style="color:${R.color}">${escapeHtml(sel.name.replace(/ \+\d+$/, ''))}</b>
+      <small>${sel.fx ? `<span style="color:${WFX[sel.fx.k].color}">${WFX[sel.fx.k].name} ${ROMAN[sel.fx.lv]}</span> imbued` : 'No effect imbued'}</small></div></div>
+      ${mine.length ? `<div class="fxrow wrap">${mine.map(k => `<button class="fxb${k === pick ? ' on' : ''}" data-eess="${k}" style="--rc:${ESS[k].color}" title="${escapeHtml(ESS[k].title)}">${essSvg(k, 26)}<small>×${essCount(k)}</small></button>`).join('')}</div>
+        <div class="rnote"><b style="color:${E.color}">${escapeHtml(E.title)}</b>: ${escapeHtml(WFX[E.fx].blurb)}. ${escapeHtml(wfxText(E.fx, E.lv, dmg))}.${sel.fx && !same ? ' The essence now in the weapon returns to your pouch.' : ''}</div>`
+        : '<div class="rnote">You have no essences. Elites and bosses drop them, and they cannot be bought or sold.</div>'}${msg}
+      <div class="ubuy"><button class="go" data-eapply="1" ${pick && hero.gold >= fee && !same ? '' : 'disabled'}>${!pick ? 'No essence to imbue' : same ? 'Already imbued' : `${sel.fx ? 'Replace' : 'Imbue'} · ${fee.toLocaleString()} g`}</button>${sel.fx ? '<button data-eremove="1" title="Take the essence out (free); it returns to your pouch">Remove</button>' : ''}</div></div>`;
+  } else {                                                                                // the essence altar: improve an essence one level, with a risk
+    const mine = ESS_KEYS.filter(k => essCount(k) > 0);
+    if (!mine.length) { emptyEnchant(tabs, 'You carry no essences. Elites and bosses drop them (bosses most often), and nobody sells them.'); return; }
+    if (!mine.includes(v.essSel)) v.essSel = mine[0];
+    const k = v.essSel, E = ESS[k], nk = essNext(k), chance = essUpChance(k), cost = essUpCost(k), can = canEssUp(k) && hero.gold >= cost, lower = E.lv > 1 ? ESS[essKey(E.fx, E.lv - 1)].title : null;
+    tiles = mine.map(c => `<button class="utile rtile${c === k ? ' on' : ''}" data-epick="ess:${c}" style="--rc:${ESS[c].color}" title="${escapeHtml(ESS[c].title)}"><div class="uic">${essSvg(c, 46)}</div><span class="una" style="color:${ESS[c].color}">${escapeHtml(ESS[c].title)}</span><small>×${essCount(c)}</small></button>`).join('');
+    const msg = v.essMsg ? `<div class="umsg ${v.essMsg.kind}">${escapeHtml(v.essMsg.text)}</div>` : '';
+    detail = `<div class="upg-detail rdetail" style="--rc:${E.color}"><div class="uhead"><div class="uic big" style="border-color:${E.color}">${essSvg(k, 62)}</div><div><b style="color:${E.color}">${escapeHtml(E.title)}</b><small>Level ${E.lv} of ${WFX_LV} · you hold ${essCount(k)}</small></div></div>
+      ${nk ? `<div class="rup"><div class="uic">${essSvg(k, 44)}</div><span>✦</span><div class="uic">${essSvg(nk, 44)}</div></div><div class="ulevel">Improve to <b style="color:${E.color}">${escapeHtml(ESS[nk].title)}</b></div>` : '<div class="ulevel">This essence is at its finest level</div>'}
+      <div class="rnote">${escapeHtml(WFX[E.fx].blurb)}.</div>
+      ${nk ? `<div class="uodds"><div class="obar"><div class="ofill" style="width:${Math.round(chance * 100)}%"></div></div><div class="otxt"><b>${Math.round(chance * 100)}%</b> to succeed
+        <small>${lower ? `If it fails, it falls to ${escapeHtml(lower)}` : 'If it fails, nothing is lost but the gold'}${gearStat('upLuck') ? ` · includes +${Math.round(gearStat('upLuck') * 50)}% from your upgrade luck` : ''}</small></div></div>` : ''}${msg}
+      <div class="ubuy"><button class="go" data-eessup="${k}" ${can ? '' : 'disabled'}>${!nk ? 'Fully improved' : essCount(nk) >= ESS_MAX ? 'You hold the most of the next level' : `Improve · ${cost.toLocaleString()} g`}</button></div></div>`;
+  }
+  document.getElementById('shopBody').innerHTML = `<div class="ench">${tabs}<div class="upg">${detail}<div class="upg-grid">${tiles}${padTiles(tiles, 4)}</div></div></div>`;
+}
+// Brann improves gear. The pieces you own sit in a grid of tiles; click one and its stats appear on the left with the stats it would have after the next level, the odds,
+// and the Upgrade button. A failed upgrade costs the gold and drops the piece one level; a success raises it one (see attemptUpgrade in gear.js).
 function renderUpgradeShop() {
   document.getElementById('shopTitle').textContent = "BRANN'S FORGE: UPGRADE GEAR";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
   const rows = [...activeSlots().map(k => hero.equip[k]).filter(Boolean).map(it => ({ it, eq: true })), ...hero.inv.map(it => ({ it, eq: false }))].filter(r => Object.keys(r.it.stats).length);
-  let html = '', n = 0;
-  for (const { it, eq } of rows) {
-    const R = RARITIES[it.rarity], up = it.up | 0, max = upgradeMax(it), done = up >= max, cost = upgradeCost(it), can = !done && hero.gold >= cost;
-    html += `<div class="item"><div class="ic" style="border-color:${R.color}">${slotSvg(it.slot, R.color)}</div><div class="im"><b style="color:${R.color}">${escapeHtml(it.name)}</b>
-      <small>${eq ? 'Worn · ' : ''}Level ${up} of ${max}${done ? ' · fully upgraded' : ' · every stat +10%'}<br>${escapeHtml(statLine(it))}</small></div>
-      <div class="pr"><span class="price">${done ? '—' : cost.toLocaleString() + ' g'}</span></div><button data-buy="up:${escapeHtml(it.id)}" ${can ? '' : 'disabled'}><kbd>${++n}</kbd>${done ? 'Max' : 'Upgrade'}</button></div>`;
-  }
-  if (!rows.length) html = '<div class="hint" style="text-align:center">You have no gear with stats to improve yet. Gear drops from monsters, and bosses always drop some.</div>';
-  document.getElementById('shopBody').innerHTML = html;
+  if (!rows.length) { document.getElementById('shopBody').innerHTML = '<div class="hint" style="text-align:center">You have no gear with stats to improve yet. Gear drops from monsters, and bosses always drop some.</div>'; return; }
+  const sel = rows.find(r => r.it.id === vil.upSel) || rows[0]; vil.upSel = sel.it.id;
+  const tiles = rows.map(({ it, eq }, i) => {
+    const R = RARITIES[it.rarity], up = it.up | 0;
+    return `<button class="utile${it === sel.it ? ' on' : ''}" data-pick="${escapeHtml(it.id)}" style="--rc:${R.color}" title="${escapeHtml(it.name)}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${eq ? '<i class="worn">Worn</i>' : ''}<div class="uic">${slotSvg(it.slot, R.color, it)}</div><span class="una" style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</span><small>${up ? '+' + up : 'Lv ' + (it.ilvl || 1)}</small></button>`;
+  }).join('');
+  const it = sel.it, R = RARITIES[it.rarity], up = it.up | 0, max = upgradeMax(it), done = up >= max, cost = upgradeCost(it), can = !done && hero.gold >= cost, chance = upgradeChance(it);
+  const next = done ? null : statsAtUp(it, up + 1);
+  const statRows = Object.keys(it.stats).map(k => { const S = GEAR_STATS[k]; return `<div class="srow"><span>${S.name}</span><b>${S.fmt(it.stats[k])}${next ? ` <i>→</i> <em>${S.fmt(next[k])}</em>` : ''}</b></div>`; }).join('');
+  const ns = socketsOf(it), rn = it.rn || [], open = vil.sockOpen;
+  let sock = '';
+  if (ns) {
+    const free = ns - rn.length, owned = RUNE_KEYS.filter(k => runeCount(k) > 0);
+    sock = `<div class="usock"><div class="slabel">Sockets <small>${rn.length}/${ns}</small></div><div class="sbox">` +
+      Array.from({ length: ns }, (_, i) => rn[i] ? `<button class="sk on" data-sock="off:${escapeHtml(it.id)}:${i}" style="--rc:${RUNES[rn[i]].color}" title="${escapeHtml(runeLine(rn[i]))} (click to take it out)">${runeSvg(rn[i], 28)}</button>`
+        : `<button class="sk${open === i ? ' sel' : ''}" data-sock="pick:${i}" title="Choose a rune for this socket">+</button>`).join('') + '</div>' +
+      (free > 0 && open !== null && open !== undefined ? `<div class="spick">${owned.length ? owned.map(k => `<button class="rp" data-sock="put:${escapeHtml(it.id)}:${k}" style="--rc:${RUNES[k].color}" title="${escapeHtml(runeLine(k))}">${runeSvg(k, 26)}<b>${runeCount(k)}</b></button>`).join('') : '<small>No runes yet: they drop from monsters, and Ysolde the Enchantress sells them.</small>'}</div>` : '') + '</div>';
+  } else sock = '<div class="usock none"><small>No sockets: Uncommon and better pieces have them.</small></div>';
+  const msg = vil.upMsg && vil.upMsg.id === it.id ? `<div class="umsg ${vil.upMsg.kind}">${escapeHtml(vil.upMsg.text)}</div>` : '';
+  const odds = done ? '<div class="uodds">Fully upgraded</div>'
+    : `<div class="uodds"><div class="obar"><div class="ofill" style="width:${Math.round(chance * 100)}%"></div></div><div class="otxt"><b>${Math.round(chance * 100)}%</b> to succeed (+${up + 1}) <small>${up ? `If it fails, it drops to +${up - 1}` : 'If it fails, nothing is lost but the gold'}${gearStat('upLuck') ? ` · includes +${Math.round(gearStat('upLuck') * 100)}% luck` : ''}</small></div></div>`;
+  const detail = `<div class="upg-detail" style="--rc:${R.color}"><div class="uhead"><div class="uic big">${slotSvg(it.slot, R.color, it)}</div><div><b style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</b>
+      <small>${R.name} ${SLOT_LABEL[it.slot].toLowerCase()} · Item level ${it.ilvl || 1}${sel.eq ? ' · Worn' : ''}</small></div></div>
+    <div class="ulevel">Upgrade <b>+${up}</b> of ${max}${done ? '' : ` <span>next: +${up + 1}</span>`}</div>
+    <div class="ustats">${statRows}</div>${sock}${odds}${msg}
+    <div class="ubuy"><button class="go" data-buy="up:${escapeHtml(it.id)}" ${can ? '' : 'disabled'}>${done ? 'Fully upgraded' : `Upgrade · ${cost.toLocaleString()} g`}</button><button data-up5="${escapeHtml(it.id)}" ${can ? '' : 'disabled'} title="Try up to five times, stopping when you cannot afford it">×5</button></div></div>`;
+  document.getElementById('shopBody').innerHTML = `<div class="upg">${detail}<div class="upg-grid">${tiles}</div></div>`;
 }
 
-// the blacksmith buys spare gear (equipped pieces are never offered)
+// the blacksmith buys spare gear (equipped pieces are never offered). Tick several pieces and sell them together, or use a quick button to pick everything up to a grade.
 function renderSellShop() {
   document.getElementById('shopTitle').textContent = "BRANN'S FORGE: SELL GEAR";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
-  const junk = hero.inv.filter(i => i.rarity <= 1), junkSum = junk.reduce((a, i) => a + i.value, 0);
-  let html = '', n = 0;
-  const kbd = () => `<kbd>${++n}</kbd>`;
-  if (hero.inv.length === 0) html = '<div class="hint" style="text-align:center">Your backpack is empty. Gear drops from monsters, and bosses always drop some.</div>';
-  else {
-    html += `<div class="item"><div class="im"><b>Sell all Broken and Common</b><small>${junk.length} piece${junk.length === 1 ? '' : 's'} of junk</small></div><div class="pr"><span class="price">${junkSum.toLocaleString()} g</span></div><button data-buy="junk" ${junk.length ? '' : 'disabled'}>${kbd()}Sell</button></div>`;
-    for (const it of [...hero.inv].sort((a, b) => b.value - a.value)) {
-      const R = RARITIES[it.rarity];
-      html += `<div class="item"><div class="ic" style="border-color:${R.color}">${slotSvg(it.slot, R.color)}</div><div class="im"><b style="color:${R.color}">${escapeHtml(it.name)}</b><small>${R.name} ${SLOT_LABEL[it.slot].toLowerCase()}</small></div><div class="pr"><span class="price">${it.value.toLocaleString()} g</span></div><button data-buy="sell:${escapeHtml(it.id)}">${kbd()}Sell</button></div>`;
-    }
+  const sel = vil.sellSel || (vil.sellSel = new Set());
+  for (const id of [...sel]) if (!hero.inv.some(i => i.id === id)) sel.delete(id);
+  if (hero.inv.length === 0) { document.getElementById('shopBody').innerHTML = tileShop([], '<div class="tdesc">Your backpack is empty. Gear drops from monsters, and bosses always drop some.</div>', 5); return; }
+  const items = [...hero.inv].sort((a, b) => b.value - a.value), picked = items.filter(i => sel.has(i.id)), sum = picked.reduce((a, i) => a + i.value, 0);
+  const foc = items.find(i => i.id === vil.sellFocus) || items[0];
+  const tiles = items.map(it => { const R = RARITIES[it.rarity], on = sel.has(it.id); return { id: it.id, svg: slotSvg(it.slot, R.color, it), name: it.name, color: R.color, sub: `${it.value.toLocaleString()} g`, on: it === foc, badge: on ? '✓ sell' : '', title: it.name }; });
+  const R = RARITIES[foc.rarity], ticked = sel.has(foc.id);
+  const detail = tHead(slotSvg(foc.slot, R.color, foc), foc.name, R.color, `${R.name} ${SLOT_LABEL[foc.slot].toLowerCase()} · Lv ${foc.ilvl || 1} · worth ${foc.value.toLocaleString()} g`) +
+    `<div class="ustats">${foc.slot === 'weapon' ? weaponLine(foc) : ''}${statRows(foc)}</div>
+    <div class="multirow"><button data-sel="pick:${escapeHtml(foc.id)}" class="${ticked ? 'on' : ''}">${ticked ? '✓ Selling this' : 'Sell this one'}</button><button data-sel="all">All</button><button data-sel="none">None</button>` +
+    [1, 2, 3].map(r => `<button data-sel="le${r}" style="border-color:${RARITIES[r].color}">≤ ${RARITIES[r].name}</button>`).join('') + `</div>
+    <div class="ubuy"><button class="go sell" data-sel="sell" ${picked.length ? '' : 'disabled'}>Sell ${picked.length} piece${picked.length === 1 ? '' : 's'} · ${sum.toLocaleString()} g</button></div>`;
+  document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 5);
+}
+// the ticks and quick buttons of the sell shop
+function sellSelClick(k) {
+  const sel = vil.sellSel || (vil.sellSel = new Set());
+  if (k === 'all') hero.inv.forEach(i => sel.add(i.id));
+  else if (k === 'none') sel.clear();
+  else if (k.startsWith('le')) { sel.clear(); hero.inv.filter(i => i.rarity <= +k.slice(2)).forEach(i => sel.add(i.id)); }
+  else if (k.startsWith('pick:')) { const id = k.slice(5); if (sel.has(id)) sel.delete(id); else sel.add(id); vil.sellFocus = id; }
+  else if (k === 'sell') {
+    const picked = hero.inv.filter(i => sel.has(i.id)), gold = sellPieces(picked);
+    if (!gold) { sfx('denied'); return; }
+    sel.clear(); sfx('sellAll'); popups.push({ text: `Sold ${picked.length} piece${picked.length === 1 ? '' : 's'} for ${gold.toLocaleString()} gold`, x: VW / 2, y: 120, t: 1.6, screen: true, small: true, color: '#f5c451' });
+    saveGame(true, true); renderShop(); return;
   }
-  document.getElementById('shopBody').innerHTML = html;
+  sfx('tick'); renderShop();
 }
 document.getElementById('shop').addEventListener('click', e => {
-  const id = e.target.closest('[data-buy]') && e.target.closest('[data-buy]').dataset.buy; if (!id || !vil) return;
+  const qa = e.target.closest('[data-qa]');
+  if (qa && vil) {                                                      // the quest board: accept, abandon, collect
+    const [op, id] = qa.dataset.qa.split(':'), Q = hero.quests;
+    if (op === 'accept') { const q = (vil.questOffers || []).find(x => x.id === id); if (!q || Q.active.length >= QUEST_MAX) { sfx('denied'); return; } vil.questOffers = vil.questOffers.filter(x => x !== q); Q.active.push(q); vil.tSel.quests = q.id; sfx('unlock'); saveGame(true, true); }
+    else if (op === 'abandon') { const q = Q.active.find(x => x.id === id); if (!q) return; Q.active = Q.active.filter(x => x !== q); sfx('discard'); saveGame(true, true); }
+    else if (op === 'claim') { const q = Q.claim.find(x => x.id === id); if (!q || !claimQuest(q)) { sfx('denied'); return; } }
+    renderShop(); return;
+  }
+  const tp = e.target.closest('[data-tpick]');
+  if (tp && vil) {                                                      // a box in a tile shop: choose it (in the sell shop, a click also ticks it)
+    const sh = vil.shop, id = tp.dataset.tpick;
+    if (sh === 'smithSell' || sh === 'smith') { sellSelClick('pick:' + id); return; }
+    (vil.tSel || (vil.tSel = {}))[sh] = (sh === 'quests' || id === 'scroll') ? id : +id; sfx('tick'); renderShop(); return;
+  }
+  const sb = e.target.closest('[data-sel]'); if (sb && vil) { sellSelClick(sb.dataset.sel); return; }
+  const et = e.target.closest('[data-etab]'); if (et && vil) { vil.enchTab = et.dataset.etab; vil.enchMsg = null; vil.fxMsg = null; vil.essMsg = null; sfx('tick'); renderShop(); return; }
+  const ep = e.target.closest('[data-epick]'); if (ep && vil) { const [w, a] = ep.dataset.epick.split(':'); if (w === 'buy') vil.enchBuySel = +a; else if (w === 'fxw') { vil.fxSel = a; vil.fxMsg = null; } else if (w === 'ess') { vil.essSel = a; vil.essMsg = null; } else vil.enchSel = a; vil.enchMsg = null; sfx('tick'); renderShop(); return; }
+  const ee = e.target.closest('[data-eess]'); if (ee && vil) { vil.fxEss = ee.dataset.eess; vil.fxMsg = null; sfx('tick'); renderShop(); return; }
+  const efa = e.target.closest('[data-eapply], [data-eremove]');
+  if (efa && vil) {                                                     // imbue the chosen weapon with an essence, or take its essence out
+    const it = [hero.equip.weapon, hero.equip.weapon2, ...hero.inv].find(i => i && i.id === vil.fxSel);
+    if (!it) { sfx('denied'); return; }
+    if (efa.dataset.eremove) { if (stripWeapon(it)) { vil.fxMsg = { kind: 'bad', text: 'The essence returns to your pouch.' }; sfx('unequip'); saveGame(true, true); } renderShop(); return; }
+    const k = vil.fxEss, fee = ESS[k] ? imbueFee(it, k) : 0;
+    if (!ESS[k] || essCount(k) < 1 || hero.gold < fee || (it.fx && essKey(it.fx.k, it.fx.lv) === k)) { sfx('denied'); return; }
+    hero.gold -= fee; imbueWeapon(it, k); hero.goldPulse = 0.6;
+    vil.fxMsg = { kind: 'good', text: `${ESS[k].title} is woven into the blade!` };
+    popups.push({ text: vil.fxMsg.text, x: VW / 2, y: 120, t: 1.8, screen: true, small: true, color: ESS[k].color }); sfx('runeUp'); sfx('coin'); saveGame(true, true); renderShop(); return;
+  }
+  const eue = e.target.closest('[data-eessup]');
+  if (eue && vil) {                                                     // improve an essence one level
+    const k = eue.dataset.eessup, cost = essUpCost(k);
+    if (!ESS[k] || !canEssUp(k) || hero.gold < cost) { sfx('denied'); return; }
+    const from = ESS[k], to = essNext(k); hero.gold -= cost; const res = attemptEssUp(k), lower = from.lv > 1 ? essKey(from.fx, from.lv - 1) : k;
+    vil.essMsg = { kind: res === 'up' ? 'good' : 'bad', text: res === 'up' ? `It worked! You now hold ${ESS[to].title}` : res === 'down' ? `It failed, and the essence fell to ${ESS[lower].title}` : 'It failed. Nothing lost but the gold' };
+    if (!essCount(k)) vil.essSel = res === 'up' ? to : lower;
+    popups.push({ text: vil.essMsg.text, x: VW / 2, y: 120, t: 1.8, screen: true, small: true, color: res === 'up' ? from.color : '#f88' });
+    hero.goldPulse = 0.6; sfx(res === 'up' ? 'runeUp' : 'runeFail'); saveGame(true, true); renderShop(); return;
+  }
+  const eb = e.target.closest('[data-ebuy]');
+  if (eb && vil) {                                                      // buying a rune from the shelf
+    const list = vil.stock.runes || [], idx = +eb.dataset.ebuy, en = list[idx];
+    if (!en || hero.gold < en.price || runeCount(en.k) >= RUNE_MAX) { sfx('denied'); return; }
+    hero.gold -= en.price; addRune(en.k); list[idx] = null;
+    popups.push({ text: `Bought ${RUNES[en.k].title}`, x: VW / 2, y: 120, t: 1.6, screen: true, small: true, color: RUNES[en.k].tier > 1 ? RUNES[en.k].tc : RUNES[en.k].color });
+    hero.goldPulse = 0.6; sfx('coin'); sfx('sparkle'); saveGame(true, true); renderShop(); return;
+  }
+  const eu = e.target.closest('[data-eup]');
+  if (eu && vil) {                                                      // improving a rune at the altar
+    const k = eu.dataset.eup, cost = runeUpCost(k);
+    if (!RUNES[k] || !canRuneUp(k) || hero.gold < cost) { sfx('denied'); return; }
+    const from = RUNES[k], to = runeNext(k); hero.gold -= cost; const res = attemptRuneUp(k);
+    const lower = from.tier > 1 ? runeKey(from.base, from.tier - 1) : k;
+    vil.enchMsg = { kind: res === 'up' ? 'good' : 'bad', text: res === 'up' ? `It worked! You now hold ${RUNES[to].title}` : res === 'down' ? `It failed, and the rune fell to ${RUNES[lower].title}` : 'It failed. Nothing lost but the gold' };
+    if (!runeCount(k)) vil.enchSel = res === 'up' ? to : lower;
+    popups.push({ text: vil.enchMsg.text, x: VW / 2, y: 120, t: 1.8, screen: true, small: true, color: res === 'up' ? '#cfa8ff' : '#f88' });
+    hero.goldPulse = 0.6; sfx(res === 'up' ? 'runeUp' : 'runeFail'); saveGame(true, true); renderShop(); return;
+  }
+  const pk = e.target.closest('[data-pick]'); if (pk && vil) { vil.upSel = pk.dataset.pick; vil.sockOpen = null; sfx('tick'); renderShop(); return; }
+  const sk = e.target.closest('[data-sock]');
+  if (sk && vil) {                                                      // sockets: open the chooser, put a rune in, take it out
+    const [op, a, b] = sk.dataset.sock.split(':'), it = activeSlots().map(k => hero.equip[k]).concat(hero.inv).find(i => i && i.id === a);
+    if (op === 'pick') vil.sockOpen = vil.sockOpen === +a ? null : +a;
+    else if (op === 'put' && it && socketRune(it, b)) { vil.sockOpen = null; sfx('socket'); saveGame(true, true); }
+    else if (op === 'off' && it && unsocketRune(it, +b)) { sfx('unsocket'); saveGame(true, true); }
+    else sfx('denied');
+    renderShop(); return;
+  }
+  const u5 = e.target.closest('[data-up5]');
+  const id = u5 ? 'up5:' + u5.dataset.up5 : e.target.closest('[data-buy]') && e.target.closest('[data-buy]').dataset.buy; if (!id || !vil) return;
   if (id.startsWith('rb:')) { rebirthClick(id); return; }
   const say = (text, color) => popups.push({ text, x: VW / 2, y: 120, t: 1.6, screen: true, small: true, color });
   if (id === 'junk' || id.startsWith('sell:')) {
     const sold = id === 'junk' ? hero.inv.filter(i => i.rarity <= 1) : hero.inv.filter(i => i.id === id.slice(5));
-    if (!sold.length) { sfx('tired'); return; }
+    if (!sold.length) { sfx('denied'); return; }
     const gold = sold.reduce((a, i) => a + i.value, 0);
     hero.inv = hero.inv.filter(i => !sold.includes(i)); hero.gold += gold; hero.goldPulse = 0.6;
     say(`Sold ${sold.length === 1 ? sold[0].name : sold.length + ' pieces'} for ${gold} gold`, '#f5c451'); sfx('coin'); saveGame(true, true); renderShop();
@@ -1238,31 +1626,34 @@ document.getElementById('shop').addEventListener('click', e => {
   }
   if (id.startsWith('buy:')) {
     const [, key, idx] = id.split(':'), list = vil.stock[key], e = list && list[+idx];
-    if (!e || hero.gold < e.price || hero.inv.length >= INV_MAX) { sfx('tired'); return; }
+    if (!e || hero.gold < e.price || hero.inv.length >= INV_MAX) { sfx('denied'); return; }
     hero.gold -= e.price; hero.inv.push(e.item); list[+idx] = null;
     say(`Bought ${e.item.name}`, RARITIES[e.item.rarity].color); hero.goldPulse = 0.6; sfx('coin'); saveGame(true, true); renderShop();
     return;
   }
-  if (id.startsWith('up:')) {
-    const it = activeSlots().map(k => hero.equip[k]).concat(hero.inv).find(i => i && i.id === id.slice(3));
-    const cost = it ? upgradeCost(it) : 0;
-    if (!it || !canUpgrade(it) || hero.gold < cost) { sfx('tired'); return; }
-    hero.gold -= cost; upgradeItem(it);
+  if (id.startsWith('up:') || id.startsWith('up5:')) {
+    const five = id.startsWith('up5:'), it = activeSlots().map(k => hero.equip[k]).concat(hero.inv).find(i => i && i.id === id.slice(five ? 4 : 3));
+    const tally = { up: 0, down: 0, fail: 0 }; let last = null;
+    for (let i = 0; it && i < (five ? 5 : 1) && canUpgrade(it) && hero.gold >= upgradeCost(it); i++) { hero.gold -= upgradeCost(it); last = attemptUpgrade(it); tally[last]++; }
+    if (!last) { sfx('denied'); return; }
     if (activeSlots().some(k => hero.equip[k] === it)) recalcGear();
-    say(`${it.name}: upgraded`, RARITIES[it.rarity].color); hero.goldPulse = 0.6; sfx('unlock'); Sound.sfxAt('hammer', 1); saveGame(true, true); renderShop();
+    const tries = tally.up + tally.down + tally.fail, up = it.up | 0;
+    const text = tries === 1 ? (last === 'up' ? `It worked! Now +${up}` : last === 'down' ? `It failed, and dropped to +${up}` : 'It failed. Nothing lost but the gold')
+      : `${tally.up} of ${tries} worked${tally.down ? `, ${tally.down} dropped a level` : ''}. Now +${up}`;
+    vil.upMsg = { id: it.id, text, kind: last === 'up' && tries === 1 || tally.up > tally.down + tally.fail ? 'good' : 'bad' };
+    say(`${it.name.replace(/ \+\d+$/, '')}: ${text}`, last === 'up' ? RARITIES[it.rarity].color : '#f88'); hero.goldPulse = 0.6; sfx(tally.up ? 'anvil' : 'forgeFail'); if (tally.up) Sound.sfxAt('hammer', 1); saveGame(true, true); renderShop();
     return;
   }
-  if (id === 'cure') {
-    const price = cureCost();
-    if (hero.gold < price || (vil.stock.cure | 0) <= 0 || (hero.cures | 0) >= POTION_MAX) { sfx('tired'); return; }
-    hero.gold -= price; hero.cures = (hero.cures | 0) + 1; vil.stock.cure--; say('Bought a Cure-All Potion', '#4fd69c');
-  } else if (id === 'potion') {
+  if (id === 'potion') {
     const price = potionCost();
-    if (hero.gold < price || (vil.stock.potion | 0) <= 0 || (hero.potions | 0) >= POTION_MAX) { sfx('tired'); return; }
+    if (hero.gold < price || (vil.stock.potion | 0) <= 0 || (hero.potions | 0) >= POTION_MAX) { sfx('denied'); return; }
     hero.gold -= price; hero.potions = (hero.potions | 0) + 1; vil.stock.potion--; say('Bought a Healing Potion', '#7fd08a');
+  } else if (id === 'scroll') {
+    if (hero.gold < recallCost() || (hero.recalls | 0) >= RECALL_MAX) { sfx('denied'); return; }
+    hero.gold -= recallCost(); hero.recalls = (hero.recalls | 0) + 1; say('Bought a Return Scroll', '#cfc0ff');
   } else if (id === 'lamp') {
     const L = LAMPS[(hero.lamp | 0) + 1];
-    if (!L || hero.gold < L.cost) { sfx('tired'); return; }
+    if (!L || hero.gold < L.cost) { sfx('denied'); return; }
     hero.gold -= L.cost; hero.lamp = (hero.lamp | 0) + 1; applyLamp(); say(`Bought the ${L.name}`, '#ffd88a');
   }
   hero.goldPulse = 0.6; sfx('coin'); saveGame(true, true); renderShop();
@@ -1301,7 +1692,7 @@ function drawVillage() {
     const bob = Math.sin(tAnim * 5) * 2;
     ctx.save(); ctx.fillStyle = 'rgba(20,20,28,0.88)'; ctx.strokeStyle = '#f5c451'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(t.x - 11, ty - 11 + bob, 22, 22, 6); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#f5c451'; ctx.font = 'bold 14px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText('E', t.x, ty + 5 + bob);
+    ctx.fillStyle = '#f5c451'; ctx.font = 'bold 14px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText(keyLabel('interact'), t.x, ty + 5 + bob);
     ctx.restore();
   }
   ctx.restore();
@@ -1388,6 +1779,7 @@ function drawVillageHitboxes(v) {
 
 function drawVillageHUD(v) {
   drawHeroCard(true);
+  drawQuestTracker();
   drawVitals(true);
   drawWaveChip(true);
   // clock chip
@@ -1405,4 +1797,145 @@ function drawVillageHUD(v) {
     ctx.fillStyle = '#f5c451'; ctx.textAlign = 'center'; ctx.fillText(lbl, VW / 2, VH - 80);
   }
   ctx.textAlign = 'left';
+}
+
+// ---------------------------------------------------------------- the quest board (#17) and the Return Scroll
+// The notice board in every village offers a handful of quests; up to three can be taken at once and they travel with you across waves and biomes.
+// A finished quest waits for you at the next board (its reward is collected there). Rebirth clears the quests you were doing but keeps rewards you had not collected.
+const QUEST_MAX = 3, QUEST_KINDS = ['kills', 'type', 'elite', 'mut', 'evo', 'leader', 'boss', 'noPotion', 'noHit', 'gold', 'gear'];
+const QUEST_TYPES = ['goblin', 'minotaur', 'archer', 'ogre'], QUEST_PLURAL = { goblin: 'goblins', minotaur: 'minotaurs', archer: 'archers', ogre: 'ogres' };
+const questId = () => 'q' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
+const emptyQuests = () => ({ active: [], claim: [] });
+function questDef(kind) {
+  const w = Math.max(1, wave), lv = 1 + w * 0.05, R = (g, x, e = {}) => ({ gold: Math.round(g * lv), xp: Math.round(x * lv), ...e }), pick = a => a[Math.floor(Math.random() * a.length)];
+  const nR = (a, b, s = 1) => a + Math.floor(Math.random() * ((b - a) / s + 1)) * s;
+  switch (kind) {
+    case 'kills': { const n = nR(20, 35, 5); return { goal: n, title: `Slay ${n} creatures`, text: `The roads must be quieter. Slay ${n} creatures of any kind.`, reward: R(n * 9, n * 5) }; }
+    case 'type': { const t = pick(QUEST_TYPES.filter(x => TYPES[x].from <= w + 3)), n = nR(6, 12, 2); return { type: t, goal: n, title: `Hunt ${n} ${QUEST_PLURAL[t]}`, text: `${QUEST_PLURAL[t][0].toUpperCase() + QUEST_PLURAL[t].slice(1)} have been troubling the travellers. Hunt ${n} of them, wherever you find them.`, reward: R(n * 16, n * 9, n >= 10 ? { rune: 1 } : {}) }; }
+    case 'elite': { const n = nR(1, 3); return { goal: n, title: n > 1 ? `Defeat ${n} elites` : 'Defeat an elite', text: `Named brutes lead the beasts. Defeat ${n > 1 ? n + ' of them' : 'one'}.`, reward: R(n * 140, n * 60, n >= 2 ? { ess: 1 } : {}) }; }
+    case 'mut': { const n = nR(4, 8); return { goal: n, title: `Slay ${n} mutated creatures`, text: `Some beasts are twisted: armoured, swift, giant, poisonous. Slay ${n} of them.`, reward: R(n * 30, n * 14) }; }
+    case 'evo': { const n = nR(2, 4); return { goal: n, title: `Slay ${n} evolved creatures`, text: `Left alone, creatures grow into named forms. Slay ${n} of them.`, reward: R(n * 110, n * 50, { rune: 1 }) }; }
+    case 'leader': { const n = nR(1, 2); return { goal: n, title: n > 1 ? `Fell ${n} pack leaders` : 'Fell a pack leader', text: `Packs of wolves and skeletons follow a crowned leader. Fell ${n > 1 ? n + ' of them' : 'one'}.`, reward: R(n * 160, n * 60) }; }
+    case 'boss': return { goal: 1, title: 'Fell the guardian of the road', text: 'The beast that waits on the road has terrorised us long enough. Defeat the next boss.', reward: R(900, 400, { gear: 1, potions: 2, ess: 1 }) };
+    case 'noPotion': { const n = nR(3, 5); return { goal: n, title: `${n} waves without a potion`, text: `Clear ${n} waves in a row without drinking a potion. Drinking one starts you over.`, reward: R(n * 150, n * 60) }; }
+    case 'noHit': { const n = nR(1, 2); return { goal: n, title: n > 1 ? `${n} waves untouched` : 'A wave untouched', text: `Clear ${n > 1 ? n + ' waves in a row' : 'a wave'} without being hurt even once.`, reward: R(n * 320, n * 120, { gear: 1 }) }; }
+    case 'gold': { const n = Math.round((250 + w * 30) / 50) * 50; return { goal: n, title: `Collect ${n} gold`, text: `The village treasury is thin. Bring in ${n} gold from the road (what you pick up counts).`, reward: R(Math.round(n * 0.6), Math.round(n * 0.3)) }; }
+    case 'gear': { const n = nR(3, 5); return { goal: n, title: `Pick up ${n} pieces of gear`, text: `Brann wants scrap to melt. Pick up ${n} pieces of gear.`, reward: R(n * 80, n * 30) }; }
+  }
+}
+function makeQuestOffers(v) {                                                    // five different quests for this visit (never one you are already doing)
+  const doing = new Set([...hero.quests.active, ...hero.quests.claim].map(q => q.kind)), pool = QUEST_KINDS.filter(k => !doing.has(k));
+  for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
+  v.questOffers = pool.slice(0, 5).map(k => ({ id: questId(), kind: k, n: 0, ...questDef(k) }));
+}
+function completeQuest(q) {
+  const Q = hero.quests; Q.active = Q.active.filter(x => x !== q); q.n = q.goal; Q.claim.push(q);
+  popups.push({ text: `Quest complete: ${q.title}`, x: VW / 2, y: 150, t: 3, screen: true, small: true, color: '#ffd86a' }); popups.push({ text: 'Collect the reward at a village quest board', x: VW / 2, y: 176, t: 3, screen: true, small: true, color: '#cdb68c' }); sfx('unlock');
+}
+function questEvent(ev, a) {
+  if (!hero || !hero.quests) return;
+  const Q = hero.quests.active; if (!Q.length) return;
+  for (const q of Q.slice()) {
+    const n0 = q.n;
+    if (ev === 'kill') {
+      const m = a;
+      if (q.kind === 'kills') q.n++; else if (q.kind === 'type' && m.type === q.type) q.n++; else if (q.kind === 'elite' && m.elite) q.n++;
+      else if (q.kind === 'mut' && m.mut && m.mut.length && !m.elite) q.n++; else if (q.kind === 'evo' && m.evo) q.n++; else if (q.kind === 'leader' && m.leader) q.n++; else if (q.kind === 'boss' && m.type === 'boss') q.n++;
+    } else if (ev === 'gold' && q.kind === 'gold') q.n += a;
+    else if (ev === 'gear' && q.kind === 'gear') q.n++;
+    else if (ev === 'potion' && q.kind === 'noPotion') q.n = 0;
+    else if (ev === 'hit' && q.kind === 'noHit') q.n = 0;
+    else if (ev === 'waveClear' && (q.kind === 'noPotion' || q.kind === 'noHit')) q.n++;
+    if (q.n >= q.goal) completeQuest(q);
+    else if (q.n !== n0 && ev !== 'gold') popups.push({ text: `${q.title}: ${q.n} / ${q.goal}`, x: VW / 2, y: VH - 150, t: 1.2, screen: true, small: true, color: '#9fd8a0' });
+  }
+}
+const rewardLines = r => [r.gold && `${r.gold.toLocaleString()} gold`, r.xp && `${r.xp.toLocaleString()} XP`, r.potions && `${r.potions} Healing Potion${r.potions > 1 ? 's' : ''}`, r.gear && 'A piece of gear', r.rune && 'A rune', r.ess && 'An essence'].filter(Boolean);
+function claimQuest(q) {                                                         // hand over the reward (the board is in the village, so it can be collected only there)
+  const Q = hero.quests, r = q.reward || {}; if (!Q.claim.includes(q)) return null;
+  Q.claim = Q.claim.filter(x => x !== q);
+  hero.gold += r.gold | 0; hero.goldPulse = 0.6; if (r.xp) gainXp(r.xp, hero);
+  if (r.potions) hero.potions = Math.min(POTION_MAX, (hero.potions | 0) + r.potions);
+  const got = [];
+  if (r.gear) { const it = rollItem({ tier: depthOf() + 0.8, level: hero.level + 1 }); if (addToBag(it)) got.push(it.name); else { hero.gold += 150; got.push('150 gold (your pack was full)'); } }
+  if (r.rune) { const k = rollRuneKey(1, 2); addRune(k); got.push(RUNES[k].title); }
+  if (r.ess) { const k = rollEssKey(1.5); addEss(k); got.push(ESS[k].title); }
+  sfx('gift'); saveGame(true, true);
+  popups.push({ text: `Reward: ${[...rewardLines({ gold: r.gold, xp: r.xp, potions: r.potions }), ...got].join(', ')}`, x: VW / 2, y: 120, t: 3.2, screen: true, small: true, color: '#ffd86a' });
+  return got;
+}
+function cleanQuests(q) {                                                         // a hand-edited save cannot break the board
+  const out = emptyQuests(), cl = (v, a, b) => Math.max(a, Math.min(b, Math.floor(Number(v)) || 0));
+  for (const list of ['active', 'claim']) for (const r of (q && Array.isArray(q[list]) ? q[list] : []).slice(0, 8)) {
+    if (!r || !QUEST_KINDS.includes(r.kind)) continue;
+    const rw = r.reward || {};
+    out[list].push({ id: String(r.id || questId()).slice(0, 20), kind: r.kind, type: QUEST_TYPES.includes(r.type) ? r.type : undefined, goal: cl(r.goal, 1, 99999) || 1, n: cl(r.n, 0, 99999), title: String(r.title || r.kind).slice(0, 60), text: String(r.text || '').slice(0, 200),
+      reward: { gold: cl(rw.gold, 0, 1e7), xp: cl(rw.xp, 0, 1e7), potions: cl(rw.potions, 0, 5), gear: rw.gear ? 1 : 0, rune: rw.rune ? 1 : 0, ess: rw.ess ? 1 : 0 } });
+  }
+  out.active = out.active.slice(0, QUEST_MAX); return out;
+}
+const QUEST_COLOR = { claim: '#ffd24a', active: '#7fd08a', offer: '#cdb68c' };
+const questSvg = (kind, c, px = 40) => {
+  const hunt = ['kills', 'type', 'elite', 'mut', 'evo', 'leader'].includes(kind), body = hunt ? `<path d="M7 25 L22 10 M7 10 L22 25 M22 10 l3 -3 M7 25 l-2 2" stroke="${c}" stroke-width="2.6" stroke-linecap="round" fill="none"/>`
+    : kind === 'boss' ? `<path d="M6 24 V12 L11 17 L16 7 L21 17 L26 12 V24 Z" fill="${c}" fill-opacity=".3" stroke="${c}" stroke-width="2" stroke-linejoin="round"/><circle cx="12.5" cy="19" r="1.4" fill="${c}"/><circle cx="19.5" cy="19" r="1.4" fill="${c}"/>`
+    : kind === 'noPotion' || kind === 'noHit' ? `<path d="M16 5 L26 9 V17 Q26 24 16 28 Q6 24 6 17 V9 Z" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="2" stroke-linejoin="round"/><path d="M11 16 L15 20 L22 12" stroke="${c}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
+    : kind === 'gold' ? `<circle cx="16" cy="16" r="10" fill="${c}" fill-opacity=".3" stroke="${c}" stroke-width="2"/><path d="M16 9 V23 M12 13 Q16 10 20 13 Q12 17 12 19 Q16 22 20 19" stroke="${c}" stroke-width="1.8" fill="none" stroke-linecap="round"/>`
+    : `<path d="M8 11 H24 V25 H8 Z M12 11 V8 H20 V11" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="2" stroke-linejoin="round"/><path d="M12 18 H20" stroke="${c}" stroke-width="2"/>`;
+  return `<svg viewBox="0 0 32 32" width="${px}" height="${px}">${body}</svg>`;
+};
+function renderQuestBoard() {
+  const v = vil, Q = hero.quests;
+  document.getElementById('shopTitle').textContent = 'THE QUEST BOARD'; document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
+  const items = [...Q.claim.map(q => ({ q, st: 'claim' })), ...Q.active.map(q => ({ q, st: 'active' })), ...(v.questOffers || []).map(q => ({ q, st: 'offer' }))];
+  const sel = (v.tSel || (v.tSel = {}));
+  if (!items.length) { document.getElementById('shopBody').innerHTML = tileShop([], '<div class="tdesc">The board is empty. New notices go up when you reach the next village.</div>', 4); return; }
+  const cur = items.find(i => i.q.id === sel.quests) || items[0]; sel.quests = cur.q.id;
+  const tiles = items.map(({ q, st }) => ({ id: q.id, svg: questSvg(q.kind, QUEST_COLOR[st], 40), name: q.title, color: QUEST_COLOR[st], sub: st === 'claim' ? 'Reward ready' : st === 'active' ? `${q.n.toLocaleString()} / ${q.goal.toLocaleString()}` : `${q.reward.gold.toLocaleString()} g`, on: q.id === cur.q.id, badge: st === 'claim' ? 'Reward!' : st === 'active' ? 'Active' : 'New', title: q.title }));
+  const q = cur.q, st = cur.st, c = QUEST_COLOR[st], pct = Math.min(100, Math.round(q.n / q.goal * 100)), slots = Q.active.length;
+  const detail = tHead(questSvg(q.kind, c, 54), q.title, c, st === 'claim' ? 'Finished: collect your reward' : st === 'active' ? 'In progress' : 'A new notice') +
+    `<div class="tdesc">${escapeHtml(q.text)}</div>` +
+    (st !== 'offer' ? `<div class="uodds"><div class="obar"><div class="ofill" style="width:${pct}%"></div></div><div class="otxt"><b>${q.n.toLocaleString()} / ${q.goal.toLocaleString()}</b></div></div>` : '') +
+    `<div class="slabel">Reward</div>${rewardLines(q.reward).map(t => `<div class="srow"><span>${escapeHtml(t)}</span></div>`).join('')}` +
+    `<div class="ubuy">${st === 'claim' ? `<button class="go sell" data-qa="claim:${q.id}">Collect the reward</button>`
+      : st === 'active' ? `<button class="go" disabled>In progress</button><button data-qa="abandon:${q.id}" title="Give this quest up">Abandon</button>`
+      : `<button class="go" data-qa="accept:${q.id}" ${slots >= QUEST_MAX ? 'disabled' : ''}>${slots >= QUEST_MAX ? `You are on ${QUEST_MAX} quests already` : 'Accept the quest'}</button>`}</div>` +
+    `<div class="hint" style="margin-top:6px">Quests taken: ${slots} of ${QUEST_MAX}. Rebirth ends the ones in progress.</div>`;
+  document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 4);
+}
+// what you are doing, in the corner of the screen (under your card): a line and a thin bar for each quest
+function drawQuestTracker() {
+  const Q = hero && hero.quests; if (!Q || (!Q.active.length && !Q.claim.length)) return;
+  const lamp = LAMPS[hero.lamp | 0], y0 = 10 + 58 + (lamp ? 18 : 0) + (hero.points > 0 ? 20 : 0) + 8, rows = Q.claim.length + Q.active.length, h = 14 + rows * 24;
+  hudPanel(10, y0, 236, h, { r: 11 }); ctx.textAlign = 'left'; ctx.font = `bold 10px ${UI_FONT}`; let y = y0 + 20;
+  const line1 = (t, c) => { ctx.fillStyle = c; ctx.fillText(fitText(t, 212, 10, true, 8), 22, y); };
+  for (const q of Q.claim) { line1(`✔ ${q.title}`, '#ffd24a'); ctx.fillStyle = '#cdb68c'; ctx.font = `9px ${UI_FONT}`; ctx.fillText('reward waiting at a village board', 22, y + 11); ctx.font = `bold 10px ${UI_FONT}`; y += 24; }
+  for (const q of Q.active) { line1(q.title, '#e8f4ea'); const f = Math.min(1, q.n / q.goal); ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(22, y + 5, 150, 4); ctx.fillStyle = '#7fd08a'; ctx.fillRect(22, y + 5, 150 * f, 4); ctx.fillStyle = '#cdb68c'; ctx.font = `9px ${UI_FONT}`; ctx.textAlign = 'right'; ctx.fillText(`${Math.min(q.n, q.goal).toLocaleString()} / ${q.goal.toLocaleString()}`, 234, y + 10); ctx.textAlign = 'left'; ctx.font = `bold 10px ${UI_FONT}`; y += 24; }
+}
+
+// ---- the Return Scroll: bought from Tobin, dear; read it (B) anywhere on the road and after a few seconds you are in the village, whatever the wave
+const RECALL_MAX = 3, RECALL_TIME = 3.2, recallCost = () => Math.round(900 + wave * 45);
+function useRecall() {
+  if (!hero || hero.dead || paused || state !== 'play' || vil) return;
+  if (hero.recallT > 0) { hero.recallT = 0; popups.push({ text: 'You put the scroll away', x: hero.x, y: hero.y - 95, t: 1, color: '#cfc0ff' }); sfx('tick'); return; }
+  if ((hero.recalls | 0) <= 0) { popups.push({ text: 'You have no Return Scroll (Tobin sells them)', x: hero.x, y: hero.y - 95, t: 1.4, color: '#f88' }); sfx('denied'); return; }
+  if (boss) { popups.push({ text: "The guardian is too near for the scroll to work", x: hero.x, y: hero.y - 95, t: 1.6, color: '#f88' }); sfx('denied'); return; }
+  hero.recallT = RECALL_TIME; popups.push({ text: 'The scroll begins to glow... stay unhurt', x: hero.x, y: hero.y - 95, t: 1.6, color: '#cfc0ff' }); sfx('bell');
+}
+function cancelRecall(why) { if (hero.recallT > 0) { hero.recallT = 0; popups.push({ text: why, x: hero.x, y: hero.y - 95, t: 1.4, color: '#f88' }); sfx('runeFail'); } }
+function tickRecall(dt) {
+  if (!(hero.recallT > 0)) return;
+  if (boss || vil || state !== 'play') { hero.recallT = 0; return; }
+  hero.recallT -= dt;
+  if (gfx.particles && Math.random() < dt * 40) { const a = Math.random() * Math.PI * 2, r = 30 * (hero.recallT / RECALL_TIME) + 8; particles.push({ x: hero.x + Math.cos(a) * r, y: hero.y - 30 + Math.sin(a) * r * 0.6, vx: 0, vy: -30, life: 0.5, max: 0.5, size: 2.4, color: '#cfc0ff', add: true }); }
+  if (hero.recallT <= 0) { hero.recallT = 0; hero.recalls = Math.max(0, (hero.recalls | 0) - 1); enterVillage(); if (vil) { vil.recalled = true; popups.push({ text: 'The scroll carried you home', x: VW / 2, y: 150, t: 2.4, screen: true, small: true, color: '#cfc0ff' }); sfx('rebirth'); } }
+}
+function drawRecallChip(x, cy) {                                                   // beside the potion: how many scrolls, the key, and a ring while one is being read
+  const w = 40, h = 40, y = cy - h / 2, n = hero.recalls | 0, ch = hero.recallT > 0;
+  hudPanel(x, y, w, h, { r: 12, edge: ch ? '#cfc0ff' : 'rgba(207,192,255,0.35)' });
+  ctx.save(); ctx.translate(x + w / 2, cy - 1); ctx.globalAlpha *= n ? 1 : 0.35;
+  ctx.fillStyle = '#efe6c8'; ctx.strokeStyle = '#6a5a3a'; ctx.lineWidth = 1.2; ctx.beginPath(); ctx.roundRect(-8, -11, 16, 20, 2); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#b8a070'; ctx.fillRect(-9, -13, 18, 3); ctx.fillRect(-9, 8, 18, 3);
+  ctx.strokeStyle = '#8a50d0'; ctx.lineWidth = 1.4; ctx.beginPath(); ctx.moveTo(-4, -3); ctx.lineTo(0, -7); ctx.lineTo(4, -3); ctx.moveTo(0, -7); ctx.lineTo(0, 4); ctx.stroke(); ctx.restore();
+  if (ch) { ctx.strokeStyle = '#cfc0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x + w / 2, cy, 19, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - hero.recallT / RECALL_TIME)); ctx.stroke(); }
+  ctx.textAlign = 'right'; const t = String(n); ctx.font = `bold 11px ${UI_FONT}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(t, x + w - 5, y + h - 5); ctx.fillStyle = n ? '#fff' : '#f88'; ctx.fillText(t, x + w - 5, y + h - 5);
+  ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `bold 8px ${UI_FONT}`; ctx.fillText(keyLabel('potion'), x + 5, y + 10);
 }
