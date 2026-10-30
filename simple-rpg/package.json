@@ -1,7 +1,7 @@
 {
   "name": "stick-rpg",
   "productName": "Stick RPG",
-  "version": "1.0.0",
+  "version": "0.3.0",
   "description": "Stick RPG: a stickman hero, waves of monsters, villages, bosses and eight biomes.",
   "main": "main.js",
   "private": true,

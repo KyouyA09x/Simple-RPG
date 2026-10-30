@@ -41,7 +41,7 @@ function swingPos(m) {
 
 // per-creature upkeep, before its brain runs
 function mobTick(m, dt) {
-  shieldTick(m);
+  shieldTick(m); fidgetTick(m, dt);
   if (m.fireT > 0) m.fireT = Math.max(0, m.fireT - dt);
   if (m.recoilT > 0) m.recoilT = Math.max(0, m.recoilT - dt);
   if (m.alertT === undefined) m.alertT = 0.45;                          // the moment after it rises from the ground: it looks up and notices you
@@ -113,11 +113,6 @@ function drawMobWindup(m) {
   ctx.fillStyle = `rgba(255,70,50,${0.08 + 0.16 * p})`; ctx.strokeStyle = `rgba(255,110,80,${0.25 + 0.4 * p})`; ctx.lineWidth = 1.5;
   ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.ellipse(m.x, m.y, R, R / 1.7, 0, m.facing > 0 ? -1.1 : Math.PI - 1.1, m.facing > 0 ? 1.1 : Math.PI + 1.1); ctx.closePath(); ctx.fill(); ctx.stroke();
   ctx.restore();
-}
-function enemyDeathPose(m, p) {
-  if (m.type === 'slime') { ctx.translate(m.x, m.y); ctx.scale(1 + p * 0.7, Math.max(0.04, 1 - p * 0.95)); ctx.translate(-m.x, -m.y); }          // splats flat
-  else if (m.type === 'goblin') { ctx.translate(0, -Math.sin(Math.min(1, p * 1.6) * Math.PI) * 16); ctx.translate(m.x, m.y); ctx.rotate(-m.facing * Math.min(1, p * 1.5) * 1.9); ctx.translate(-m.x, -m.y); }   // knocked head over heels
-  else { ctx.translate(m.x, m.y); ctx.rotate(-m.facing * Math.min(1, p * 2) * 1.4); ctx.translate(-m.x, -m.y); }
 }
 
 // ---------------------------------------------------------------- boss signature attacks
@@ -392,7 +387,7 @@ const isNewMob = m => NEW_MOBS.includes(m.type);
 const LUNGE = {
   wolf:    { ring: 150, range: 230, wind: 0.32, speed: 430, dur: 0.38, cd: 1.5, hop: 5 },
   panther: { ring: 250, range: 340, wind: 0.6,  speed: 480, dur: 0.42, cd: 2.4, hop: 7 },
-  harpy:   { ring: 190, range: 300, wind: 0.5,  speed: 340, dur: 0.55, cd: 2.2, hop: 0 },
+  harpy:   { ring: 190, range: 290, wind: 0.55, speed: 270, dur: 0.5, cd: 3.0, hop: 0 },
 };
 const FLYERS = { icesprite: { z: 34, want: 215, shot: '#9fe4ff', ail: 'chill', snd: 'chill' }, fireimp: { z: 30, want: 200, shot: '#ff7a2a', ail: 'burn', snd: 'lava' }, harpy: { z: 46 } };
 
@@ -624,7 +619,7 @@ const NEW_MOBS2 = ['treant', 'mummy', 'frostwolf', 'magmaslime', 'wisp', 'spores
 NEW_MOBS.push(...NEW_MOBS2);
 BIOME_MOBS.forest.push('treant'); BIOME_MOBS.desert.push('mummy'); BIOME_MOBS.snow.push('frostwolf'); BIOME_MOBS.volcano.push('magmaslime');
 BIOME_MOBS.swamp.push('wisp'); BIOME_MOBS.jungle.push('sporeshroom'); BIOME_MOBS.ruins.push('cursedKnight'); BIOME_MOBS.highlands.push('golem');
-LUNGE.frostwolf = { ring: 150, range: 230, wind: 0.3, speed: 440, dur: 0.38, cd: 1.4, hop: 5 };
+LUNGE.frostwolf = { ring: 150, range: 220, wind: 0.42, speed: 320, dur: 0.36, cd: 2.2, hop: 5 };
 Object.assign(MELEE, {
   treant:       { extra: 34, wind: 0.6,  hit: 0.18, rec: 0.8, cd: 1.4, lunge: 50, mul: 1.2, snd: 'slam' },
   mummy:        { extra: 22, wind: 0.45, hit: 0.14, rec: 0.6, cd: 1.0, lunge: 70, mul: 1,   snd: 'swing' },
@@ -690,11 +685,11 @@ function newMobAI2(m, dt, dx, dy, dist, spd, slowMul) {
       if (m.stateT <= 0) { aimed('#e8d49a', 0.8, 'blind', 230, 38); sfx('whoosh'); m.state = 'walk'; m.stateT = 2.5 + Math.random() * 1.2; }
     }
   } else if (t === 'frostwolf') {
-    if (!m.howled && m.state === 'walk' && dist < 420 && !hero.dead) { m.howled = true; m.state = 'howl'; m.stateT = 0.9; m.moving = false; m.facing = face; sfx('roar'); }
+    if (!m.howled && m.leader && m.state === 'walk' && dist < 420 && !hero.dead && enemies.filter(o => o.type === 'frostwolf').length < 5) { m.howled = true; m.state = 'howl'; m.stateT = 0.9; m.moving = false; m.facing = face; sfx('roar'); }
     if (m.state === 'howl') {
       if (m.stateT <= 0) {
         m.state = 'walk'; m.stateT = 0.5;
-        if (enemies.length < 24) for (let i = 0; i < 2; i++) spawnEnemy('frostwolf', { x: m.x + (i ? 50 : -50), y: m.y + 20 }, { howled: true, spawnT: 0.4, variant: 'plain' });
+        if (enemies.length < 20) spawnEnemy('frostwolf', { x: m.x + 50, y: m.y + 20 }, { howled: true, spawnT: 0.4, variant: 'plain' });
         popups.push({ text: 'A howl!', x: m.x, y: m.y - 70, t: 0.9, color: '#cfe8ff', small: true });
       }
     } else newMobAI(m, dt, dx, dy, dist, spd, slowMul, true);
@@ -851,3 +846,136 @@ function drawEvoTag(m) {
   }
 }
 
+// ---------------------------------------------------------------- idle fidgets
+// A creature that stands about (between hops, waiting for its next attack, a plant that never walks) does something small now and then: scratches its head, sniffs, shakes itself,
+// looks around, stretches, preens, blows a bubble. A fidget is a few seconds of a body motion (applied when the creature is drawn) and now and then a puff of something.
+const FIDGETS = {
+  goblin: [['scratch', '?'], ['look'], ['stretch']], minotaur: [['paw'], ['snort'], ['look']], ogre: [['stretch'], ['paw'], ['snort']],
+  slime: [['jiggle'], ['jiggle', 'bubble']], magmaslime: [['jiggle', 'bubble'], ['bubble']], archer: [['look'], ['sway'], ['scratch', '...']], skeleton: [['look'], ['rattle']],
+  wolf: [['sniff'], ['shake'], ['look']], frostwolf: [['shake'], ['sniff']], panther: [['stretch'], ['sniff'], ['tail']], scorpion: [['tail'], ['sway']],
+  icesprite: [['twinkle']], fireimp: [['spark'], ['preen']], harpy: [['preen'], ['look']], wisp: [['loop'], ['twinkle']], bogLurker: [['bubble'], ['sway']],
+  treant: [['sway', 'leaf'], ['stretch']], mummy: [['sway', 'sand'], ['look']], sporeshroom: [['puff'], ['sway']], cursedKnight: [['look', 'chill'], ['sway']], golem: [['dust'], ['stretch']],
+};
+const FID_TIME = { scratch: 1.2, look: 1.5, paw: 1.3, snort: 1.1, stretch: 1.3, jiggle: 1.0, bubble: 1.4, sway: 1.8, sniff: 1.4, shake: 0.9, tail: 1.2, twinkle: 1.4, spark: 1.2, preen: 1.3, loop: 1.5, puff: 1.3, rattle: 0.9, dust: 1.2, leaf: 1.5, sand: 1.5, chill: 1.4 };
+const FID_PUFF = { bubble: m => m.type === 'magmaslime' ? '#ff9a40' : m.type === 'bogLurker' ? '#7aa86a' : '#a8ffb0', twinkle: () => '#cfeaff', spark: () => '#ff9a40', leaf: () => '#6aa84a', sand: () => '#e6cf9c', chill: () => '#cfeaff', puff: () => '#d89acb', dust: () => '#b0a89a', snort: () => '#ebebeb', paw: () => '#b9a98a' };
+function fidgetTick(m, dt) {
+  if (m.type === 'boss' || m.dieT !== undefined || !FIDGETS[m.type]) return;
+  const moved = Math.hypot(m.x - (m._fx ?? m.x), m.y - (m._fy ?? m.y)) / Math.max(dt, 0.001) / 60; m._fx = m.x; m._fy = m.y;                   // how far it moved, as pixels per frame at 60 frames a second
+  const idle = moved < 0.25 && !m.mel && m.state === 'walk' && !(m.spawnT > 0) && !(m.stunT > 0) && !(m.alertT > 0);
+  m.idleT = idle ? (m.idleT || 0) + dt : 0;
+  const F = m.fid;
+  if (F) {
+    F.t += dt;
+    const p = F.t / F.dur;
+    if (F.kinds.includes('look') && !F.flipped && p > 0.3) { F.flipped = true; F.was = m.facing; m.facing = -m.facing; }
+    if (F.kinds.includes('look') && F.flipped && !F.back && p > 0.7) { F.back = true; m.facing = F.was; }
+    if (!idle && p < 0.9 && moved > 1) { if (F.flipped && !F.back) m.facing = F.was; m.fid = null; return; }              // it has something else to do now
+    if (gfx.particles) for (const k of F.kinds) if (FID_PUFF[k] && Math.random() < dt * 9) {
+      const up = k === 'bubble' || k === 'twinkle' || k === 'spark' || k === 'puff' || k === 'chill' || k === 'leaf' || k === 'sand';
+      particles.push({ x: m.x + (Math.random() - 0.5) * 18 * (m.scale || 1), y: m.y - (k === 'paw' || k === 'dust' ? 2 : 24 + Math.random() * 26) * (m.scale || 1), vx: (Math.random() - 0.5) * 20 + (k === 'snort' ? m.facing * 26 : 0), vy: up ? (k === 'leaf' || k === 'sand' ? 24 : -26) : -8, life: 0.6, max: 0.6, size: k === 'bubble' ? 3 : 2.2, color: FID_PUFF[k](m), add: k === 'twinkle' || k === 'spark' });
+    }
+    if (F.t >= F.dur) m.fid = null;
+    return;
+  }
+  m.fidCd = (m.fidCd === undefined ? 1.5 + Math.random() * 3 : m.fidCd) - dt;
+  if (m.idleT > 0.5 && m.fidCd <= 0) {
+    const pick = FIDGETS[m.type][Math.floor(Math.random() * FIDGETS[m.type].length)], dur = Math.max(...pick.map(k => FID_TIME[k] || 1.2));
+    m.fid = { kinds: pick, t: 0, dur }; m.fidCd = 3.5 + Math.random() * 5;
+    if (pick.includes('scratch')) popups.push({ text: pick[1] || '?', x: m.x, y: m.y - 92 * (m.scale || 1), t: 1.1, color: '#ddd', small: true });
+  }
+}
+// the motion of a fidget, applied to the picture of the creature (called from drawEnemy inside its save / restore)
+function applyFidget(m) {
+  const F = m.fid; if (!F) return;
+  const p = Math.min(1, F.t / F.dur), s = Math.sin(p * Math.PI), f = m.facing || 1, t = F.t;
+  ctx.translate(m.x, m.y);
+  for (const k of F.kinds) switch (k) {
+    case 'scratch': ctx.rotate(f * Math.sin(t * 16) * 0.05 * s); ctx.translate(0, -Math.abs(Math.sin(t * 8)) * 1.5 * s); break;
+    case 'paw': ctx.translate(0, -Math.abs(Math.sin(p * Math.PI * 3)) * 3.2); break;
+    case 'snort': ctx.rotate(-f * 0.07 * Math.sin(Math.min(1, p * 2) * Math.PI)); ctx.translate(f * 2 * (p > 0.5 ? s : 0), 0); break;
+    case 'stretch': ctx.scale(1 + 0.07 * s, 1 - 0.09 * s); ctx.translate(f * 2 * s, 0); break;
+    case 'jiggle': ctx.scale(1 + 0.1 * Math.sin(t * 22) * (1 - p), 1 - 0.1 * Math.sin(t * 22) * (1 - p)); break;
+    case 'bubble': ctx.scale(1 + 0.04 * s, 1 - 0.04 * s); break;
+    case 'sway': ctx.rotate(Math.sin(t * 3.4) * 0.05 * s); break;
+    case 'sniff': ctx.rotate(f * 0.13 * s + Math.sin(t * 14) * 0.015); ctx.translate(f * 3 * s, 2 * s); break;
+    case 'shake': ctx.translate(Math.sin(t * 46) * 2.6 * (1 - p), 0); ctx.rotate(Math.sin(t * 46) * 0.04 * (1 - p)); break;
+    case 'tail': ctx.rotate(Math.sin(t * 12) * 0.045 * s); break;
+    case 'twinkle': ctx.scale(1 + 0.12 * Math.sin(t * 10) * s, 1 + 0.12 * Math.sin(t * 10) * s); break;
+    case 'spark': ctx.scale(1 + 0.1 * Math.abs(Math.sin(t * 12)) * s, 1 + 0.1 * Math.abs(Math.sin(t * 12)) * s); break;
+    case 'preen': ctx.translate(0, -Math.abs(Math.sin(t * 13)) * 3 * s); ctx.scale(1 - 0.08 * Math.abs(Math.sin(t * 13)) * s, 1); break;
+    case 'loop': ctx.translate(Math.sin(p * Math.PI * 2) * 12, (1 - Math.cos(p * Math.PI * 2)) * -7); break;
+    case 'puff': ctx.scale(1 + 0.05 * Math.sin(t * 9) * s, 1 - 0.1 * Math.max(0, Math.sin(t * 9)) * s); break;
+    case 'rattle': ctx.translate(Math.sin(t * 40) * 1.8 * (1 - p), 0); break;
+    case 'dust': ctx.translate(Math.sin(t * 30) * 1.6 * s, 0); break;
+    case 'chill': ctx.translate(0, Math.sin(t * 5) * 1.4 * s); break;
+  }
+  ctx.translate(-m.x, -m.y);
+}
+
+// ---------------------------------------------------------------- death scenes
+// Every kind of creature goes its own way: goblins tumble, minotaurs sink to their knees and topple, ogres crash down and shake the ground, slimes splat into a puddle, wolves roll
+// over, the flying ones spin out of the air, imps burst into embers, sprites shatter into ice, wisps drift up as sparks, the plant and the stone creatures wilt and crumble.
+// t: how long the corpse lasts, hold: how much of that it stays solid before fading, at: when its one-off effect happens (a thud, a cloud of dust), pose(p): how it is turned over.
+const rotAbout = (m, a) => { ctx.translate(m.x, m.y); ctx.rotate(a); ctx.translate(-m.x, -m.y); };
+const easeOutQ = x => 1 - Math.pow(1 - Math.min(1, Math.max(0, x)), 3);
+const DEATH = {
+  goblin:   { t: 0.9, hold: 0.5, pose: (m, p) => { ctx.translate(0, -Math.sin(Math.min(1, p * 2.2) * Math.PI) * 18); rotAbout(m, -m.facing * easeOutQ(p * 2) * 1.75); } },
+  minotaur: { t: 1.2, hold: 0.6, at: 0.52, fx: 'thud', pose: (m, p) => { ctx.translate(0, Math.min(1, p * 3) * 10); rotAbout(m, p < 0.4 ? -m.facing * 0.1 * (p / 0.4) : -m.facing * (0.1 + easeOutQ((p - 0.4) / 0.25) * 1.4)); } },
+  ogre:     { t: 1.5, hold: 0.65, at: 0.55, fx: 'quake', pose: (m, p) => { ctx.translate(Math.sin(p * 30) * 1.5 * (1 - p), Math.min(1, p * 2.5) * 12); rotAbout(m, p < 0.45 ? -m.facing * 0.14 * (p / 0.45) : -m.facing * (0.14 + easeOutQ((p - 0.45) / 0.2) * 1.35)); } },
+  slime:    { t: 1.1, hold: 0.55, puddle: 'rgba(110,200,110,0.55)', pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1 + easeOutQ(p * 2.5) * 0.8, Math.max(0.05, 1 - easeOutQ(p * 2.5) * 0.93)); ctx.translate(-m.x, -m.y); } },
+  magmaslime: { t: 1.1, hold: 0.5, puddle: 'rgba(255,110,40,0.6)', fx: 'lava', at: 0.05, pose: (m, p) => { const k = p < 0.15 ? 1 + p * 3 : Math.max(0.05, 1.45 - (p - 0.15) * 1.7); ctx.translate(m.x, m.y); ctx.scale(k, Math.max(0.05, 2 - k)); ctx.translate(-m.x, -m.y); } },
+  archer:   { t: 1.0, hold: 0.5, pose: (m, p) => { ctx.translate(0, easeOutQ(p * 2) * 4); rotAbout(m, -m.facing * easeOutQ(p * 1.6) * 1.55); } },
+  skeleton: { t: 0.8, hold: 0.3, fx: 'bones', at: 0.02, pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1 + p * 0.1, Math.max(0.1, 1 - easeOutQ(p * 1.5) * 0.85)); ctx.translate(-m.x, -m.y); } },
+  wolf:     { t: 1.0, hold: 0.55, pose: (m, p) => { ctx.translate(0, -Math.sin(Math.min(1, p * 2.4) * Math.PI) * 14); rotAbout(m, -m.facing * easeOutQ(p * 2.4) * 3.1); ctx.translate(0, easeOutQ(p * 2.4) * 6); } },
+  frostwolf: { t: 1.0, hold: 0.55, fx: 'ice', at: 0.35, pose: (m, p) => { ctx.translate(0, -Math.sin(Math.min(1, p * 2.4) * Math.PI) * 14); rotAbout(m, -m.facing * easeOutQ(p * 2.4) * 3.1); ctx.translate(0, easeOutQ(p * 2.4) * 6); } },
+  panther:  { t: 1.1, hold: 0.45, fx: 'shadow', at: 0.3, pose: (m, p) => { rotAbout(m, -m.facing * easeOutQ(p * 2) * 1.5); ctx.translate(0, easeOutQ(p * 2) * 4); } },
+  scorpion: { t: 1.0, hold: 0.55, pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1, 1 - easeOutQ(p * 2) * 0.35); ctx.rotate(m.facing * easeOutQ(p * 2) * 0.35); ctx.translate(-m.x, -m.y); } },
+  harpy:    { t: 1.0, hold: 0.6, at: 0.62, fx: 'feathers', pose: (m, p) => { const fall = Math.min(1, p / 0.6), z = (m.hopZ || 40) * (1 - fall * fall); ctx.translate(0, (m.hopZ || 40) - z); rotAbout(m, m.facing * fall * 5.2); } },
+  icesprite: { t: 0.55, hold: 0.1, at: 0.04, fx: 'shatter', pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1 + p * 0.5, 1 + p * 0.5); ctx.translate(-m.x, -m.y); } },
+  fireimp:  { t: 0.7, hold: 0.15, at: 0.04, fx: 'embers', pose: (m, p) => { ctx.translate(m.x, m.y - (m.hopZ || 30)); ctx.scale(1 + p * 0.6, Math.max(0.1, 1 - p * 1.2)); ctx.translate(-m.x, -m.y + (m.hopZ || 30)); } },
+  wisp:     { t: 1.2, hold: 0.1, at: 0.04, fx: 'wisp', pose: (m, p) => { ctx.translate(0, -p * 44); ctx.translate(m.x, m.y); ctx.scale(1 - p * 0.5, 1 - p * 0.5); ctx.translate(-m.x, -m.y); } },
+  bogLurker: { t: 1.2, hold: 0.35, fx: 'bubbles', at: 0.1, pose: (m, p) => { ctx.translate(0, easeOutQ(p) * 40); ctx.translate(m.x, m.y); ctx.scale(1, 1 - easeOutQ(p) * 0.5); ctx.translate(-m.x, -m.y); } },
+  treant:   { t: 1.7, hold: 0.7, at: 0.5, fx: 'leaves', pose: (m, p) => { ctx.translate(Math.sin(p * 22) * 1.2 * (1 - p), 0); rotAbout(m, -m.facing * (p < 0.2 ? 0.04 * Math.sin(p * 40) : easeOutQ((p - 0.2) / 0.45) * 1.5)); } },
+  mummy:    { t: 1.3, hold: 0.4, at: 0.05, fx: 'sand', pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1 + p * 0.15, Math.max(0.12, 1 - easeOutQ(p * 1.4) * 0.88)); ctx.translate(-m.x, -m.y); } },
+  sporeshroom: { t: 1.2, hold: 0.45, at: 0.05, fx: 'spores', pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1 + easeOutQ(p * 2) * 0.25, Math.max(0.15, 1 - easeOutQ(p * 2) * 0.8)); ctx.translate(-m.x, -m.y); } },
+  cursedKnight: { t: 1.5, hold: 0.55, at: 0.4, fx: 'soul', pose: (m, p) => { ctx.translate(0, easeOutQ(p * 2) * 12); rotAbout(m, -m.facing * (p < 0.4 ? 0.06 : 0.06 + easeOutQ((p - 0.4) / 0.25) * 1.4)); } },
+  golem:    { t: 1.6, hold: 0.55, at: 0.1, fx: 'rubble', pose: (m, p) => { ctx.translate(Math.sin(p * 40) * 2 * (1 - p), 0); ctx.translate(m.x, m.y); ctx.scale(1 + p * 0.1, Math.max(0.2, 1 - easeOutQ(p * 1.3) * 0.8)); ctx.translate(-m.x, -m.y); } },
+};
+const deathTime = m => m.type === 'boss' ? 1.6 : ((DEATH[m.type] && DEATH[m.type].t) || 0.6) * ((m.scale || 1) > 1 ? 1.15 : 1);
+function enemyDeathPose(m, p) {
+  const D = DEATH[m.type];
+  if (D) D.pose(m, p);
+  else { ctx.translate(m.x, m.y); ctx.rotate(-m.facing * Math.min(1, p * 2) * 1.4); ctx.translate(-m.x, -m.y); }
+}
+const deathAlpha = (m, p) => { const D = DEATH[m.type], h = D ? D.hold : 0; return Math.max(0, p < h ? 1 : 1 - (p - h) / (1 - h)); };
+function drawDeathPuddle(m, p) {                                                // the goo a slime leaves behind
+  const D = DEATH[m.type]; if (!D || !D.puddle) return;
+  const k = easeOutQ(p * 2.2); ctx.save(); ctx.globalAlpha *= 0.9; ell(m.x, m.y + 1, (14 + 16 * k) * (m.size ?? 1), (5 + 5 * k) * (m.size ?? 1), D.puddle); ctx.restore();
+}
+// the one-off bits of a death: a thud of dust, embers, shards, sparks (called once, at D.at of the way through)
+function deathEffect(m, D) {
+  const x = m.x, y = m.y, mk = (n, col, sp, sz, grav, up = 0, add = false) => burst(x, y - up, col, n, sp, sz, grav, add);
+  switch (D.fx) {
+    case 'thud': mk(12, '#b9a98a', 120, 3, 60); shake(3); sfx('slam'); break;
+    case 'quake': mk(22, '#b9a98a', 180, 3.5, 60); shake(8); sfx('quake'); break;
+    case 'lava': mk(22, '#ff9a40', 240, 3, 200, 24, true); sfx('lava'); break;
+    case 'bones': mk(14, '#e8e0c8', 200, 2.5, 380, 20); sfx('hitBlunt'); break;
+    case 'ice': mk(10, '#cfeaff', 140, 2.4, 200, 20, true); break;
+    case 'shadow': mk(14, '#3a3a52', 120, 3.5, -60, 30); break;
+    case 'feathers': mk(14, '#c9a0e0', 110, 3, 70, 30); break;
+    case 'shatter': mk(22, '#cfeaff', 260, 2.6, 240, 24, true); sfx('icecrack'); break;
+    case 'embers': mk(22, '#ff7a2a', 200, 2.4, -60, 28, true); sfx('crackle'); break;
+    case 'wisp': mk(18, '#9fffd0', 80, 2.2, -90, 26, true); sfx('sparkle'); break;
+    case 'bubbles': mk(10, '#7aa86a', 60, 3.2, -80, 14); sfx('glub'); break;
+    case 'leaves': mk(24, '#6aa84a', 120, 3, 50, 50); sfx('rustle'); break;
+    case 'sand': mk(26, '#e6cf9c', 120, 2.6, 60, 40); break;
+    case 'spores': mk(24, '#d89acb', 80, 2.8, -30, 20, true); break;
+    case 'soul': mk(10, '#cfd6ff', 50, 3, -140, 36, true); sfx('wail'); break;
+    case 'rubble': mk(28, '#8a8a7a', 200, 3.4, 300, 40); shake(7); sfx('quake'); break;
+  }
+}
+function deathTick(c, dt) {                                                      // corpses: advance, and fire the one-off effect at its moment
+  c.dieT += dt;
+  const D = DEATH[c.type];
+  if (D && D.fx && !c._did && c.dieT / c.dieMax >= (D.at ?? 0)) { c._did = true; deathEffect(c, D); }
+}

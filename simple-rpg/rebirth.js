@@ -89,7 +89,7 @@ const pctS = (v, d = 1) => `${+(v * 100).toFixed(d)}%`;
 function renderRebirth() {
   const v = vil, R = rebirths(), N = R + 1, cap = levelCap(), ready = hero.level >= cap;
   const row = (k, t) => `<div class="sumrow"><span>${k}</span><b>${t}</b></div>`;
-  document.getElementById('shopTitle').textContent = 'THE SHRINE OF RETURN';
+  document.getElementById('shopTitle').textContent = 'THE RITE OF RETURN';
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
   const { worn, bag } = keptGear(), lost = rebirthLost(), lamp = LAMPS[hero.lamp | 0];
   const keptNames = [...Object.values(worn), ...bag].map(i => `<span style="color:${RARITIES[i.rarity].color}">${escapeHtml(i.name)}</span>`);

@@ -50,6 +50,12 @@ function villagerPose(n, sh, f, s) {
       R.fh = { x: sh.x + f * 13 * s, y: sh.y + 12 * s }; R.bh = { x: sh.x + f * 10 * s, y: sh.y + 16 * s };
       R.tool = { k: 'carry', what: n.carry }; R.lean = 0.05; break;
     }
+    case 'pray': {                                           // standing, head bowed, hands together
+      R.fh = { x: sh.x + f * 7 * s, y: sh.y + 7 * s }; R.bh = { x: sh.x + f * 6 * s, y: sh.y + 8 * s }; R.lean = 0.2; break;
+    }
+    case 'sitpray': {                                        // seated on a pew, hands together
+      R.sit = true; R.lean = 0.12; R.fh = { x: sh.x + f * 8 * s, y: sh.y + 9 * s }; R.bh = { x: sh.x + f * 7 * s, y: sh.y + 10 * s }; break;
+    }
     case 'sit': case 'knit': {
       R.sit = true; R.lean = 0.02;
       R.fh = { x: sh.x + f * 12 * s, y: sh.y + 18 * s }; R.bh = { x: sh.x + f * 9 * s, y: sh.y + 19 * s };
@@ -159,7 +165,7 @@ function drawVillager(n) {
   const fWant = n.f || 1; if (n._fv === undefined) n._fv = fWant;
   n._fv += (fWant - n._fv) * Math.min(1, dtA * 11); if (Math.abs(fWant - n._fv) < 0.03) n._fv = fWant;
   const f = n._fv;
-  const sitting = n.pose === 'sit' || n.pose === 'knit', mvWant = n.moving && !sitting ? 1 : 0;
+  const sitting = n.pose === 'sit' || n.pose === 'knit' || n.pose === 'sitpray', mvWant = n.moving && !sitting ? 1 : 0;
   n._mv = n._mv === undefined ? mvWant : n._mv + (mvWant - n._mv) * Math.min(1, dtA * 9);
   n._sk = n._sk === undefined ? (sitting ? 1 : 0) : n._sk + ((sitting ? 1 : 0) - n._sk) * Math.min(1, dtA * 8);
   const mvK = n._mv < 0.02 ? 0 : n._mv, sitK = n._sk < 0.02 ? 0 : n._sk > 0.98 ? 1 : n._sk;
@@ -167,7 +173,7 @@ function drawVillager(n) {
   ctx.globalAlpha = n.alpha ?? 1;
   drawShadow(x, y, 11 * s);
   ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = ink; ctx.lineWidth = 3 * (s < 0.9 ? 0.85 : 1);
-  const br = n.pose === 'sit' || n.pose === 'knit' ? 0 : Math.sin(tAnim * 2.4 + n.ph) * 1.1 * s;
+  const br = n.pose === 'sit' || n.pose === 'knit' || n.pose === 'sitpray' ? 0 : Math.sin(tAnim * 2.4 + n.ph) * 1.1 * s;
   const sh0 = { x, y: y - 50 * s };
   const P = villagerPose(n, sh0, f, s);
   { const key = n.pose;                                          // a new pose: the hands glide from where they were to where they now belong
@@ -204,34 +210,54 @@ function drawVillager(n) {
     }
     legs = feet.map(ft => { const k = ik(hip.x, hip.y, ft.x, ft.y, Lg, Lg, -f); return [hip, k.j, k.e]; });
   }
-  ctx.strokeStyle = L.legs || ink;
+  const trousers = L.legs || (L.body && !L.dress ? shadeHex(L.body, -0.55) : null), boots = L.boots || '#3b2a1e';
+  ctx.strokeStyle = ink; ctx.lineWidth = 3.4 * (s < 0.9 ? 0.85 : 1);
   for (const l of legs) poly(...l);
-  ctx.strokeStyle = ink;
+  if (trousers) { ctx.strokeStyle = trousers; ctx.lineWidth = 2 * s; for (const l of legs) poly(...l); }
+  for (const l of legs) ell(l[2].x + f * 2 * s, l[2].y - 1 * s, 4.6 * s, 2.5 * s, boots);                    // shoes
+  ctx.strokeStyle = ink; ctx.lineWidth = 3 * (s < 0.9 ? 0.85 : 1);
 
   // dress / skirt
   if (L.dress) {
     ctx.fillStyle = L.dress; ctx.strokeStyle = shadeHex(L.dress, -0.45); ctx.lineWidth = 1.2;
-    const bot = lerpN(yy - 5 * s, y - 4 * s, sitK);
-    ctx.beginPath(); ctx.moveTo(neck.x - 3.5 * s, neck.y + 5 * s); ctx.lineTo(neck.x + 3.5 * s, neck.y + 5 * s);
-    ctx.lineTo(x + 13 * s, bot); ctx.lineTo(x - 13 * s, bot); ctx.closePath(); ctx.fill(); ctx.stroke();
+    const bot = lerpN(yy - 5 * s, y - 4 * s, sitK), wy = hipY - 7 * s, wx = hip.x + (neck.x - hip.x) * 0.3;
+    ctx.beginPath(); ctx.moveTo(neck.x - 5 * s, neck.y + 3 * s); ctx.lineTo(neck.x + 5 * s, neck.y + 3 * s); ctx.lineTo(wx + 5 * s, wy); ctx.lineTo(x + 13.5 * s, bot); ctx.lineTo(x - 13.5 * s, bot); ctx.lineTo(wx - 5 * s, wy); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = shadeHex(L.dress, -0.28); ctx.lineWidth = 2 * s; line(wx - 5 * s, wy, wx + 5 * s, wy);                // the sash at the waist
+    ctx.strokeStyle = shadeHex(L.dress, 0.22); ctx.lineWidth = 1.6 * s; line(x - 12.5 * s, bot - 1.2 * s, x + 12.5 * s, bot - 1.2 * s);   // the hem
+    if (L.stole) {
+      ctx.fillStyle = L.stole; ctx.strokeStyle = shadeHex(L.stole, -0.4); ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(neck.x - 2.6 * s, neck.y + 3 * s); ctx.lineTo(neck.x + 2.6 * s, neck.y + 3 * s); ctx.lineTo(x + 3.4 * s, bot); ctx.lineTo(x - 3.4 * s, bot); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.strokeStyle = shadeHex(L.stole, -0.5); ctx.lineWidth = 1.3 * s; line(neck.x, neck.y + 6 * s, neck.x, neck.y + 15 * s); line(neck.x - 3 * s, neck.y + 9 * s, neck.x + 3 * s, neck.y + 9 * s);         // a little cross on the chest
+    }
     ctx.strokeStyle = ink; ctx.lineWidth = 3 * (s < 0.9 ? 0.85 : 1);
   }
   // back arm
   const arm = (hand, front) => {
     const a = ik(sh.x, sh.y, hand.x, hand.y, 9.5 * s, 9.5 * s, f);
     poly(sh, a.j, a.e);
-    if (L.body) { ctx.save(); ctx.strokeStyle = L.sleeve || L.body; ctx.lineWidth = 5.5 * s; poly(sh, a.j); ctx.restore(); }
+    const sl = L.sleeve || L.body || L.dress;
+    if (sl) { ctx.save(); ctx.lineCap = 'butt'; ctx.strokeStyle = sl; ctx.lineWidth = 5.6 * s; poly(sh, a.j); ctx.lineWidth = 4.6 * s; poly(a.j, { x: a.j.x + (a.e.x - a.j.x) * 0.42, y: a.j.y + (a.e.y - a.j.y) * 0.42 });
+      ctx.strokeStyle = shadeHex(sl, 0.3); ctx.lineWidth = 1.6 * s; const cx = a.j.x + (a.e.x - a.j.x) * 0.42, cy = a.j.y + (a.e.y - a.j.y) * 0.42; line(cx - 2.4 * s, cy - 0.4 * s, cx + 2.4 * s, cy + 0.4 * s); ctx.restore(); }
     return a.e;
   };
   if (P.bh) arm(P.bh, false);
   // torso + tunic
   ctx.strokeStyle = ink; poly(hip, neck);
   if (L.body && !L.dress) {
-    ctx.save(); ctx.strokeStyle = L.body; ctx.lineWidth = 7.5 * s; ctx.lineCap = 'butt'; poly({ x: hip.x + (neck.x - hip.x) * 0.06, y: hip.y + (neck.y - hip.y) * 0.06 }, { x: neck.x + (hip.x - neck.x) * 0.06, y: neck.y + (hip.y - neck.y) * 0.06 + 1 }); ctx.restore();
+    const tx = neck.x - hip.x, ty = neck.y - hip.y, tl = Math.hypot(tx, ty) || 1, ux = tx / tl, uy = ty / tl, nx = -uy, ny = ux;           // up the body, and across it
+    const P1 = (k, w) => ({ x: hip.x + ux * tl * k + nx * w * s, y: hip.y + uy * tl * k + ny * w * s });
+    ctx.save(); ctx.fillStyle = L.body; ctx.strokeStyle = shadeHex(L.body, -0.5); ctx.lineWidth = 1.1; ctx.lineJoin = 'round';
+    ctx.beginPath(); const pts = [P1(-0.18, 7), P1(0.05, 6.2), P1(0.55, 5.4), P1(0.98, 5.9), P1(0.98, -5.9), P1(0.55, -5.4), P1(0.05, -6.2), P1(-0.18, -7)];
+    ctx.moveTo(pts[0].x, pts[0].y); for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = shadeHex(L.body, 0.28); ctx.lineWidth = 1.5 * s; const c1 = P1(0.97, 4.4), c2 = P1(0.97, -4.4); line(c1.x, c1.y, c2.x, c2.y);        // the collar
+    ctx.strokeStyle = shadeHex(L.body, -0.3); ctx.lineWidth = 1.4 * s; const h1 = P1(-0.16, 6.8), h2 = P1(-0.16, -6.8); line(h1.x, h1.y, h2.x, h2.y);       // the hem
+    if (!L.apron && !L.belt) { ctx.strokeStyle = '#3a2a1c'; ctx.lineWidth = 2 * s; const b1 = P1(0.1, 6), b2 = P1(0.1, -6); line(b1.x, b1.y, b2.x, b2.y); ctx.fillStyle = '#d9b44a'; ctx.fillRect(hip.x + ux * tl * 0.1 - 1.2 * s + (f > 0 ? 1.5 * s : -1.5 * s), hip.y + uy * tl * 0.1 - 1.2 * s, 2.4 * s, 2.4 * s); }
+    ctx.restore();
   }
   if (L.apron) {
-    ctx.save(); ctx.strokeStyle = L.apron; ctx.lineWidth = 6 * s; ctx.lineCap = 'butt';
-    poly({ x: hip.x + f * 1.5 * s, y: hip.y + 1 * s }, { x: lerpN(hip.x, neck.x, 0.7) + f * 1.5 * s, y: lerpN(hip.y, neck.y, 0.7) });
+    ctx.save(); ctx.strokeStyle = L.apron; ctx.lineWidth = 7 * s; ctx.lineCap = 'butt';
+    poly({ x: hip.x + f * 1.2 * s, y: hip.y + 5 * s }, { x: lerpN(hip.x, neck.x, 0.78) + f * 1.2 * s, y: lerpN(hip.y, neck.y, 0.78) });
+    ctx.strokeStyle = shadeHex(L.apron, -0.25); ctx.lineWidth = 1.2; line(hip.x - 3 * s, hip.y + 5 * s, hip.x + 3 * s, hip.y + 5 * s);
     ctx.restore();
   }
   if (L.belt) { ctx.save(); ctx.strokeStyle = L.belt; ctx.lineWidth = 2.5 * s; line(hip.x - 4 * s, hip.y - 3 * s, hip.x + 4 * s, hip.y - 3 * s); ctx.restore(); }
@@ -243,7 +269,7 @@ function drawVillager(n) {
     ctx.fillStyle = L.beard; ctx.beginPath(); ctx.arc(head.x, head.y, hr, 0.85, Math.PI - 0.85);
     ctx.quadraticCurveTo(head.x, head.y + hr * 0.62, head.x + Math.cos(0.85) * hr, head.y + Math.sin(0.85) * hr); ctx.closePath(); ctx.fill();
   }
-  if (L.hair && L.hat !== 'helmet' && L.hat !== 'cap' && L.hat !== 'smithcap' && L.hat !== 'beanie') { ctx.fillStyle = L.hair; ctx.beginPath(); ctx.arc(head.x - f * 1 * s, head.y - 1 * s, hr * 1.02, Math.PI * 1.1, Math.PI * 1.9); ctx.closePath(); ctx.fill(); }
+  if (L.hair && L.hat !== 'veil' && L.hat !== 'helmet' && L.hat !== 'cap' && L.hat !== 'smithcap' && L.hat !== 'beanie') { ctx.fillStyle = L.hair; ctx.beginPath(); ctx.arc(head.x - f * 1 * s, head.y - 1 * s, hr * 1.02, Math.PI * 1.1, Math.PI * 1.9); ctx.closePath(); ctx.fill(); }
   // face
   ctx.fillStyle = ink;
   const talking = !!n.talking && Math.sin(tAnim * 14) > 0;
@@ -300,6 +326,11 @@ function drawHat(kind, col, head, hr, f, s) {
     case 'bun':
       ctx.fillStyle = '#e9e9ee'; ctx.beginPath(); ctx.arc(hx, hy - hr * 0.15, hr * 1.04, Math.PI * 1.0, Math.PI * 2.0); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.beginPath(); ctx.arc(hx - f * hr * 0.5, hy - hr * 1.18, hr * 0.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); break;
+    case 'veil':
+      fillPoly([[hx - f * hr * 0.7, hy - hr * 0.5], [hx - f * hr * 1.7, hy + hr * 2.1], [hx - f * hr * 0.2, hy + hr * 1.9], [hx + f * hr * 0.1, hy]], col, shadeHex(col, -0.45), 1.2);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(hx, hy - hr * 0.1, hr * 1.14, Math.PI * 0.96, Math.PI * 2.04); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#e0b84a'; ctx.fillRect(hx - hr * 1.1, hy - hr * 0.62, hr * 2.2, hr * 0.2); ctx.fillStyle = '#fff'; ctx.fillRect(hx - 1.2 * s, hy - hr * 1.5, 2.4 * s, hr * 0.9); ctx.fillRect(hx - 3.2 * s, hy - hr * 1.18, 6.4 * s, 2 * s);   // a gold band and a small cross
+      break;
     case 'smithcap':
       ctx.fillStyle = col; ctx.beginPath(); ctx.arc(hx, hy - hr * 0.2, hr * 1.04, Math.PI * 1.0, Math.PI * 2.0); ctx.closePath(); ctx.fill(); ctx.stroke();
       ctx.fillStyle = shadeHex(col, -0.25); ctx.fillRect(hx - hr * 1.04, hy - hr * 0.35, hr * 2.08, hr * 0.28); break;
@@ -458,8 +489,94 @@ function drawBuilding(b, night, lit) {
   }
   // hanging sign
   if (b.sign) drawSign(b, x - w / 2 - 6, y - wh * 0.42);
+  if (b.church) drawChurchFront(b, night, lit);
   if (b.id === 'enchant') drawEnchantAura(b, night);
   if (b.id === 'craft') drawCraftBoards(b, night);
+}
+// the church: stained glass, a rose window, a tall arched door and a bell tower with a spire
+function drawChurchFront(b, night, lit) {
+  const x = b.x, y = b.y, w = b.w, wh = b.wh, rh = b.rh, top = y - wh - rh, glass = ['#3f6fd0', '#c0392b', '#e0b84a', '#3f9a5a', '#8a4fd0'], t = typeof vil !== 'undefined' && vil ? vil.t : 0;
+  winOffsets(w).forEach((dx, i) => {
+    const wx = x + dx, wy = y - wh * 0.78;
+    ctx.fillStyle = glass[i % glass.length]; ctx.beginPath(); ctx.moveTo(wx - 11, wy + 20); ctx.lineTo(wx - 11, wy + 7); ctx.arc(wx, wy + 7, 11, Math.PI, 0); ctx.lineTo(wx + 11, wy + 20); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.28)'; ctx.fillRect(wx - 9, wy + 2, 5, 17);
+    ctx.strokeStyle = b.trim; ctx.lineWidth = 1.6; line(wx, wy - 4, wx, wy + 20); line(wx - 11, wy + 11, wx + 11, wy + 11);
+  });
+  const rx = x, ry = y - wh * 0.74;                                                      // the rose window above the door
+  circ(rx, ry, 17, b.trim); for (let i = 0; i < 8; i++) { ctx.fillStyle = glass[i % glass.length]; ctx.beginPath(); ctx.moveTo(rx, ry); ctx.arc(rx, ry, 14, i * Math.PI / 4, (i + 1) * Math.PI / 4); ctx.closePath(); ctx.fill(); }
+  ctx.strokeStyle = b.trim; ctx.lineWidth = 1.4; for (let i = 0; i < 8; i++) line(rx, ry, rx + Math.cos(i * Math.PI / 4) * 14, ry + Math.sin(i * Math.PI / 4) * 14); circ(rx, ry, 3.2, '#f3e6b0');
+  const dxx = x + (b.doorX || 0);
+  ctx.fillStyle = shadeHex(b.wall, -0.22); ctx.beginPath(); ctx.moveTo(dxx - 24, y); ctx.lineTo(dxx - 24, y - 36); ctx.arc(dxx, y - 36, 24, Math.PI, 0); ctx.lineTo(dxx + 24, y); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#5a3a22'; ctx.beginPath(); ctx.moveTo(dxx - 19, y); ctx.lineTo(dxx - 19, y - 34); ctx.arc(dxx, y - 34, 19, Math.PI, 0); ctx.lineTo(dxx + 19, y); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle = '#d9b44a'; ctx.lineWidth = 1.8; ctx.stroke(); ctx.strokeStyle = '#2a1a0e'; ctx.lineWidth = 1.2; line(dxx, y - 53, dxx, y); line(dxx - 19, y - 18, dxx + 19, y - 18);
+  circ(dxx - 5, y - 20, 1.7, '#e0b84a'); circ(dxx + 5, y - 20, 1.7, '#e0b84a');
+  if (lit) { ctx.fillStyle = 'rgba(255,200,110,0.22)'; ctx.fillRect(dxx - 18, y - 52, 36, 52); }
+  ctx.fillStyle = '#e8dcc0'; ctx.fillRect(dxx - 30, y - 1, 60, 3);                       // the step
+  const tw = 48, tb = top + 16, tt = top - 64;                                           // the bell tower on the roof
+  ctx.fillStyle = shadeHex(b.wall, -0.06); ctx.fillRect(x - tw / 2, tt, tw, tb - tt);
+  ctx.fillStyle = 'rgba(0,0,0,0.12)'; ctx.fillRect(x + tw / 2 - 10, tt, 10, tb - tt);
+  ctx.strokeStyle = shadeHex(b.wall, -0.2); ctx.lineWidth = 1; for (let yy = tt + 9; yy < tb; yy += 9) line(x - tw / 2, yy, x + tw / 2, yy);
+  ctx.strokeStyle = b.trim; ctx.lineWidth = 2.4; ctx.strokeRect(x - tw / 2, tt, tw, tb - tt);
+  ctx.fillStyle = '#23222c'; ctx.beginPath(); ctx.moveTo(x - 10, tt + 40); ctx.lineTo(x - 10, tt + 22); ctx.arc(x, tt + 22, 10, Math.PI, 0); ctx.lineTo(x + 10, tt + 40); ctx.closePath(); ctx.fill();
+  const sw = Math.sin(t * 1.4) * 0.12; ctx.save(); ctx.translate(x, tt + 15); ctx.rotate(sw); ctx.fillStyle = '#e0b84a'; ctx.beginPath(); ctx.moveTo(-5, 18); ctx.quadraticCurveTo(-6, 6, 0, 3); ctx.quadraticCurveTo(6, 6, 5, 18); ctx.closePath(); ctx.fill(); ctx.strokeStyle = '#7a5a10'; ctx.lineWidth = 1; ctx.stroke(); circ(0, 19, 1.8, '#7a5a10'); ctx.restore();
+  fillPoly([[x - tw / 2 - 6, tt + 1], [x + tw / 2 + 6, tt + 1], [x, tt - 56]], b.roof, shadeHex(b.roof, -0.5), 2);
+  ctx.strokeStyle = '#d9b44a'; ctx.lineWidth = 2.4; line(x, tt - 56, x, tt - 76); line(x - 7, tt - 67, x + 7, tt - 67);
+  if (night) ell(x, tt - 70, 18, 18, 'rgba(255,225,150,0.16)');
+}
+// the inside of the church (drawn alone on the screen): a stone floor with a red runner, pews, an altar and a hovering light. o = the room's top-left corner, in village coordinates.
+function drawChurchRoom(v, o) {
+  const W = CHURCH.w, H = CHURCH.h, t = v.t, ox = o.x, oy = o.y, glass = ['#3f6fd0', '#c0392b', '#e0b84a', '#3f9a5a'];
+  ctx.fillStyle = '#d3cab6'; ctx.fillRect(ox, oy, W, H);
+  for (let r = 0; r * 22 < H - 100; r++) for (let c = 0; c * 40 < W; c++) { ctx.fillStyle = (r + c) % 2 ? '#c9bfa8' : '#d6cdb8'; ctx.fillRect(ox + c * 40 - (r % 2 ? 20 : 0), oy + 104 + r * 22, 40, 22); }
+  ctx.fillStyle = '#b9ae96'; ctx.fillRect(ox, oy, W, 104);                                                       // the back wall
+  ctx.strokeStyle = 'rgba(0,0,0,0.10)'; ctx.lineWidth = 1; for (let yy = 12; yy < 104; yy += 16) line(ox, oy + yy, ox + W, oy + yy); for (let r = 0; r < 6; r++) for (let xx = (r % 2) * 20; xx < W; xx += 40) line(ox + xx, oy + 12 + r * 16, ox + xx, oy + 28 + r * 16);
+  ctx.fillStyle = 'rgba(0,0,0,0.18)'; ctx.fillRect(ox, oy + 96, W, 8);
+  const lights = [];
+  [[110, 0], [320, 1], [530, 2]].forEach(([wx, k]) => {                                                         // three tall windows of coloured glass
+    const big = wx === 320, ww = big ? 40 : 28, hh = big ? 78 : 66, wy = oy + 96 - hh;
+    ctx.fillStyle = '#4a3f33'; ctx.beginPath(); ctx.moveTo(ox + wx - ww - 4, oy + 98); ctx.lineTo(ox + wx - ww - 4, wy + ww); ctx.arc(ox + wx, wy + ww, ww + 4, Math.PI, 0); ctx.lineTo(ox + wx + ww + 4, oy + 98); ctx.closePath(); ctx.fill();
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = glass[(i + k) % 4]; ctx.beginPath(); ctx.rect(ox + wx - ww + (i % 2) * ww, wy + ww - 10 + Math.floor(i / 2) * ((hh - ww + 10) / 2), ww, (hh - ww + 10) / 2); ctx.fill(); }
+    ctx.fillStyle = glass[(k + 1) % 4]; ctx.beginPath(); ctx.arc(ox + wx, wy + ww, ww, Math.PI, 0); ctx.lineTo(ox + wx + ww, wy + ww - 10); ctx.lineTo(ox + wx - ww, wy + ww - 10); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = '#4a3f33'; ctx.lineWidth = 2; line(ox + wx, wy, ox + wx, oy + 96); line(ox + wx - ww, wy + ww + 14, ox + wx + ww, wy + ww + 14);
+    lights.push([ox + wx, k]);
+  });
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';                                                         // coloured light falling on the floor
+  for (const [lx, k] of lights) { const g = ctx.createLinearGradient(0, oy + 104, 0, oy + 240); const c = ['63,111,208', '192,57,43', '224,184,74'][k]; g.addColorStop(0, `rgba(${c},0.20)`); g.addColorStop(1, `rgba(${c},0)`); ctx.fillStyle = g; ctx.beginPath(); ctx.moveTo(lx - 22, oy + 104); ctx.lineTo(lx + 22, oy + 104); ctx.lineTo(lx + 64, oy + 240); ctx.lineTo(lx - 12, oy + 240); ctx.closePath(); ctx.fill(); }
+  ctx.restore();
+  ctx.fillStyle = '#7a1f2a'; ctx.fillRect(ox + 294, oy + 158, 52, H - 158); ctx.fillStyle = '#d9b44a'; ctx.fillRect(ox + 294, oy + 158, 3, H - 158); ctx.fillRect(ox + 343, oy + 158, 3, H - 158);      // the runner
+  ctx.fillStyle = '#a79d86'; ctx.fillRect(ox + 220, oy + 100, 200, 62); ctx.fillStyle = '#c4baa2'; ctx.fillRect(ox + 220, oy + 100, 200, 8); ctx.fillStyle = '#b2a78f'; ctx.fillRect(ox + 238, oy + 152, 164, 10);   // the dais
+  ctx.fillStyle = '#7a1f2a'; ctx.fillRect(ox + 294, oy + 108, 52, 50);
+  ctx.fillStyle = '#4a3f33'; ctx.fillRect(ox, oy, 14, H); ctx.fillRect(ox + W - 14, oy, 14, H); ctx.fillStyle = '#6a5d4b'; ctx.fillRect(ox + 10, oy, 6, H); ctx.fillRect(ox + W - 16, oy, 6, H);       // the side walls
+  [60, 580].forEach(bx => { ctx.fillStyle = '#7a1f2a'; ctx.fillRect(ox + bx - 9, oy + 8, 18, 56); fillPoly([[ox + bx - 9, oy + 64], [ox + bx + 9, oy + 64], [ox + bx, oy + 74]], '#7a1f2a', null); ctx.fillStyle = '#d9b44a'; ctx.fillRect(ox + bx - 1.2, oy + 18, 2.4, 22); ctx.fillRect(ox + bx - 5, oy + 24, 10, 2.4); });
+  // the doorway: a bright arch in the south wall
+  const dg = ctx.createLinearGradient(0, oy + H - 26, 0, oy + H); dg.addColorStop(0, 'rgba(255,244,208,0)'); dg.addColorStop(1, 'rgba(255,244,208,0.85)'); ctx.fillStyle = dg; ctx.fillRect(ox + 284, oy + H - 26, 72, 26);
+  ctx.fillStyle = '#4a3f33'; ctx.fillRect(ox + 276, oy + H - 6, 8, 6); ctx.fillRect(ox + 356, oy + H - 6, 8, 6);
+}
+function drawChurchPot(p, t) {                                                                                   // a flowerpot; the flowers perk up and sparkle after a watering
+  ell(p.x, p.y + 1, 11, 4, 'rgba(0,0,0,0.22)');
+  ctx.fillStyle = '#b5653a'; ctx.beginPath(); ctx.moveTo(p.x - 8, p.y - 11); ctx.lineTo(p.x + 8, p.y - 11); ctx.lineTo(p.x + 6, p.y); ctx.lineTo(p.x - 6, p.y); ctx.closePath(); ctx.fill(); ctx.fillStyle = '#c97a48'; ctx.fillRect(p.x - 9, p.y - 13, 18, 4);
+  const w = p.wet || 0, cols = ['#f28ab2', '#f4e04d', '#ffffff', '#b99bff', '#ff9a6a'];
+  for (let i = 0; i < 5; i++) { const sx = p.x - 8 + i * 4, h = 12 + (i % 2) * 5 + w * 3 + Math.sin(t * 1.6 + i + p.x) * 0.8; ctx.strokeStyle = '#3f8a3a'; ctx.lineWidth = 1.6; line(p.x - 6 + i * 3, p.y - 12, sx, p.y - 12 - h); circ(sx, p.y - 13 - h, 3, cols[(i + (p.k | 0)) % 5]); }
+  if (w > 0.2) { ctx.fillStyle = `rgba(166,216,255,${w * 0.6})`; for (let i = 0; i < 3; i++) circ(p.x - 6 + i * 6, p.y - 24 - ((t * 20 + i * 7) % 8), 1.4, ctx.fillStyle); }
+}
+function drawChurchPew(p) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ctx.fillRect(p.x0 + 2, p.y1 - 1, p.x1 - p.x0, 4);
+  ctx.fillStyle = '#5a3a22'; ctx.fillRect(p.x0, p.y0 - 12, p.x1 - p.x0, 8);                                       // the back
+  ctx.fillStyle = '#7a5230'; ctx.fillRect(p.x0, p.y0 - 4, p.x1 - p.x0, p.y1 - p.y0 + 4);                       // the seat
+  ctx.fillStyle = '#4a2c18'; ctx.fillRect(p.x0 - 2, p.y0 - 12, 4, p.y1 - p.y0 + 12); ctx.fillRect(p.x1 - 2, p.y0 - 12, 4, p.y1 - p.y0 + 12);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(p.x0, p.y0 - 4, p.x1 - p.x0, 2);
+}
+function drawChurchAltar(a, t) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)'; ell(a.x, a.y + 2, 54, 7, 'rgba(0,0,0,0.22)');
+  ctx.fillStyle = '#e8e2d2'; ctx.fillRect(a.x - 46, a.y - 26, 92, 26); ctx.fillStyle = '#d9b44a'; ctx.fillRect(a.x - 46, a.y - 8, 92, 3); ctx.fillStyle = '#7a1f2a'; ctx.fillRect(a.x - 46, a.y - 26, 92, 5);
+  ctx.fillStyle = '#d9b44a'; ctx.fillRect(a.x - 1.6, a.y - 22, 3.2, 14); ctx.fillRect(a.x - 5, a.y - 18, 10, 3);
+  for (const dx of [-34, 34]) { ctx.fillStyle = '#efe6c8'; ctx.fillRect(a.x + dx - 2.5, a.y - 40, 5, 14); const fl = 1 + Math.sin(t * 9 + dx) * 0.2; ctx.fillStyle = '#ffd24a'; ctx.beginPath(); ctx.ellipse(a.x + dx, a.y - 44, 2.6, 4.5 * fl, 0, 0, Math.PI * 2); ctx.fill(); ell(a.x + dx, a.y - 44, 13, 13, 'rgba(255,210,120,0.20)'); }
+}
+function drawChurchLight(cx, cy, t) {                                                                           // the light of return: a slow orb with a ring of rays
+  ctx.save(); ctx.globalCompositeOperation = 'lighter';
+  const g = ctx.createRadialGradient(cx, cy, 2, cx, cy, 46); g.addColorStop(0, 'rgba(255,240,200,0.55)'); g.addColorStop(1, 'rgba(255,240,200,0)'); ctx.fillStyle = g; ctx.fillRect(cx - 50, cy - 50, 100, 100);
+  ctx.strokeStyle = 'rgba(255,236,170,0.5)'; ctx.lineWidth = 1.6; for (let i = 0; i < 10; i++) { const a = t * 0.4 + i * Math.PI / 5, r0 = 13, r1 = 22 + Math.sin(t * 2 + i) * 4; line(cx + Math.cos(a) * r0, cy + Math.sin(a) * r0 * 0.8, cx + Math.cos(a) * r1, cy + Math.sin(a) * r1 * 0.8); }
+  ctx.restore(); circ(cx, cy, 7 + Math.sin(t * 2.4) * 0.8, '#fff6d6');
 }
 // the Crafting Hall: shutters over the windows, planks across the door, a banner (it opens in a later update)
 function drawCraftBoards(b, night) {

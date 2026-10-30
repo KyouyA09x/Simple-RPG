@@ -128,7 +128,7 @@ function buildWorldFeatures(B, seed) {
 
 // water the hero or a monster is standing in (frozen water is solid ice)
 function waterAt(x, y) {
-  if (!world || !world.water) return null;
+  if (!world || !world.water || (typeof dun !== 'undefined' && dun)) return null;
   for (const w of world.water) if (!w.frozen && inEllipse(x, y, w, -6)) return w;
   return null;
 }

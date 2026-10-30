@@ -105,7 +105,7 @@ function rollEssKey(boost = 1) {
 }
 function essenceDropsFor(m) {                                             // elites now and then, most bosses one; nothing else ever drops them
   const boss = m.type === 'boss'; if (!boss && !m.elite) return [];
-  const n = boss ? (Math.random() < 0.6 ? 1 : 0) + (Math.random() < 0.2 ? 1 : 0) : (Math.random() < 0.3 * (1 + gearStat('dropLuck')) ? 1 : 0);
+  const n = boss ? (Math.random() < 0.4 ? 1 : 0) + (Math.random() < 0.08 ? 1 : 0) : (Math.random() < 0.12 * (1 + gearStat('dropLuck')) ? 1 : 0);
   return Array.from({ length: n }, () => rollEssKey(boss ? 3 : 1.5));
 }
 const essSvg = (k, px = 34) => { const E = ESS[k], W = WFX[E.fx], pips = Array.from({ length: E.lv }, (_, n) => `<circle cx="${16 + (n - (E.lv - 1) / 2) * 4.2}" cy="32.4" r="1.25" fill="${W.color}"/>`).join('');
@@ -181,9 +181,9 @@ function rollItem(o = {}) {
   let sword = null;
   if (slot === 'weapon') {                                         // a weapon is one of the existing swords, up to the hero's level
     const level = Math.max(1, o.level || (typeof hero !== 'undefined' && hero ? hero.level : 1));
-    const eligible = SWORDS.filter(s => s.lvl <= level);
+    const eligible = SWORDS.filter(s => !s.sig && s.lvl <= level);                // a boss's own weapon comes only from that boss
     const pool = eligible.flatMap((s, i) => Array(i + 1).fill(s));  // better swords are likelier
-    const higher = SWORDS.filter(s => s.lvl > level && s.lvl <= level + 8);                            // now and then a weapon you are not ready for drops (6%, 12% from a boss; never more than 8 levels ahead, the nearer the likelier)
+    const higher = SWORDS.filter(s => !s.sig && s.lvl > level && s.lvl <= level + 8);                            // now and then a weapon you are not ready for drops (6%, 12% from a boss; never more than 8 levels ahead, the nearer the likelier)
     const stretch = higher.length && Math.random() < (o.boss ? 0.12 : 0.06);
     sword = (o.base && SWORDS.find(s => s.id === o.base)) || (stretch ? gearRand(higher.flatMap(s => Array(Math.max(1, 4 - Math.floor((s.lvl - level) / 2))).fill(s))) : gearRand(pool)); item.base = sword.id;     // o.base: a chosen weapon (dev menu)
   }
@@ -284,7 +284,7 @@ function rollRuneKey(boost = 1, maxTier = RUNE_TIERS.length) {
 // which runes a monster leaves behind: rarely from anything, a little more often from elites (and a better tier), most bosses leave one and a few leave two
 function runeDropsFor(m) {
   const boss = m.type === 'boss', r = Math.random();
-  const n = boss ? (r < 0.7 ? 1 : 0) + (Math.random() < 0.2 ? 1 : 0) : m.elite ? (r < 0.07 ? 1 : 0) : (r < 0.005 * dropLuck() * D().drop * (1 + gearStat('dropLuck')) * ((m.size ?? 1) < 1 ? 0.5 : 1) ? 1 : 0);
+  const n = boss ? (r < 0.45 ? 1 : 0) + (Math.random() < 0.1 ? 1 : 0) : m.elite ? (r < 0.03 ? 1 : 0) : (r < 0.002 * dropLuck() * D().drop * (1 + gearStat('dropLuck')) * ((m.size ?? 1) < 1 ? 0.5 : 1) ? 1 : 0);
   return Array.from({ length: n }, () => rollRuneKey(boss ? 4 : m.elite ? 2.2 : 1));
 }
 // ---- the Enchantress: prices and improving a rune. The price grows with the wave like the rest of the shops; luck from gear helps the odds (half as much as it helps the forge)
@@ -438,12 +438,15 @@ function loadGear(d) {
 // ---------------------------------------------------------------- drops
 // normal 2.5% per kill (scaled by difficulty and rebirth luck), bosses always drop 1-3 pieces and roll one tier deeper
 function depthOf() { return tierOf(wave) + (setPos(wave) - 1) / 20; }
+const SIG_DROP = 0.2;                                                // the chance a boss drops its own weapon (times luck)
 function gearDropsFor(m) {
   const out = [];
   if (m.type === 'boss') {
     const luck = dropLuck() * (1 + gearStat('dropLuck')), n = 1 + (Math.random() < BOSS_EXTRA_PIECE[0] * luck ? 1 : 0) + (Math.random() < BOSS_EXTRA_PIECE[1] * luck ? 1 : 0);
     const theme = (BOSSES[m.kind] || BOSSES.minotaur).theme;
     for (let i = 0; i < n; i++) out.push(rollItem({ tier: depthOf() + 1, boss: true, level: hero.level, theme }));
+    const sg = SWORDS.find(s => s.sig === m.kind);                  // and now and then the boss's own weapon
+    if (sg && Math.random() < SIG_DROP * luck) out.push(rollItem({ slot: 'weapon', base: sg.id, rarity: Math.max(4, rollRarity(depthOf() + 1, true)), boss: true, level: hero.level, theme }));
   } else if (m.elite) {                                            // elites: one piece in four, from a little deeper than usual
     if (Math.random() < ELITE_GEAR_CHANCE * dropLuck() * (1 + gearStat('dropLuck'))) out.push(rollItem({ tier: depthOf() + 0.5, level: hero.level }));
   } else if (Math.random() < GEAR_DROP_CHANCE * dropLuck() * (1 + gearStat('dropLuck')) * D().drop * ((m.size ?? 1) < 1 ? 0.5 : 1)) out.push(rollItem({ tier: depthOf(), level: hero.level }));
@@ -535,6 +538,16 @@ const BLADE_SPEC = {
   rapier: { yb: 19, ty0: 1.2, gy: 24.7, hx: 16, s: 0.95, lk: 1.35, make: bk => rapierArt(bk) },
   katana: { fit: true, ty0: KATANA.top, maxY: KATANA.bottom + 1, gy: KATANA.gy, hx: KATANA.hx, lk: 1.5, wk: 1.55, make: () => katanaArt() },     // the traced picture is not stretched: it is scaled evenly so its tip reaches the sword's length
 };
+// mix every colour in a piece of art towards one colour: a signature weapon is a known weapon in the colours of its boss
+const blendHex = (c, to, k) => { const f = h => { h = h.replace('#', ''); if (h.length === 3) h = [...h].map(x => x + x).join(''); return [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16)); }, a = f(c), b = f(to); return '#' + a.map((v, i) => Math.round(v + (b[i] - v) * k).toString(16).padStart(2, '0')).join(''); };
+const recolor = (art, to, k = 0.45) => art.replace(/#([0-9a-fA-F]{6}|[0-9a-fA-F]{3})\b/g, c => blendHex(c, to, k));
+// a bow (drawn pointing right, tilted as an icon) and a staff (pointing up)
+const bowArt = (wood, wood2, gem) => ICO.rot(-45,
+  ICO.l('M7 3 Q31 16 7 29', '#3a2a18', 3.4, 'stroke-linecap="round"') + ICO.l('M7 3 Q31 16 7 29', wood, 2.2, 'stroke-linecap="round"') + ICO.l('M9.5 6 Q25 16 9.5 26', wood2, 0.8) +
+  ICO.l('M7 3 L7 29', '#efe6c8', 0.7) + ICO.l('M7 16 L27 16', '#8a6a3c', 1.2) + ICO.p('M30 16 L26 13.6 L26 18.4 Z', '#dfe6ef') + ICO.p('M7 16 L3.6 13.8 L5.4 16 L3.6 18.2 Z', '#e8e0c8') + (gem ? ICO.c(19, 16, 1.7, gem) : ''), 1.05);
+const staffArt = (col, wood = ICO.wood, trim = ICO.goldD) => ICO.rot(40,
+  ICO.r(15, 9, 2.2, 22, wood, 0.6) + ICO.l('M17 10 V30', ICO.woodD, 0.5) + ICO.r(14.4, 24, 3.4, 2.2, ICO.leather, 0.6) + ICO.r(14.4, 15, 3.4, 2, ICO.leather, 0.6) +
+  ICO.l('M12.4 8 Q11.2 2.6 16 2 Q20.8 2.6 19.6 8', trim, 1.6, 'stroke-linecap="round"') + ICO.c(16, 5.8, 5, 'rgba(255,255,255,.18)') + ICO.c(16, 5.8, 3.4, col) + ICO.c(15, 4.8, 1.2, 'rgba(255,255,255,.85)'), 1.1);
 const WEAPON_ART = {
   wood:   ICO.rot(45, swordArt(SWORD_STYLES.wood), 1.34),
   iron:   ICO.rot(45, swordArt(SWORD_STYLES.iron), 1.34),
@@ -566,6 +579,12 @@ const WEAPON_ART = {
     ICO.p('M16 0.5 L19 7.4 L16 9.6 L13 7.4 Z', '#dfe6ef') + ICO.p('M16 0.5 L19 7.4 L16 9.6 Z', '#9aa8ba') +
     ICO.p('M17 10 C24.5 8.2 28 13.6 25.4 20 C23 17 20.4 16.4 17 16.6 Z', '#d3dbe6') + ICO.p('M25.4 20 C28 13.6 24.5 8.2 17 10 C23 11 25.6 15 24 18.6 Z', '#f4f8fc') +
     ICO.p('M15 11.4 L9.4 14 L15 15.4 Z', '#8b99ab') + ICO.r(13.4, 9.4, 5.2, 1.8, ICO.goldD, 0.4) + ICO.p('M15.4 22 Q12 25 14 29 Q15.6 25.6 16.8 22 Z', ICO.red)),
+  bow:     bowArt('#b98a52', '#d8b27a'),
+  longbow: bowArt('#7a5a30', '#a8844e', '#7fb0e0'),
+  elven:   bowArt('#cfe9d4', '#8fd3a8', '#7fe0a0'),
+  staff:   staffArt('#7fd0ff'),
+  arcane:  staffArt('#c36bff', '#5a3a80', ICO.gold),
+  archmage: staffArt('#ffd24a', '#e8e0c8', ICO.gold),
   whip:   ICO.p('M3 27.5 L8.4 22 L10.6 24 L5 29.4 Q3 29.6 3 27.5 Z', ICO.leatherD) + ICO.l('M4.2 28 L9.6 23', '#8d6a42', 0.6) + ICO.r(7.6, 21.2, 3.8, 2.4, ICO.goldD, 0.6) +
     ICO.l('M10 22 C16 25.8 24 22.5 21 16.6 C18.2 11.4 23.2 8.4 28 5.4', '#2c1b0c', 3.4, 'stroke-linecap="round"') + ICO.l('M10 22 C16 25.8 24 22.5 21 16.6 C18.2 11.4 23.2 8.4 28 5.4', '#c99a5b', 2, 'stroke-linecap="round"') +
     ICO.l('M12.4 23.6 L13.6 22.6 M17 24.2 L18.4 23.4 M22.4 20.6 L23.8 20 M21.4 15.2 L22.8 14.4 M24 9.8 L25.4 9.2', '#7a5530', 0.7) + ICO.c(28.4, 5.2, 1.5, '#e8d9b8'),
@@ -574,6 +593,16 @@ const WEAPON_ART = {
     ICO.l('M13 15 V21 M16.5 15 V21 M20 15 V21', '#5d6a7a', 0.7) + ICO.p('M8.5 15.5 Q4 14.5 3.6 18 Q3.6 21.5 8.5 20.6 Z', '#c3ccd8') + ICO.l('M5.6 17 Q6.6 18.8 8 18.6', '#5d6a7a', 0.6) +
     ICO.p('M9 23 H23 V28.5 H9 Z', '#6f7886') + ICO.r(9, 23, 14, 2.2, ICO.gold, 0.4) + ICO.c(11.6, 26.4, 0.8, ICO.gold) + ICO.c(16, 26.4, 0.8, ICO.gold) + ICO.c(20.4, 26.4, 0.8, ICO.gold),
 };
+WEAPON_ART.horned = recolor(WEAPON_ART.axe, '#d9a066', 0.5);
+WEAPON_ART.pilferer = recolor(WEAPON_ART.dagger, '#9be36f', 0.5);
+WEAPON_ART.ooze = recolor(WEAPON_ART.whip, '#7fe07f', 0.5);
+WEAPON_ART.glacier = recolor(WEAPON_ART.hammer, '#bfeaff', 0.6);
+WEAPON_ART.sandreaper = recolor(WEAPON_ART.scythe, '#ffe08a', 0.5);
+WEAPON_ART.magmaG = ICO.rot(45, recolor(swordArt(SWORD_STYLES.great), '#ff7a2a', 0.6), 1.26);
+WEAPON_ART.lichbow = recolor(bowArt('#c9d6c9', '#a6f0b0', '#a6f0b0'), '#a6f0b0', 0.35);
+WEAPON_ART.tempest = staffArt('#fff3a0', '#5a6a8a', '#fff3a0');
+BLADE_SPEC.magmaG = { ...BLADE_SPEC.great, make: bk => recolor(swordArt({ ...SWORD_STYLES.great, bk }), '#ff7a2a', 0.6) };
+BLADE_SPEC.pilferer = { ...BLADE_SPEC.dagger, make: bk => recolor(daggerArt(bk), '#9be36f', 0.5) };
 // armor, by which armor it is (the order of BASE_NAMES.armor); every body is the same 32 x 32 tunic outline
 const TUNIC = 'M11 5 L5 9.5 L7.8 14.5 L10 13 L10 27.5 L22 27.5 L22 13 L24.2 14.5 L27 9.5 L21 5 Q16 8.5 11 5 Z';
 const patternDefs = (id, w, h, inner) => `<defs><pattern id="${id}" width="${w}" height="${h}" patternUnits="userSpaceOnUse">${inner}</pattern></defs>`;
@@ -612,7 +641,7 @@ const splitArt = art => { const m = /<!--rot:(-?[\d.]+):([\d.]+)-->$/.exec(art);
 const iconBody = (slot, item) => {
   if (slot === 'weapon') {
     const { body, deg, k } = splitArt(WEAPON_ART[item.base] || WEAPON_ART.iron);
-    return item.base === 'dagger' ? `<g transform="rotate(-30 16 16)">${body}</g><g transform="rotate(30 16 16)">${body}</g>` : `<g transform="translate(16 16) rotate(${deg}) scale(1 ${k}) translate(-16 -16)">${body}</g>`;
+    return item.base === 'dagger' || item.base === 'pilferer' ? `<g transform="rotate(-30 16 16)">${body}</g><g transform="rotate(30 16 16)">${body}</g>` : `<g transform="translate(16 16) rotate(${deg}) scale(1 ${k}) translate(-16 -16)">${body}</g>`;
   }
   if (slot !== 'armor') { const A = SLOT_ART[slot]; return item.rarity === 7 ? A.secret : A.list[baseIndex(slot, item)]; }
   return item.rarity === 7 ? CLOAK_ART : ARMOR_ART[armorIndex(item)];
@@ -723,6 +752,7 @@ const WEAPON_GEOM = {                                                // lk: how 
   spear: { hx: 16, gy: 19, ty: 0.8, lk: 1, sx: 0.8 }, axe: { hx: 16, gy: 20, ty: 3, lk: 1.1, sx: 0.95 }, hammer: { hx: 16, gy: 22, ty: 3.5, lk: 1.1, sx: 1 },
   scythe: { hx: 16, gy: 20, ty: 3, lk: 1.05, sx: 0.95 }, halberd: { hx: 16, gy: 22, ty: 0.5, lk: 1, sx: 0.85 },
 };
+WEAPON_GEOM.horned = WEAPON_GEOM.axe; WEAPON_GEOM.glacier = WEAPON_GEOM.hammer; WEAPON_GEOM.sandreaper = WEAPON_GEOM.scythe;
 function weaponLength(sw) {                                         // how far the weapon reaches from the hand on screen (the hero's picture is drawn to this length); the hit area follows it
   const bs = BLADE_SPEC[sw.id];
   return bs ? sw.len * bs.lk + 4 : sw.len * (WEAPON_GEOM[sw.id] || WEAPON_GEOM.def).lk;
@@ -738,7 +768,7 @@ function artImage(key, body, minY = 0, H = 32) {
   return e.ok ? e.img : null;
 }
 function weaponSprite(sw) {
-  if (sw.kind === 'whip' || sw.kind === 'fist') return null;                // these are drawn by hand (the lash moves, the fists are on both hands)
+  if (sw.kind === 'whip' || sw.kind === 'fist' || sw.kind === 'bow' || sw.kind === 'staff') return null;                // these are drawn by hand (the lash moves, the fists are on both hands)
   const bs = BLADE_SPEC[sw.id];
   if (bs) {                                                          // a sword: the blade is longer in the art, the hilt keeps its proportions
     const D = sw.len * bs.lk + 4;
@@ -773,7 +803,7 @@ function weaponLine(item) {
   const fx = [sw.burn && 'burn', sw.slow && 'slow', sw.stun && 'stuns', sw.pull && 'pulls in', sw.back && 'hits behind', sw.critBonus && `+${Math.round(sw.critBonus * 100)}% crit`, sw.lifesteal && 'life steal'].filter(Boolean).join(', ');
   const own = item.fx ? `<div class="srow"><span style="color:${WFX[item.fx.k].color}">${WFX[item.fx.k].name} ${ROMAN[item.fx.lv]}</span><b>${wfxText(item.fx.k, item.fx.lv, sw.dmg + Math.round(item.stats.dmg || 0)).split(' (')[0]}</b></div>` : '';
   return own + `<div class="srow"><span>Weapon damage</span><b>${sw.dmg + Math.round(item.stats.dmg || 0)}</b></div>` +
-    `<div class="srow"><span>Reach · swing · cost</span><b>${Math.round(15 + (sw.kind === 'fist' ? 12 : sw.kind === 'whip' ? sw.len : weaponLength(sw)))} · ${sw.time}s · ${sw.cost}</b></div>` + (fx ? `<div class="srow"><span>Effect</span><b>${fx}</b></div>` : '');
+    (sw.note ? `<div class="srow"><span>Signature</span><b>${sw.note}</b></div>` : '') + `<div class="srow"><span>${sw.ranged ? 'Range' : 'Reach'} · swing · cost</span><b>${sw.ranged ? sw.range : Math.round(15 + (sw.kind === 'fist' ? 12 : sw.kind === 'whip' ? sw.len : weaponLength(sw)))} · ${sw.time}s · ${sw.cost}</b></div>` + (fx ? `<div class="srow"><span>Effect</span><b>${fx}</b></div>` : '');
 }
 // Several pieces at once: "Select several" turns the backpack into a tick-list; quick buttons pick everything up to a grade; then discard them, or sell them when you are in the village.
 let invMulti = null, invArm = false;                    // the ids ticked (null = off), and whether Discard has been pressed once already

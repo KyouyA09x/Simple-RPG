@@ -22,20 +22,34 @@ const SAVE_KEY = i => `stickrpg_slot${i}`, SLOTS = [1, 2, 3];
 const SWORDS = [
   { id: 'wood', cost: 8,   name: 'Wooden Sword', lvl: 1,  dmg: 20, range: 52, time: 0.30, len: 24, color: '#b8864b' },
   { id: 'iron', cost: 9,   name: 'Iron Sword',   lvl: 3,  dmg: 28, range: 56, time: 0.30, len: 26, color: '#ccc' },
+  { id: 'bow', kind: 'bow', ranged: 'arrow', cost: 8, name: 'Hunting Bow', lvl: 4, dmg: 22, range: 430, time: 0.46, len: 26, color: '#b8864b', shot: 560 },
   { id: 'spear', kind: 'spear', cost: 9, name: 'Spear',   lvl: 4,  dmg: 26, range: 70, time: 0.34, len: 46, color: '#cde' },
   { id: 'dagger', kind: 'dagger', cost: 5, name: 'Twin Dagger',  lvl: 5,  dmg: 22, range: 46, time: 0.18, len: 18, color: '#9ef' },
   { id: 'rapier', kind: 'rapier', cost: 7, name: 'Rapier', lvl: 6,  dmg: 24, range: 58, time: 0.20, len: 36, color: '#dde' },
+  { id: 'staff', kind: 'staff', ranged: 'bolt', cost: 9, name: 'Apprentice Staff', lvl: 6, dmg: 26, range: 380, time: 0.5, len: 46, color: '#7fd0ff', shot: 430 },
   { id: 'great', kind: 'great', cost: 16,  name: 'Greatsword',   lvl: 7,  dmg: 50, range: 72, time: 0.48, len: 38, color: '#888' },
   { id: 'katana', kind: 'katana', cost: 8, name: 'Katana', lvl: 8, dmg: 34, range: 58, time: 0.24, len: 34, color: '#e8eef5', critBonus: 0.15 },
   { id: 'axe', kind: 'axe', cost: 13, name: 'Battle Axe', lvl: 9,  dmg: 46, range: 60, time: 0.42, len: 28, color: '#9aa', hitAt: 0.6 },
+  { id: 'horned', sig: 'minotaur', kind: 'axe', cost: 13, name: 'Horned Cleaver', lvl: 8, dmg: 56, range: 62, time: 0.40, len: 30, color: '#d9a066', hitAt: 0.6, note: 'Every third blow shakes the ground' },
   { id: 'flame', cost: 10,  name: 'Flame Blade',  lvl: 10, dmg: 38, range: 60, time: 0.28, len: 28, color: '#f73', burn: true },
+  { id: 'longbow', kind: 'bow', ranged: 'arrow', cost: 9, name: 'Longbow', lvl: 10, dmg: 38, range: 520, time: 0.5, len: 30, color: '#8a6a3c', shot: 660, pierce: 1 },
+  { id: 'pilferer', sig: 'goblinKing', kind: 'dagger', cost: 5, name: "Pilferer's Daggers", lvl: 10, dmg: 32, range: 48, time: 0.17, len: 19, color: '#9be36f', critBonus: 0.12, note: 'Blows spill coins' },
   { id: 'whip', kind: 'whip', cost: 7, name: 'Whip',    lvl: 11, dmg: 24, range: 90, time: 0.30, len: 70, color: '#a76', pull: true, hitAt: 0.34 },
+  { id: 'ooze', sig: 'slimeQueen', kind: 'whip', cost: 7, name: "Queen's Ooze Whip", lvl: 12, dmg: 34, range: 92, time: 0.30, len: 72, color: '#7fe07f', pull: true, slow: true, hitAt: 0.34, note: 'Sticky: splashes onto its neighbours' },
   { id: 'hammer', kind: 'hammer', cost: 18, name: 'War Hammer', lvl: 12, dmg: 62, range: 58, time: 0.62, len: 30, color: '#889', stun: 0.9, hitAt: 0.76 },
+  { id: 'arcane', kind: 'staff', ranged: 'bolt', cost: 10, name: 'Arcane Staff', lvl: 12, dmg: 44, range: 440, time: 0.5, len: 48, color: '#c36bff', shot: 470, critBonus: 0.08 },
   { id: 'frost', cost: 10,  name: 'Frostbrand',   lvl: 13, dmg: 42, range: 62, time: 0.28, len: 30, color: '#6cf', slow: true },
+  { id: 'lichbow', sig: 'lich', kind: 'bow', ranged: 'arrow', cost: 9, name: 'Lich Bow', lvl: 14, dmg: 50, range: 600, time: 0.45, len: 30, color: '#a6f0b0', shot: 700, pierce: 3, critBonus: 0.15, note: 'Arrows pass through four creatures and wither them' },
+  { id: 'glacier', sig: 'frostTitan', kind: 'hammer', cost: 18, name: 'Glacier Maul', lvl: 15, dmg: 82, range: 60, time: 0.62, len: 32, color: '#bfeaff', slow: true, hitAt: 0.76, note: 'One blow in four freezes the creature' },
   { id: 'scythe', kind: 'scythe', cost: 14, name: 'Scythe', lvl: 14, dmg: 48, range: 68, time: 0.44, len: 40, color: '#bcd', back: true, hitAt: 0.42 },
+  { id: 'magmaG', sig: 'magma', kind: 'great', cost: 16, name: 'Magma Greatsword', lvl: 16, dmg: 80, range: 74, time: 0.46, len: 40, color: '#ff7a2a', burn: true, note: 'Sometimes bursts into flame' },
   { id: 'halberd', kind: 'halberd', cost: 16, name: 'Halberd', lvl: 15, dmg: 58, range: 84, time: 0.50, len: 48, color: '#abc', hitAt: 0.4 },
+  { id: 'elven', kind: 'bow', ranged: 'arrow', cost: 10, name: 'Elven Bow', lvl: 15, dmg: 52, range: 560, time: 0.44, len: 30, color: '#7fe0a0', shot: 720, pierce: 2, critBonus: 0.1 },
   { id: 'fist', kind: 'fist', cost: 4, name: 'Iron Gauntlets', lvl: 16, dmg: 30, range: 44, time: 0.16, len: 0, color: '#bbc', lifesteal: 0.03, hitAt: 0.2 },
+  { id: 'sandreaper', sig: 'pharaoh', kind: 'scythe', cost: 14, name: 'Sandreaper', lvl: 17, dmg: 68, range: 70, time: 0.42, len: 42, color: '#ffe08a', back: true, lifesteal: 0.05, hitAt: 0.42, note: 'Drinks life, leaves a cloud of sand' },
   { id: 'holy', cost: 11,   name: 'Excalibur',    lvl: 17, dmg: 65, range: 70, time: 0.26, len: 34, color: '#fe6', burn: true, slow: true },
+  { id: 'archmage', kind: 'staff', ranged: 'bolt', cost: 11, name: 'Archmage Staff', lvl: 18, dmg: 70, range: 480, time: 0.48, len: 52, color: '#ffd24a', shot: 520, burn: true },
+  { id: 'tempest', sig: 'stormWarden', kind: 'staff', ranged: 'bolt', cost: 10, name: 'Tempest Staff', lvl: 18, dmg: 74, range: 500, time: 0.46, len: 54, color: '#fff3a0', shot: 560, critBonus: 0.1, note: 'Lightning jumps to two more creatures' },
 ];
 
 // Level stats are a small personal edge: gear is where the build comes from (see GEAR_CAPS in gear.js). Their caps grow a little with every rebirth.
@@ -264,8 +278,8 @@ function reset() {
     scarf: Array.from({ length: 7 }, () => ({ x: WW / 2, y: WH / 2 - 50 })),
   };
   applyRebirthPerks(); initGear();
-  enemies = []; corpses = []; popups = []; drops = []; projectiles = []; shockwaves = []; particles = [];
-  boss = null; vil = null; villageSkip = -1; clearHazards();
+  enemies = []; corpses = []; popups = []; drops = []; projectiles = []; heroShots = []; shockwaves = []; particles = [];
+  boss = null; vil = null; villageSkip = -1; clearHazards(); dun = null; dunDoor = null; dunRolled = false; dunNear = null;
   wave = 0; waveTimer = 2; spawnQueue = []; spawnTimer = 0; lastZoneStep = 0;
   playTime = 0; lastSavedWave = -1; savedGold = 0; hitStop = 0; flash = 0;
   cam.x = hero.x - VW / 2; cam.y = hero.y - VH / 2; cam.shake = 0;
@@ -648,6 +662,7 @@ function handleInput(code, e) {                                            // on
     return;
   }
   if (is('potion')) useUtility();
+  if (is('interact') && state === 'play') dungeonInteract();
   if (is('swapWeapon') && slotOpen('weapon2')) {                                  // rebirth 10: swap to the spare weapon
     const r = swapWeapons();
     popups.push({ text: r === 'ok' ? `Swapped to ${hero.equip.weapon.name}` : r === 'empty' ? 'No spare weapon (set one in the inventory)' : r, x: VW / 2, y: 120, t: 1.4, screen: true, small: true, color: r === 'ok' ? '#fd4' : '#f88' });
@@ -875,7 +890,7 @@ function startAttack() {
   hero.attackDur = hero.sword.time * Vr.t * (1 - hero.stats.cd * 0.04) * (1 - Math.min(0.35, gearStat('cdr') * 0.6));
   hero.attackT = hero.attackDur;
   hero.hitSet = new Set(); hero.lastP = 0;
-  hero.attackVar = vi; hero.atkMul = Vr.dmg; hero.attackReach = Vr.reach; hero.attackHitAt = Vr.hitAt ?? hero.sword.hitAt ?? 0.3; hero.rehitLeft = (Vr.rehit || []).slice();
+  hero.attackVar = vi; hero.atkMul = Vr.dmg; hero.attackReach = Vr.reach; hero.attackHitAt = Vr.hitAt ?? hero.sword.hitAt ?? 0.3; hero.rehitLeft = (Vr.rehit || []).slice(); hero.fireLeft = K.ranged ? (Vr.fire || [hero.attackHitAt]).slice() : null;
   hero.combo = (vi + 1) % K.variants.length; hero.comboT = hero.attackDur + 0.9;
   const snd = Vr.sfx || K.sfx, at = Vr.sfxAt ?? K.sfxAt;
   if (at) setTimeout(() => sfx(snd), hero.attackDur * at * 1000); else sfx(snd);
@@ -953,7 +968,7 @@ function updateParticles(dt) {
     p.x += p.vx * dt; p.y += p.vy * dt;
   }
   particles = particles.filter(p => p.life > 0);
-  if (!gfx.ambient || !world) return;
+  if (!gfx.ambient || !world || dun) return;
   // ambient particles around the camera, different for each biome (see critters.js)
   const amb = world.B.ambient, want = ambientCount(amb);
   let count = 0;
@@ -965,6 +980,7 @@ function updateParticles(dt) {
 }
 
 // --- Monsters ---
+const MOB_SPEED_CAP = { harpy: 118, icesprite: 100, fireimp: 104, wisp: 84, frostwolf: 118 };      // the most any of these walks at, boosts and tiers included
 const TYPES = {
   goblin:   { hp: 30, speed: 110, r: 12, dmg: 8,  xp: 12, from: 1, color: '#3d8b3d', gold: 1 },
   minotaur: { hp: 60, speed: 60,  r: 18, dmg: 10, xp: 22, from: 1, color: '#6b3e26', gold: 1.4 },
@@ -982,7 +998,7 @@ const TYPES = {
   harpy:     { hp: 32, speed: 100, r: 11, dmg: 10, xp: 20, from: 1, color: '#c9a0e0', gold: 1.2 },
   treant:       { hp: 90,  speed: 38,  r: 20, dmg: 12, xp: 28, from: 3, color: '#5a7a3a', gold: 1.6 },
   mummy:        { hp: 75,  speed: 45,  r: 15, dmg: 11, xp: 24, from: 3, color: '#d8cfa8', gold: 1.4, fireVuln: 2 },
-  frostwolf:    { hp: 34,  speed: 125, r: 12, dmg: 8,  xp: 18, from: 2, color: '#cfe8ff', gold: 1.1, pack: 2 },
+  frostwolf:    { hp: 34,  speed: 98,  r: 12, dmg: 8,  xp: 18, from: 2, color: '#5a6c8e', gold: 1.1, pack: 2 },
   magmaslime:   { hp: 60,  speed: 0,   r: 16, dmg: 10, xp: 22, from: 3, color: '#ff6a2a', gold: 1.3 },
   wisp:         { hp: 20,  speed: 70,  r: 9,  dmg: 7,  xp: 16, from: 2, color: '#9fffd0', gold: 1.1 },
   sporeshroom:  { hp: 55,  speed: 0,   r: 14, dmg: 8,  xp: 20, from: 3, color: '#b05a8a', gold: 1.2 },
@@ -1051,6 +1067,7 @@ function buildWave() {
 }
 
 function updateWaves(dt) {
+  if (dun) return;                                                                 // the waves wait while you are underground
   if (spawnQueue.length > 0) {
     spawnTimer -= dt;
     if (spawnTimer <= 0) {
@@ -1060,8 +1077,10 @@ function updateWaves(dt) {
       spawnTimer = 0.3 + Math.random() * 1.3;
     }
   } else if (enemies.length === 0 && !hero.dead) {
+    dungeonRoll();                                                                 // sometimes a stone door opens when a wave is cleared
     waveTimer -= dt;
     if (waveTimer <= 0) {
+      closeDungeonDoor();
       if (wave > 0 && setPos(wave) === 5 && lastSavedWave < wave) {                                       // a checkpoint after every 5th wave (the village and the campfire cover the rest)
         saveGame(true, true); popups.push({ text: `Checkpoint: wave ${wave} saved`, x: VW / 2, y: 150, t: 2.2, screen: true, small: true, color: '#9f9' });
       }
@@ -1134,6 +1153,7 @@ function updateEnemies(dt) {
     m.flashT = Math.max(0, m.flashT - dt);
     m.slowT = Math.max(0, m.slowT - dt);
     m.spawnT = Math.max(0, (m.spawnT || 0) - dt);
+    if (dun && m.sleep && dunSleepTick(m, dt, dist)) { dunPush(m, Math.max(10, m.r * 0.8)); continue; }      // asleep: it does nothing until it sees you
     if (m.burnT > 0) {
       m.burnT -= dt; m.burnTick = (m.burnTick || 0) - dt;
       if (m.burnTick <= 0) { m.burnTick = 0.5; { const bd = 4 * ((TYPES[m.type] && TYPES[m.type].fireVuln) || 1); m.hp -= bd; } popups.push({ text: '4', x: m.x, y: m.y - 70, t: 0.4, color: '#f84' }); }
@@ -1144,8 +1164,10 @@ function updateEnemies(dt) {
     m.stateT -= dt; mobTick(m, dt);
     const wm = (waterAt(m.x, m.y) ? 0.75 : 1) * mobBoost(m, dt);                  // packs rallied by a leader, enraged by its fall, speeded by a wisp
     const fz = m.frenzy && m.hp < m.maxHp * 0.3 ? 1.5 : 1;       // a Frenzied monster goes berserk when hurt
-    const spd = m.speed * fz * (m.slowT > 0 ? 0.5 : 1) * wm;
-    const slowMul = (m.slowT > 0 ? 0.5 : 1) * wm;
+    const cap = MOB_SPEED_CAP[m.type];                           // fliers and the snow wolves get faster with the waves, but never so fast that they cannot be caught
+    const spd = Math.min(m.speed * fz * (m.slowT > 0 ? 0.5 : 1) * wm, cap || 1e9);
+    const slowMul = Math.min((m.slowT > 0 ? 0.5 : 1) * wm, cap ? 1.12 : 9);
+    const ox = m.x, oy = m.y;
 
     const busy = m.type !== 'boss' && !stunned && melTick(m, dt, dx, dy, dist, fz);          // mid-swing it stands and fights instead of walking
     if (m.type === 'boss') updateBoss(m, dt, dx, dy, dist, spd);
@@ -1212,6 +1234,7 @@ function updateEnemies(dt) {
     const decay = Math.pow(0.85, dt * 60);           // frame-rate independent knockback
     m.x += m.knockX * dt; m.y += m.knockY * dt;
     m.knockX *= decay; m.knockY *= decay;
+    if (dun) dunAfterMove(m, ox, oy, dt);                                          // round the walls, never through them
 
     if (!hero.dead && dist < m.r + 12 && (m.hopZ || 0) < 10 && m.spawnT < 0.2 && touchHurts(m)) {
       damageHero((m.state === 'charge' ? m.dmg * 2 + 5 : m.dmg) * fz, true, m);
@@ -1220,8 +1243,13 @@ function updateEnemies(dt) {
 
   // sword hits (active in the middle of the swing)
   const sw = hero.sword, VAR = weaponVariant(sw, hero.attackVar);
-  if (hero.attackT > 0 && hero.rehitLeft && hero.rehitLeft.length && 1 - hero.attackT / hero.attackDur >= hero.rehitLeft[0]) { hero.rehitLeft.shift(); hero.hitSet.clear(); }      // a multi-hit blow lands again
-  if (hero.attackT > 0 && hero.attackT < hero.attackDur * (1 - (hero.attackHitAt ?? sw.hitAt ?? 0.3))) {
+  const KK = weaponKind(sw);
+  if (KK.ranged && hero.attackT > 0 && hero.fireLeft) {                            // a bow or a staff: it looses its shots at the moments the variant says
+    const pNow = 1 - hero.attackT / hero.attackDur;
+    while (hero.fireLeft.length && pNow >= hero.fireLeft[0]) { hero.fireLeft.shift(); fireShots(VAR); }
+  }
+  if (!KK.ranged && hero.attackT > 0 && hero.rehitLeft && hero.rehitLeft.length && 1 - hero.attackT / hero.attackDur >= hero.rehitLeft[0]) { hero.rehitLeft.shift(); hero.hitSet.clear(); }      // a multi-hit blow lands again
+  if (!KK.ranged && hero.attackT > 0 && hero.attackT < hero.attackDur * (1 - (hero.attackHitAt ?? sw.hitAt ?? 0.3))) {
     const pNow = 1 - hero.attackT / hero.attackDur, p0 = Math.max(hero.lastP ?? pNow, (hero.attackHitAt ?? sw.hitAt ?? 0.3) - 0.02), shapes = [];
     for (let k = 1; k <= 6; k++) shapes.push(...weaponShapes(p0 + (pNow - p0) * k / 6));           // the weapon's path since the last frame
     hero.lastP = pNow;
@@ -1251,9 +1279,11 @@ function updateEnemies(dt) {
         burst(m.x, m.y - 35, crit ? '#fc6' : sw.color, crit ? 16 : 8, 220, 2.2, 250, true);
         if (!settings.comfort) hitStop = crit ? 0.05 : 0.02; shake(crit ? 4 : 2); if (VAR.shake) shake(VAR.shake);
         sfx(crit ? 'crit' : m.type === 'slime' ? 'squish' : VAR.hit || weaponKind(sw).hit);
+        sigHit(sw, m, dmg, Math.sign(dx) || hero.facing);
       }
     }
   }
+  updateHeroShots(dt);
 
   rebuildSkeletons();
   const dead = enemies.filter(m => m.hp <= 0);
@@ -1262,7 +1292,7 @@ function updateEnemies(dt) {
 }
 
 function onKill(m) {
-  corpses.push({ ...m, dieT: 0, dieMax: m.type === 'boss' ? 1.6 : 0.6 });
+  corpses.push({ ...m, dieT: 0, dieMax: deathTime(m), fid: null });
   burst(m.x, m.y - 30, TYPES[m.type]?.color || '#fff', 14, 180, 3, 250);
   if (m.leader) leaderFell(m);
   if ((m.type === 'slime' || m.type === 'magmaslime') && m.size === 1) {        // big slimes split
@@ -1442,11 +1472,12 @@ function updateHero(dt) {
   }
   hero.x = Math.max(20, Math.min(WW - 20, hero.x));
   hero.y = Math.max(50, Math.min(WH - 10, hero.y));
+  if (dun) dunPush(hero, 11);
   const wet = !!waterAt(hero.x, hero.y);                  // wading: slower, with splashes
   if (wet !== !!hero.inWater) { hero.inWater = wet; burst(hero.x, hero.y, '#bfe4f4', 12, 130, 2.2, 260); sfx('splash'); }
 
   // lava burns (unless mid-flip)
-  if (world.lava.length && hero.flipT <= 0 && world.lava.some(l => ((hero.x - l.x) / l.rx) ** 2 + ((hero.y - l.y) / l.ry) ** 2 < 1)) {
+  if (!dun && world.lava.length && hero.flipT <= 0 && world.lava.some(l => ((hero.x - l.x) / l.rx) ** 2 + ((hero.y - l.y) / l.ry) ** 2 < 1)) {
     if (!invulnerable()) { sfx('lava'); damageHero(Math.round(6 * D().dmg), false); }
   }
 
@@ -1474,7 +1505,7 @@ function updateCamera(dt) {
 // what the world sounds like: biome calls, wind and rain follow the weather system
 let sceneT = 0;
 function updateSoundScene(dt) {
-  sceneT -= dt; if (sceneT > 0 || !world) return; sceneT = 0.25;
+  sceneT -= dt; if (sceneT > 0 || !world || dun) return; sceneT = 0.25;
   const p = weatherPower(), a = WEATHER[weather.kind], b = WEATHER[weather.next];
   const rainOf = w => w.fx === 'rain' ? 0.09 * (w.dens || 1) : w.fx === 'hail' ? 0.1 : 0;
   const pitchOf = w => w.fx === 'sand' ? 1100 : (w.fx === 'snow' && w.fall) ? 700 : 450;
@@ -1492,6 +1523,7 @@ function update(dt) {
   if (hitStop > 0) { hitStop -= dt; updateParticles(dt); return; }   // freeze-frame on hit
   updateHero(dt);
   updateWaves(dt);
+  updateDungeon(dt);
   updateEnemies(dt);
   updateProjectiles(dt);
   updateDrops(dt);
@@ -1500,7 +1532,7 @@ function update(dt) {
   updateDarkEyes(dt);
   updateSoundScene(dt);
   updateCamera(dt);
-  for (const c of corpses) c.dieT += dt;
+  for (const c of corpses) deathTick(c, dt);
   corpses = corpses.filter(c => c.dieT < c.dieMax);
   for (const p of popups) { p.t -= dt; if (p.pop !== undefined) p.pop += dt; if (!p.big && !p.screen) p.y -= 30 * dt; }
   popups = popups.filter(p => p.t > 0);
@@ -1723,6 +1755,37 @@ const WEAPON_KINDS = {
     ],
   },
 };
+// the bow: the front hand holds it out, the back hand draws the string (swing's `draw`, 0..1), then the arrow is loosed (`fire`: when, `n` arrows, `spread`, `pierce`)
+const bowShot = (rel, aim = -0.04, lead = 0) => t => {
+  const up = easeInOut(clamp01(t / 0.2)), ang = lerp(REST, aim, up), d = easeInOut(clamp01((t - 0.12) / (rel - 0.12))), rec = t >= rel ? easeOut(clamp01((t - rel) / 0.2)) : 0, hold = t < rel ? 1 : 1 - rec;      // the string is drawn at d; after the release the pose relaxes (rec)
+  return { ang, r: 19, blade: 0, lean: (-0.03 + lead * 0.5) * d * hold, lunge: (-2 + lead * 8) * d * hold + 3 * rec, draw: t < rel ? d : 0, back: { ang: ang - 0.02, r: t < rel ? lerp(18, 4.5, d) : lerp(4.5, 15, rec), blade: 0 } };
+};
+// the staff is raised and charges (swing's `glow`), then thrust forward to cast
+const staffCast = (rel, a1 = -0.7, b1 = -1.7, a2 = 0.0, b2 = -0.25, lead = 0) => t => {
+  if (t < rel) { const x = easeInOut(t / rel); return { ang: lerp(REST, a1, x), r: 14, blade: lerp(-1.1, b1, x), lean: -0.05 * x, glow: x }; }
+  const x = clamp01((t - rel) / 0.3), e = easeOut(x);
+  return { ang: lerp(a1, a2, e), r: lerp(14, 17, e), blade: lerp(b1, b2, e), lunge: (4 + lead * 6) * pulse(x), lean: 0.08 * e + lead * 0.05 * e, glow: 1 - x };
+};
+Object.assign(WEAPON_KINDS, {
+  bow: {
+    idle: 1.2, run: 1.0, ranged: 'arrow', sfx: 'tick', hit: 'hitPierce',
+    variants: [
+      V('Quick shot', bowShot(0.55, -0.04), { hitAt: 0.55, fire: [0.55] }),
+      V('Power shot', bowShot(0.78, -0.3, -0.12), { t: 1.45, dmg: 1.9, cost: 1.6, hitAt: 0.78, fire: [0.78], pierce: 1, shake: 1 }),
+      V('Twin shot', bowShot(0.6, 0.3, 0.25), { t: 1.15, dmg: 0.7, cost: 1.3, hitAt: 0.6, fire: [0.6], count: 2, spread: 0.05 }),
+      V('Volley', bowShot(0.72, -0.62, -0.1), { t: 1.35, dmg: 0.55, cost: 1.9, hitAt: 0.72, fire: [0.72], count: 5, spread: 0.3 }),
+    ],
+  },
+  staff: {
+    idle: -1.25, run: -1.1, two: true, ranged: 'bolt', sfx: 'chime', hit: 'crackle',
+    variants: [
+      V('Bolt', staffCast(0.5, -0.7, -1.7, 0.0, -0.25, 0), { hitAt: 0.5, fire: [0.5] }),
+      V('Twin orbs', staffCast(0.4, -0.2, -1.2, 0.25, 0.15, 0.5), { t: 1.2, dmg: 0.7, cost: 1.4, hitAt: 0.4, fire: [0.4, 0.62], spread: 0.06 }),
+      V('Nova', staffCast(0.62, -1.3, -2.4, 0.6, 1.0, 0.2), { t: 1.35, dmg: 0.55, cost: 1.8, hitAt: 0.62, fire: [0.62], ring: 8, life: 0.55, speed: 270, shake: 2 }),
+      V('Piercing beam', staffCast(0.58, 0.05, -0.4, -0.05, -0.05, 1.0), { t: 1.3, dmg: 1.6, cost: 1.5, hitAt: 0.58, fire: [0.58], pierce: 3, speed: 900, life: 0.6 }),
+    ],
+  },
+});
 const weaponKind = sw => WEAPON_KINDS[sw && sw.kind] || WEAPON_KINDS.sword;
 const weaponVariant = (sw, i) => { const K = weaponKind(sw); return K.variants[(i | 0) % K.variants.length]; };
 
@@ -1861,6 +1924,24 @@ function drawSword(J, sw, glow) {
       ctx.stroke();
       if (crack > 0.6) { ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2); ctx.fill(); }   // the snap
       tip = q; break;
+    }
+    case 'bow': {
+      const S = J.atk >= 0 && J.v ? J.v.swing(J.atk) : {}, d = S.draw || 0, bl = L * 0.68, top = { x: h.x - f * 4, y: h.y - bl }, bot = { x: h.x - f * 4, y: h.y + bl };
+      ctx.lineCap = 'round'; ctx.strokeStyle = '#3a2a18'; ctx.lineWidth = 4.4; ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.quadraticCurveTo(h.x + f * 12, h.y, bot.x, bot.y); ctx.stroke();
+      ctx.strokeStyle = sw.color; ctx.lineWidth = 2.8; ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.quadraticCurveTo(h.x + f * 12, h.y, bot.x, bot.y); ctx.stroke();
+      const nock = d > 0.02 ? { x: J.back.e.x, y: J.back.e.y } : { x: h.x - f * 4, y: h.y };
+      ctx.strokeStyle = '#efe6c8'; ctx.lineWidth = 1.1; ctx.beginPath(); ctx.moveTo(top.x, top.y); ctx.lineTo(nock.x, nock.y); ctx.lineTo(bot.x, bot.y); ctx.stroke();
+      if (d > 0.02) { const ax = h.x + f * 15; ctx.strokeStyle = '#8a6a3c'; ctx.lineWidth = 1.8; line(nock.x, nock.y, ax, h.y); ctx.fillStyle = sw.sig ? sw.color : '#dfe6ef'; ctx.beginPath(); ctx.moveTo(ax + f * 5, h.y); ctx.lineTo(ax - f * 1, h.y - 2.6); ctx.lineTo(ax - f * 1, h.y + 2.6); ctx.closePath(); ctx.fill(); }
+      tip = { x: h.x + f * 10, y: h.y }; break;
+    }
+    case 'staff': {
+      const S = J.atk >= 0 && J.v ? J.v.swing(J.atk) : {}, gl = S.glow !== undefined ? S.glow : 0.18 + 0.1 * Math.sin(tAnim * 3), t = P(L);
+      ctx.lineCap = 'round'; shaft(-14, L - 3, '#3a2a18', 5); shaft(-14, L - 3, '#8a6a3c', 3);
+      ctx.strokeStyle = '#3a2a18'; ctx.lineWidth = 2.4; line(P(L - 8, -3).x, P(L - 8, -3).y, P(L + 1, -5).x, P(L + 1, -5).y); line(P(L - 8, 3).x, P(L - 8, 3).y, P(L + 1, 5).x, P(L + 1, 5).y);
+      if (gfx.glow) { const g2 = ctx.createRadialGradient(t.x, t.y, 1, t.x, t.y, 8 + gl * 16); g2.addColorStop(0, withAlpha(sw.color, 0.35 + gl * 0.5)); g2.addColorStop(1, withAlpha(sw.color, 0)); ctx.fillStyle = g2; ctx.fillRect(t.x - 26, t.y - 26, 52, 52); }
+      ctx.fillStyle = sw.color; ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(t.x, t.y, 4.2 + gl * 2.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(t.x - 1, t.y - 1, 1.6 + gl, 0, Math.PI * 2); ctx.fill();
+      tip = t; break;
     }
     case 'fist':
       for (const hd of [J.front.e, J.back.e]) { ctx.fillStyle = sw.color; ctx.strokeStyle = '#333'; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(hd.x + f * 1.5, hd.y, 5.4, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
@@ -2246,7 +2327,8 @@ function drawEnemy(m) {
   ctx.save();
   if (m.dieT !== undefined) {                 // death: flash, then a fall of its own (slimes splat, goblins tumble, the rest topple), fade
     const p = m.dieT / m.dieMax;
-    ctx.globalAlpha = Math.max(0, 1 - p);
+    ctx.globalAlpha = deathAlpha(m, p);
+    drawDeathPuddle(m, p);
     enemyDeathPose(m, p);
     m.flashT = p < 0.15 ? 1 : 0;
   } else {
@@ -2257,6 +2339,8 @@ function drawEnemy(m) {
     } else if (m.alertT > 0) ctx.translate(0, -Math.sin(m.alertT / 0.45 * Math.PI) * 4);          // it notices you: a little start
     if (m.recoilT > 0) { ctx.translate(m.x, m.y); ctx.rotate(-m.facing * m.recoilT * 0.7); ctx.translate(-m.x - m.facing * m.recoilT * 18, -m.y); }   // knocked back by a blow
     drawMobWindup(m);
+    applyFidget(m);
+    if (m.sleep) { ctx.translate(m.x, m.y); ctx.rotate(m.facing * 0.04); ctx.scale(1.03, 0.93 + Math.sin(tAnim * 1.8 + m.x) * 0.015); ctx.translate(-m.x, -m.y); }          // asleep: slumped, breathing slowly
   }
   const giant = m.scale > 1;
   if (giant) { ctx.save(); ctx.translate(m.x, m.y); ctx.scale(m.scale, m.scale); ctx.translate(-m.x, -m.y); }          // Giants are drawn bigger (their tags are not)
@@ -2273,7 +2357,7 @@ function drawEnemy(m) {
   else if (m.type === 'bogLurker') drawLurker(m);
   else if (m.type === 'treant') drawTreant(m);
   else if (m.type === 'mummy') drawMummy(m);
-  else if (m.type === 'frostwolf') drawQuad(m, { s: 1.05, c: '#cfe8ff', eye: '#6fd0ff', tail: 6 });
+  else if (m.type === 'frostwolf') drawQuad(m, { s: 1.05, c: '#5a6c8e', eye: '#aef0ff', tail: 6 });
   else if (m.type === 'magmaslime') drawMagmaSlime(m);
   else if (m.type === 'wisp') drawWisp(m);
   else if (m.type === 'sporeshroom') drawShroom(m);
@@ -2403,11 +2487,14 @@ function drawParticles() {
 }
 
 function drawWorld() {
-  ctx.drawImage(world.ground, cam.x, cam.y, VW, VH, cam.x, cam.y, VW, VH);
-  drawWater();
-  drawLavaGlow();
-  drawGrassAndDecor();
-  drawCloudShadows();
+  if (dun) ctx.drawImage(dun.f.ground, cam.x, cam.y, VW, VH, cam.x, cam.y, VW, VH);
+  else {
+    ctx.drawImage(world.ground, cam.x, cam.y, VW, VH, cam.x, cam.y, VW, VH);
+    drawWater();
+    drawLavaGlow();
+    drawGrassAndDecor();
+    drawCloudShadows();
+  }
   for (const s of shockwaves) {
     ctx.strokeStyle = s.color ? withAlpha(s.color, 1 - s.r / s.maxR) : `rgba(255,220,150,${1 - s.r / s.maxR})`; ctx.lineWidth = 6;
     ctx.beginPath(); ctx.ellipse(s.x, s.y, s.r, s.r / 1.6, 0, 0, Math.PI * 2); ctx.stroke();
@@ -2419,13 +2506,19 @@ function drawWorld() {
   for (const d of drops) if (inView(d.x, d.y)) drawDrop(d);
 
   const things = [];
-  for (const p of world.props) if (inView(p.x, p.y)) things.push({ y: p.y, d: () => drawProp(p) });
-  for (const c of critters) if (inView(c.x, c.y, c.kind === 'fish' ? 200 : 100)) things.push({ y: c.y, d: () => drawCritter(c) });
-  for (const d of devils) if (inView(d.x, d.y, 120)) things.push({ y: d.y, d: () => drawDevil(d) });
+  if (dun) things.push(...dunThings());
+  else {
+    for (const p of world.props) if (inView(p.x, p.y)) things.push({ y: p.y, d: () => drawProp(p) });
+    for (const c of critters) if (inView(c.x, c.y, c.kind === 'fish' ? 200 : 100)) things.push({ y: c.y, d: () => drawCritter(c) });
+    for (const d of devils) if (inView(d.x, d.y, 120)) things.push({ y: d.y, d: () => drawDevil(d) });
+    if (dunDoor) things.push({ y: dunDoor.y, d: () => drawDungeonDoor(dunDoor) });
+  }
   for (const c of corpses) if (inView(c.x, c.y)) things.push({ y: c.y, d: () => drawEnemy(c) });
+  for (const s of heroShots) if (inView(s.x, s.y, 60)) things.push({ y: s.y + 1, d: () => drawHeroShot(s) });
   for (const m of enemies) if (inView(m.x, m.y, 120)) things.push({ y: m.y, d: () => drawEnemy(m) });
   things.push({ y: hero.y, d: () => drawHero(hero) });
   things.sort((a, b) => a.y - b.y).forEach(o => o.d());
+  drawDunPrompt();
 
   ctx.strokeStyle = '#ddd'; ctx.lineWidth = 2;
   for (const p of projectiles) {
@@ -2747,6 +2840,7 @@ function drawHUD() {
   drawWaveChip(false);
   drawQuestTracker();
 
+  if (dun) { drawDungeonHUD(); drawDunMini(); } else {
   // minimap
   const mw = 150, mh = 100, mx = VW - mw - 14, my = VH - mh - 14, sx = mw / WW, sy = mh / WH;
   hudPanel(mx - 6, my - 6, mw + 12, mh + 12, { r: 11 });
@@ -2772,6 +2866,8 @@ function drawHUD() {
   ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(mx + hero.x * sx, my + hero.y * sy, 2.6, 0, Math.PI * 2); ctx.fill();
   ctx.restore();
   ctx.fillStyle = '#a3a1b8'; ctx.textAlign = 'center'; ctx.fillText(fitText(world.B.name, mw + 10, 10.5), mx + mw / 2, my - 11);
+  }
+  drawDunPromptHud();
 
   if (boss) {
     const bw = 340, bx = VW / 2 - bw / 2;
@@ -3094,7 +3190,7 @@ const DEV_CATS = [['weapon', 'Weapon'], ['armor', 'Armor'], ['helmet', 'Helmet']
 const devPlain = () => devPick.cat === 'potion';      // potions have no grade or level
 const devRune = { k: 0, qty: 1, tier: 0 }, devEss = { k: 0, qty: 1 };                      // the rune spawner has its own section
 const devPick = { cat: 'weapon', base: 0, rarity: 3, roll: 'random', unique: '', qty: 1, ilvl: 0, up: 0, sock: '' };      // ilvl 0 = the hero's level
-const devBases = cat => cat === 'weapon' ? SWORDS.map(s => `${s.name} (level ${s.lvl})`) : cat === 'potion' ? POTION_KEYS.map(k => POTIONS[k].name) : BASE_NAMES[cat];
+const devBases = cat => cat === 'weapon' ? SWORDS.map(s => `${s.name} (level ${s.lvl}${s.ranged ? ', ranged' : ''}${s.sig ? ', boss weapon' : ''})`) : cat === 'potion' ? POTION_KEYS.map(k => POTIONS[k].name) : BASE_NAMES[cat];
 const devMake = (rarity = devPick.rarity, base = devPick.base) => {
   const it = rollItem({
     slot: devPick.cat, rarity, level: 99, ilvl: devPick.ilvl || (hero ? hero.level : 1), roll: devPick.roll === 'random' ? undefined : devPick.roll, unique: devPick.unique || undefined,
@@ -3105,7 +3201,7 @@ const devMake = (rarity = devPick.rarity, base = devPick.base) => {
   return it;
 };
 const devQty = () => Math.max(1, Math.min(40, devPick.qty | 0 || 1));
-const dev = { god: false, oneHit: false, stamina: false, hitboxes: false, speed: 1, freezeTime: false, noFog: false };
+const dev = { god: false, oneHit: false, stamina: false, hitboxes: false, speed: 1, freezeTime: false, noFog: false, lit: false, noSpot: false };
 function renderDev() {
   const tog = (k, label) => `<button data-dev="tog" data-k="${k}" class="${dev[k] ? 'on' : ''}">${label}</button>`;
   const btn = (act, label, extra = '') => `<button data-dev="${act}" ${extra}>${label}</button>`;
@@ -3113,7 +3209,7 @@ function renderDev() {
   document.getElementById('devBody').innerHTML = `
     <h3>TOGGLES</h3><div class="dev-grid">
       ${tog('god', 'God mode')}${tog('oneHit', 'One-hit kills')}${tog('stamina', 'Infinite stamina')}
-      ${tog('hitboxes', 'Show hitboxes')}${tog('noFog', 'Disable fog-of-war')}</div>
+      ${tog('hitboxes', 'Show hitboxes')}${tog('noFog', 'Disable fog-of-war')}${dun ? `${tog('lit', 'Dungeon: no darkness')}${tog('noSpot', 'Dungeon: sleepers never notice')}` : ''}</div>
     <h3>GAME SPEED</h3><div class="dev-grid">
       ${[0.25, 0.5, 1, 2, 4].map(v => `<button data-dev="speed" data-v="${v}" class="${dev.speed === v ? 'on' : ''}">${v}×</button>`).join('')}</div>
     ${inPlay ? `
@@ -3150,23 +3246,26 @@ function renderDev() {
       <span class="dev-ico" style="border-color:${ESS[ESS_KEYS[devEss.k]].color}">${essSvg(ESS_KEYS[devEss.k], 40)}</span></div>
     <div class="dev-grid">${btn('essadd', 'Add essences')}${btn('essall', 'One of every essence')}${btn('essmax', 'Max out every essence')}${btn('essclear', 'Clear all essences')}</div>
     <div class="hint" style="margin:2px 0 6px">You have: ${ESS_KEYS.filter(k => essCount(k)).map(k => `${ESS[k].title} ${essCount(k)}`).join(' · ') || 'no essences'}</div>
-    <h3>QUESTS</h3><div class="dev-grid">${QUEST_KINDS.map(k => btn('quest', k, `data-t="${k}"`)).join('')}</div>
+    <h3>QUESTS</h3><div class="dev-grid">${QUEST_KINDS.map(k => btn('quest', k, `data-t="${k}"`)).join('')}${btn('questdone', 'Finish active quests')}${btn('questclear', 'Clear all quests')}</div>
+    <h3>BOSS AND RANGED WEAPONS</h3><div class="dev-grid">${SWORDS.filter(s => s.sig).map(s => btn('sigweapon', s.name, `data-t="${s.id}"`)).join('')}${btn('sigall', 'All eight boss weapons')}${btn('rangedall', 'Every bow and staff')}</div>
     <h3>AILMENTS</h3><div class="dev-grid">${AIL_KEYS.map(k => btn('ail', AILS[k].name, `data-t="${k}"`)).join('')}${btn('ailclear', 'Cure all')}</div>
-    <h3>WAVES</h3><div class="dev-grid">
+    ${dun ? `<h3>WAVES</h3><div class="dev-grid">${btn('clear', 'Kill all enemies')}</div>` : `    <h3>WAVES</h3><div class="dev-grid">
       ${btn('clear', 'Kill all enemies')}${btn('next', 'Skip wave')}
-      <input type="text" id="devWave" value="${wave + 1}"> ${btn('goto', 'Go to wave')}</div>
+      <input type="text" id="devWave" value="${wave + 1}"> ${btn('goto', 'Go to wave')}</div>`}
     <h3>SPAWN</h3><div class="dev-grid">
-      ${Object.keys(TYPES).map(t => btn('spawn', t, `data-t="${t}"`)).join('')}${btn('spawn', 'ELITE', 'data-t="elite"')}${MUT_KEYS.map(k => btn('spawn', 'mut: ' + k, `data-t="mut:${k}"`)).join('')}${btn('boss', 'BOSS (this biome)')}
-      ${Object.keys(BOSSES).map(k => btn('boss', BOSSES[k].names[0], `data-t="${k}"`)).join('')}
+      ${Object.keys(TYPES).map(t => btn('spawn', t, `data-t="${t}"`)).join('')}${btn('spawn', 'ELITE', 'data-t="elite"')}${MUT_KEYS.map(k => btn('spawn', 'mut: ' + k, `data-t="mut:${k}"`)).join('')}${btn('spawn', 'PACK LEADER', 'data-t="leader"')}${btn('spawn', 'EVOLVED', 'data-t="evo"')}${btn('fidget', 'Make all fidget')}${btn('parade', 'Death scene parade')}${dun ? '' : btn('boss', 'BOSS (this biome)')}
+      ${dun ? '' : Object.keys(BOSSES).map(k => btn('boss', BOSSES[k].names[0], `data-t="${k}"`)).join('')}
       ${Object.keys(DROPS).map(d => btn('drop', 'drop: ' + d, `data-t="${d}"`)).join('')}</div>
-    <h3>WORLD</h3><div class="dev-grid">
-      ${BIOMES.map((b, i) => btn('biome', b.name, `data-t="${i}"`)).join('')}${btn('biome', 'Random biome', 'data-t="rand"')}${btn('camp', 'Play campfire scene')}${btn('village', 'Visit the village')}</div>
-    <h3>TIME &amp; WEATHER</h3><div class="dev-grid">
+    ${dun ? '' : `    <h3>WORLD</h3><div class="dev-grid">
+      ${BIOMES.map((b, i) => btn('biome', b.name, `data-t="${i}"`)).join('')}${btn('biome', 'Random biome', 'data-t="rand"')}${btn('camp', 'Play campfire scene')}${btn('village', 'Visit the village')}${btn('church', 'Visit the church')}</div>`}
+    <h3>DUNGEON</h3><div class="dev-grid">
+      ${dun ? `${btn('dunleave', 'Leave the dungeon')}${Array.from({ length: dun.floors }, (_, i) => btn('dunfloor', `Floor ${i + 1}`, `data-t="${i}" ${i === dun.idx ? 'class="on"' : ''}`)).join('')}${btn('dungo', 'Go to the way up', 'data-t="up"')}${btn('dungo', 'Go to the stairs down', 'data-t="down"')}${btn('dungo', 'Go to the nearest chest', 'data-t="chest"')}${btn('dungo', 'Go to the boss', 'data-t="boss"')}${btn('dunwake', 'Wake everything')}${btn('dunchests', 'Open every chest')}${btn('dunseal', 'Break the boss\'s seal')}${btn('dunreveal', 'Reveal the floor')}` : `${btn('dungeon', 'Enter a dungeon')}${btn('dundoor', 'Open a stone door beside me')}`}</div>
+    ${dun ? '' : `<h3>TIME &amp; WEATHER</h3><div class="dev-grid">
       ${[['Dawn', 0.28], ['Noon', 0.5], ['Dusk', 0.75], ['Night', 0.95]].map(([n, v]) => btn('time', n, `data-t="${v}"`)).join('')}
       ${btn('freeze', dev.freezeTime ? 'Time frozen' : 'Freeze time', dev.freezeTime ? 'class="on"' : '')}</div>
     <div class="dev-grid" style="margin-top:6px">
-      ${Object.keys(WEATHER).map(k => btn('weather', WEATHER[k].name, `data-t="${k}"`)).join('')}</div>
-    <div class="hint">Now: wave ${wave} · level ${hero.level} · ${enemies.length} enemies · ${world.B.name}</div>`
+      ${Object.keys(WEATHER).map(k => btn('weather', WEATHER[k].name, `data-t="${k}"`)).join('')}</div>`}
+    <div class="hint">Now: wave ${wave} · level ${hero.level} · ${enemies.length} enemies · ${dun ? `${dunPal().name}, floor ${dun.idx + 1} of ${dun.floors}` : world.B.name}</div>`
     : '<div class="hint">Start or load a game to use the hero, wave and spawn cheats.</div>'}`;
 }
 document.getElementById('devBody').addEventListener('change', e => {      // the item spawner's dropdowns and amount
@@ -3244,7 +3343,10 @@ document.getElementById('devBody').addEventListener('click', e => {
   if (act === 'spawn') {
     if (t === 'elite') { const m = spawnEnemy(['goblin', 'minotaur', 'archer'][Math.floor(Math.random() * 3)], near(), { variant: 'elite', spawnT: 0.3 }); popups.push({ text: `Elite: ${m.name}`, x: VW / 2, y: 170, t: 1.8, screen: true, small: true, color: '#ffd24a' }); }
     else if (t.startsWith('mut:')) { const m = spawnEnemy('goblin', near(), { variant: 'plain', spawnT: 0.3 }); applyMutation(m, t.slice(4)); }
+    else if (t === 'leader') { const pool = wavePool(); spawnEnemy(pool[Math.floor(Math.random() * pool.length)], near(), { leader: true, variant: 'plain', spawnT: 0.3 }); }
+    else if (t === 'evo') { const ps = wavePool().filter(k => EVO[k]); const m = spawnEnemy((ps.length ? ps : Object.keys(EVO))[Math.floor(Math.random() * (ps.length || Object.keys(EVO).length))], near(), { variant: 'plain', spawnT: 0.3 }); evolveMob(m); }
     else spawnEnemy(t, near(), { spawnT: 0.3 });
+    if (dun) for (const m of enemies) if (!m.sleep) dunPush(m, Math.max(10, m.r * 0.8));
   }
   if (act === 'boss') { const w = wave; wave = Math.max(WAVES_PER_SET, wave); spawnBoss(t); wave = w; }
   if (act === 'drop') dropItem(t, hero.x + hero.facing * 50, hero.y - 20, t === 'rune' ? { rune: RUNE_KEYS[devRune.k], t: 40 } : t === 'essence' ? { ess: ESS_KEYS[devEss.k], t: 40 } : {});      // a rune drops as the one picked in the rune spawner
@@ -3254,6 +3356,31 @@ document.getElementById('devBody').addEventListener('click', e => {
   if (act === 'weather') setWeather(t, true);
   if (act === 'camp') { showMenu(null); startCamp((zone + 1) % BIOMES.length); return; }
   if (act === 'village') { showMenu(null); enterVillage(); return; }
+  if (act === 'dungeon') { showMenu(null); if (state === 'play' && !dun) enterDungeon(); return; }
+  if (act === 'church') { showMenu(null); if (state === 'play' && !dun) { enterVillage(); if (vil) { vil.fade = 0; enterChurch(); vil.fade = 0; } } return; }
+  if (act === 'dundoor') { dunDoor = { x: Math.max(160, Math.min(WW - 160, hero.x + 170)), y: Math.max(230, Math.min(WH - 120, hero.y + 20)), t: 24, max: 24, p: 0 }; dunRolled = true; waveTimer = Math.max(waveTimer, 26); said('A stone door opens beside you'); }
+  if (act === 'dunleave') { showMenu(null); exitDungeon(); return; }
+  if (dun && act === 'dunfloor') { dun.fade = 0; switchFloor(+t, +t > dun.idx); showMenu(null); return; }
+  if (dun && act === 'dunwake') { for (const m of enemies) wakeMob(m, 'chain'); said('Everything is awake'); }
+  if (dun && act === 'dunchests') { for (const c of dun.f.chests) if (!c.open) { c.locked = false; openChest(c); } said('Every chest opened'); }
+  if (dun && act === 'dunseal') { const f = dun.f; f.bossDead = true; for (const c of f.chests) c.locked = false; said(f.last ? 'The seal is broken' : 'No seal on this floor'); }
+  if (dun && act === 'dunreveal') { dun.f.seen.fill(1); said('The floor is mapped'); }
+  if (dun && act === 'dungo') {
+    const f = dun.f; let p = null;
+    if (t === 'up') p = { x: f.up.x + 60, y: f.up.y }; else if (t === 'down') p = f.down && { x: f.down.x - 60, y: f.down.y };
+    else if (t === 'chest') { const c = f.chests.filter(c => !c.open).sort((a, b) => Math.hypot(a.x - hero.x, a.y - hero.y) - Math.hypot(b.x - hero.x, b.y - hero.y))[0]; p = c && { x: c.x, y: c.y + 36 }; }
+    else if (t === 'boss') p = f.boss && { x: f.boss.x - 220, y: f.boss.y };
+    if (p) { hero.x = p.x; hero.y = p.y; dunPush(hero, 11); showMenu(null); return; } else said('Nothing like that on this floor');
+  }
+  if (act === 'questdone') { for (const q of hero.quests.active.slice()) { q.n = q.goal; completeQuest(q); } said('Active quests finished'); }
+  if (act === 'questclear') { hero.quests.active = []; hero.quests.claim = []; said('Quests cleared'); }
+  if (act === 'sigweapon' || act === 'sigall' || act === 'rangedall') {
+    const ids = act === 'sigweapon' ? [t] : SWORDS.filter(s => act === 'sigall' ? s.sig : s.ranged && !s.sig).map(s => s.id), r = Math.max(4, devPick.rarity);
+    for (const id of ids) giveItem(rollItem({ slot: 'weapon', base: id, rarity: r, level: hero.level, boss: true }));
+    said(`Added ${ids.length} weapon${ids.length === 1 ? '' : 's'}`);
+  }
+  if (act === 'fidget') { for (const m of enemies) if (m.type !== 'boss' && !m.sleep && FIDGETS[m.type]) { const pick = FIDGETS[m.type][Math.floor(Math.random() * FIDGETS[m.type].length)]; m.fid = { kinds: pick, t: 0, dur: Math.max(...pick.map(k => FID_TIME[k] || 1.2)) }; m.speed = 0; } said('Everything stands still and fidgets'); }
+  if (act === 'parade') { const ts = Object.keys(TYPES).filter(k => k !== 'boss'); enemies = enemies.filter(m => m.type === 'boss'); ts.forEach((k, i) => { const m = spawnEnemy(k, { x: Math.max(40, Math.min(WW - 40, hero.x - 20 + (i % 8) * 110 - 380)), y: Math.max(80, Math.min(WH - 20, hero.y + 120 + Math.floor(i / 8) * 90)) }, { variant: 'plain', spawnT: 0 }); if (dun) dunPush(m, m.r); m.hp = 0; }); updateEnemies(0); said('Every creature dies in its own way'); }
   renderDev();
 });
 function drawHitboxes() {
@@ -3298,7 +3425,7 @@ function updateCamp(dt) {
     tod = camp.plan.endTod; dayCount = camp.plan.endDay;        // morning has come (before the biome rolls its weather)
     setBiome(camp.zone, false);
     hero.x = WW / 2; hero.y = WH / 2; cam.x = hero.x - VW / 2; cam.y = hero.y - VH / 2;
-    drops = []; projectiles = []; shockwaves = []; particles = []; corpses = []; clearHazards(); clearPoison();
+    drops = []; projectiles = []; heroShots = []; shockwaves = []; particles = []; corpses = []; clearHazards(); clearPoison();
   }
   camp.crackleT -= dt;
   if (camp.crackleT <= 0) { camp.crackleT = 0.08 + Math.random() * 0.35; sfx('crackle'); }
@@ -3432,7 +3559,7 @@ function render() {
     g.addColorStop(0, 'rgba(120,0,0,0)'); g.addColorStop(1, `rgba(150,0,0,${0.3 + (settings.comfort ? 0 : Math.sin(tAnim * 3) * 0.08)})`);
     ctx.fillStyle = g; ctx.fillRect(0, 0, VW, VH);
   }
-  drawSky();
+  if (dun) drawDungeonDark(); else drawSky();
   if (flash > 0) { ctx.fillStyle = `rgba(255,255,255,${Math.min(0.7, flash)})`; ctx.fillRect(0, 0, VW, VH); }
   drawHUD();
   drawPopups(true);

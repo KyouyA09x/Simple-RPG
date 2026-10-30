@@ -9,7 +9,7 @@ const { packager } = require('@electron/packager');
 const root = path.resolve(__dirname, '..');
 const stage = path.join(__dirname, '_out');                  // packager output and the zip; the app itself is moved to <project>/launcher
 const GAME_FILES = ['index.html', 'main.js', 'preload.js', 'package.json',
-  'sfx.js', 'postfx.js', 'sky.js', 'vision.js', 'biomes.js', 'props.js', 'terrain.js', 'critters.js', 'gear.js', 'rebirth.js', 'villagers.js', 'village.js', 'camp.js', 'variants.js', 'bosses.js', 'mobs.js', 'game.js'];
+  'sfx.js', 'postfx.js', 'sky.js', 'vision.js', 'biomes.js', 'props.js', 'terrain.js', 'critters.js', 'gear.js', 'rebirth.js', 'villagers.js', 'village.js', 'camp.js', 'variants.js', 'bosses.js', 'mobs.js', 'arms.js', 'dungeon.js', 'game.js'];
 // allow-list: everything else (including the finished "Stick RPG" folder and the staging folder) is never packaged
 const keep = new Set(['', ...GAME_FILES.map(f => '/' + f), '/icon', '/icon/stickrpg.ico']);
 
@@ -27,7 +27,7 @@ const README = [
   'Run "Stick RPG.exe" to play. No installation needed; keep this whole folder together.',
   'Your saves are in the "saves" folder next to the exe, and settings in "data"; both survive updates, and you can back them up by copying the folders.',
   'Settings > Load Game can also export a save to a file.',
-  'Controls: WASD/arrows move, Space attack, Shift flip, Q use item (hold R to switch), E talk, M character and inventory, Esc pause, F fullscreen. The game starts fullscreen.',
+  'Controls: WASD/arrows move, Space attack, Shift flip, Q potion, E talk, M character and inventory, Esc pause, F fullscreen. The game starts fullscreen.',
   '',
 ].join('\r\n');
 

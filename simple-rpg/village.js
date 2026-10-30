@@ -3,7 +3,7 @@
 // (`world`, `enemies`, `wave`...) is left exactly as it was and play resumes where it stopped.
 // villagers.js holds the drawing; this file holds the layout, villager routines, hero control, shops and saving.
 
-const VIL_W = 2400, VIL_H = 1080, VIL_ROAD = 548, VIL_LANE = 905;
+const VIL_W = 3000, VIL_H = 1080, VIL_ROAD = 548, VIL_LANE = 905;
 const VIL_ZOOM = 1.5;           // the village is drawn this much bigger than the battlefield, so people and buildings read clearly
 let vil = null;                 // the village being visited, or null
 let villageSkip = -1;           // boss wave whose village was already visited (it only appears once per set)
@@ -152,6 +152,7 @@ const SHOP_ROW = {                                     // the row north of the r
   armoury: { w: 190, wh: 72, rh: 46, sign: 'shield' },
   jewel:   { w: 160, wh: 64, rh: 42, sign: 'gem', flowers: true },
   craft:   { w: 180, wh: 72, rh: 48, sign: 'hammer', paint: { wall: '#c9bba4', roof: '#5a4638', trim: '#3a2a20' } },       // the Crafting Hall: shuttered for now
+  church:  { w: 270, wh: 96, rh: 64, church: true, paint: { wall: '#e6e1d3', roof: '#58627f', trim: '#7a6a4a', chimney: false } },       // the church of Return: the priestess and the rite of rebirth are inside
   enchant: { w: 170, wh: 70, rh: 50, sign: 'rune', paint: { wall: '#cfc6e4', roof: '#4b3a8c', trim: '#33265c' } },       // Ysolde's house: lavender walls and a deep violet roof, whatever the biome
 };
 const YARD_W = { garden: 230, lawn: 430, smith: 300, wood: 310 };       // widths of the yards south of the road
@@ -189,9 +190,10 @@ function buildVillage() {
   const order = shuffle(Object.keys(SHOP_ROW));
   const sumW = order.reduce((a, k) => a + SHOP_ROW[k].w, 0), gapN = (VIL_W - 260 - sumW) / (order.length - 1);
   let cursor = 130;
-  for (const id of order) { const s = SHOP_ROW[id]; mkB(id, cursor + s.w / 2, 336 + Math.floor(r() * 24), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers, ...(s.paint || {}) }); cursor += s.w + gapN; }
+  for (const id of order) { const s = SHOP_ROW[id]; mkB(id, cursor + s.w / 2, 336 + Math.floor(r() * 24), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers, church: s.church, ...(s.paint || {}) }); cursor += s.w + gapN; }
   v.shopOrder = order;
   const { alch, store, armoury, jewel, enchant } = v.b;
+  v.church = v.b.church; v.cSolids = churchSolids(v);
 
   // ---- shop counters and a bit of clutter at the left corner of every shop ----
   const counter = (b, w, kind, awn) => {
@@ -230,20 +232,6 @@ function buildVillage() {
   const wx = E > 0 ? 150 : VIL_W - 150;
   prop('welcome', wx, 502, { text: st.name }); circle(wx, 500, 5);
   v.arrive = { x: E > 0 ? 112 : VIL_W - 112, y: VIL_ROAD + 4 };
-
-  // ---- the Shrine of Return (rebirth): north of the plaza, clear of the shop doors and the furniture ----
-  {
-    const avoid = [...doors.map(d => [d, 84]), [benchA.x, 90], [benchB.x, 90], [board.x, 90], [plaza.x, 66], [gate.x, 150]];
-    let sx = null;
-    for (let dx = 0; dx <= 760 && sx === null; dx += 10) for (const sg of [1, -1]) {
-      const x = plaza.x + sg * dx;
-      if (x < 190 || x > VIL_W - 190 || avoid.some(([a, m]) => Math.abs(x - a) < m)) continue;
-      sx = x; break;
-    }
-    if (sx === null) sx = plaza.x + (sA > 0 ? -330 : 330);
-    v.shrine = prop('shrine', sx, 462, { glow: 0 }); rect(sx - 34, 462 - 18, sx + 34, 462 + 2);
-    keep(sx - 80, 380, sx + 80, 500);
-  }
 
   // ---- the yards south of the road, in a random order ----
   const YARDS = {
@@ -320,7 +308,7 @@ function buildVillage() {
   };
   let guard = 0;
   v.trees = [];
-  while (v.trees.length < 140 && guard++ < 2000) {
+  while (v.trees.length < 200 && guard++ < 3000) {
     const edge = r() < 0.7;
     const x = edge ? (r() < 0.5 ? 20 + r() * (VIL_W - 40) : (r() < 0.5 ? 20 + r() * 90 : VIL_W - 110 + r() * 90)) : 30 + r() * (VIL_W - 60);
     const y = edge ? (r() < 0.55 ? 100 + r() * 95 : (r() < 0.5 ? VIL_H - 65 + r() * 55 : 130 + r() * (VIL_H - 160))) : 130 + r() * (VIL_H - 160);
@@ -329,7 +317,7 @@ function buildVillage() {
     v.trees.push(p); add(y, () => drawProp(p));
     if (x > 56 && x < VIL_W - 56 && y > 135 && y < VIL_H - 56) circle(x, y - 2, 9 * Math.min(1.3, p.s));   // trees on the map edge are scenery only (the edge clamp would wedge the hero into them)
   }
-  for (let i = 0; i < 16; i++) {                         // the wider village has flower meadows in the open spaces
+  for (let i = 0; i < 24; i++) {                         // the wider village has flower meadows in the open spaces
     const x = 160 + r() * (VIL_W - 320), y = 150 + r() * (VIL_H - 260);
     if (!okSpot(x, y) || v.trees.some(t => Math.hypot(t.x - x, t.y - y) < 70)) continue;
     patch(x, y, 55 + r() * 60, 26 + r() * 26, B.grass[1], 0.5, { n: 46, rx: 80, ry: 34, cols: ['#f28ab2', '#f4e04d', '#ffffff', '#b99bff'], w: 2.4, h: 2.4 });
@@ -432,7 +420,7 @@ const EXTRA_LINES = {
   pim: ['Carrots are patient. Cabbages are stubborn. Roses are drama.', 'Every dawn I tell the plants good morning. The beans never answer. The beans are rude.', 'A garden is just a slow conversation with the weather.'],
   rurik: ['Cut it clean, stack it neat, burn it warm. That is all of woodcraft.', 'Trees do not mind being cut if you ask them first. I always ask.', 'The splitting maul has a name. I will not tell you what it is.'],
   orla: ['The village is quiet because the young ones are loud elsewhere.', 'Your boots tell me a long story. Go on, sit and tell me the rest.', 'I have outlived three innkeepers and one very rude goat.'],
-  eira: ['A return is not an ending, {name}. It is the part of the song that circles back.', 'Level does not forget. Neither does the shrine.', 'The Mythical pieces cling to you. You are lucky to be liked by such things.'],
+  eira: ['A return is not an ending, {name}. It is the part of the song that circles back.', 'Level does not forget. Neither does the church.', 'The Mythical pieces cling to you. You are lucky to be liked by such things.'],
   voss: ['I have counted the gate posts every morning for eleven years. They have not moved.', 'A guard is a patient man with a sharp stick.', 'Nothing is quiet here forever, hero. That is what the stick is for.'],
   pip: ['I am the fastest in the village. Nell says she is. She is not.', 'When I grow up I will have a sword and a dog and a very big ball.'],
   nell: ['Pip says I cannot be a hero because I am small. I say heroes start small. Like acorns.', 'Tam is the strongest kicker. But I am the sneakiest.'],
@@ -441,7 +429,7 @@ const EXTRA_LINES = {
 const RUMORS = [
   'They say the beast on the road changes with every set of waves. Bring something that bites back.',
   'A trader from {biome} swore the stones there hum at night. I did not ask which stones.',
-  'Eira says the shrine hums louder when a hero is close to the top.',
+  'The priestess says the church bell rings by itself when a hero is close to the top.',
   'Wave {wave} already? The last hero stopped well before that. Folk still talk about them.',
   'Ysolde has been buying every rune she can find. The rune dealers are nervous.',
   'Brann is working on something big. Or he dropped his hammer. Hard to tell.',
@@ -467,7 +455,7 @@ const ASK_WORK = {
   pim: ['Cabbages, carrots and an unreasonable number of flowers. The beast leaves them alone. I do not know why.', 'I water at dawn and gossip with the beans at noon.'],
   rurik: ['I fell the trees, split the logs and stack them neat. The inn burns more than you would think.', 'Cut one, plant ten. That is the deal I made with the forest.'],
   orla: ['I knit, I read the notice board, and I tell the young ones they are wrong. Someone has to.', 'Elders are mostly the ones who sat down first.'],
-  eira: ['I keep the Shrine of Return. Reach the top and I can send you back down, stronger.', 'I do not make anyone return. I only open the door and hold the light.'],
+  eira: ['I am the priestess here. Reach the top and I can send you back down, stronger.', 'I do not make anyone return. I only open the door and hold the light.'],
   voss: ['I guard the gate. I count the posts. The beast on the road keeps me honest.', 'Heroes go out. Most come back. I make sure the ones who do not are remembered.'],
   pip: ['We are playing ball! You can play too! ...Do you know how to kick?', 'I am the goalie! Nell is the other goalie! Tam kicks and nobody is happy.'],
   nell: ['We are playing tag! Everybody is it! Nobody is winning!', 'I am the fastest. Do not tell Pip. He gets sulky.'],
@@ -480,7 +468,7 @@ const STORIES = [
   'There was a Warden once who could not be killed. Eight times the beasts took him and eight times he stood up. The ninth time he did not. We still lay a place for him at the fire.',
   'The old song goes: eight fires, eight roads, eight hearts. When the last fire goes out, someone new lights the first. I always thought it was only a song.',
   'When I was small, a stranger walked out of the dusk with a red scarf and no name. They stayed one night, ate three bowls of soup and left before dawn. I think about them often.',
-  'Heroes come back, you know. Not always the way they left. A kind of loop in the road. The shrine knows. Eira keeps count.',
+  'Heroes come back, you know. Not always the way they left. A kind of loop in the road. The church knows. Eira keeps count.',
 ];
 const PAIR_CHAT = {
   'mira|tobin': ["Tobin, you owe me for the lantern oil!", 'Put it on my tab, Mira!'],
@@ -671,11 +659,11 @@ function makeNpcs(v) {
     script: () => [{ go: [v.benchA.x, v.benchA.y + 6] }, { do: 'knit', t: [18, 30], face: -1 }, { go: [v.board.x - 40 * Math.sign(v.board.x - v.benchA.x), v.board.y + 8], speed: 30 }, { do: 'read', t: [4, 6], face: 1 },
       { go: [wellSpot[0] + 10, wellSpot[1] + 6], speed: 30 }, { t: [3, 5], face: 1 }, { go: [v.benchA.x, v.benchA.y + 6], speed: 30 }],
   });
-  mk('eira', 'Eira', 'Keeper of the Shrine', v.shrine.x + 50, v.shrine.y + 16, {
-    special: 'shrine', look: { dress: '#d9d4f0', hat: 'kerchief', hatColor: '#c9b8ff', hair: '#e8e0ff', cheek: true }, f: -1, speed: 36,
-    lines: ['The shrine remembers everyone who has climbed as far as you. It also remembers the ones who did not come back.', 'Reach the top, and I can send you back down, stronger. Ask me when you are ready.', 'Mythical and secret things are loyal. They will wait for you in the pack. Everything else is only gold.'],
+  mk('eira', 'Eira', 'Priestess', CHURCH.ox + 320, CHURCH.oy + 152, {
+    special: 'shrine', inside: true, look: { dress: '#f1eee6', stole: '#d9b44a', hat: 'veil', hatColor: '#f6f2e8', hair: '#e8e0ff', cheek: true }, f: 1, speed: 36,
+    lines: ['The light above the altar remembers everyone who has climbed as far as you. It also remembers the ones who did not come back.', 'Reach the top, and I can send you back down, stronger. Ask me when you are ready.', 'Mythical and secret things are loyal. They will wait for you in the pack. Everything else is only gold.'],
     chat: ['Hm hm...', 'The light is kind today.', 'Begin again, and again.'],
-    script: () => [{ t: [6, 11], face: -1 }, { do: 'wipe', t: [2, 3] }, { t: [6, 11], face: 1 }],
+    script: (v, n) => churchRoutine(v, n),
   });
   mk('voss', 'Sgt. Voss', 'Gate Guard', v.gate.x - 98 * v.E, v.gate.y - 28, {
     special: 'guard', look: { body: '#4a5a7a', hat: 'helmet', hatColor: '#c0392b', beard: '#6a5a4a', spear: true }, f: -v.E, speed: 36,
@@ -775,7 +763,7 @@ function vilGrid(v) {
   return { C, W, H, bl };
 }
 function findPath(v, sx, sy, tx, ty, r) {
-  const g = v.grid || (v.grid = vilGrid(v)), { C, W, H, bl } = g;
+  const g = v.inChurch ? (v.cgrid || (v.cgrid = vilGrid(v))) : (v.grid || (v.grid = vilGrid(v))), { C, W, H, bl } = g;           // the church is a room of its own, with its own map
   const gx = x => Math.max(0, Math.min(W - 1, Math.floor(x / C))), gy = y => Math.max(0, Math.min(H - 1, Math.floor(y / C)));
   const nearestFree = (x, y) => {
     const X0 = gx(x), Y0 = gy(y); if (!bl[Y0 * W + X0]) return Y0 * W + X0;
@@ -1042,7 +1030,7 @@ function updateVillageHero(dt, v) {
     if (held('up')) dy--; if (held('down')) dy++;
   }
   hero.moving = !!(dx || dy);
-  pushOutOfPeople(v);                                                   // someone walked into you: step aside rather than overlap
+  if (!v.inChurch) pushOutOfPeople(v);                                  // someone walked into you: step aside rather than overlap
   if (hero.moving) {
     const len = Math.hypot(dx, dy), spd = moveSpeed() * 0.92;
     const c = vilCollide(v, hero.x + dx / len * spd * dt, hero.y + dy / len * spd * dt, 9, hero.x, hero.y, true);
@@ -1086,22 +1074,26 @@ function updateVillage(dt) {
   }
   if (v.leaveT > 0) { v.leaveT -= dt; if (v.leaveT <= 0 && !v.doneLeave) { v.doneLeave = true; leaveVillage(); return; } }
   updateVillageHero(dt, v);
-  for (const n of v.npcs) npcTick(n, dt, v);
-  pairChats(v, dt);
-  for (const a of v.animals) animalTick(a, dt, v);
-  for (const h of v.hens) animalTick(h, dt, v);
-  for (const p of v.plants) p.wet = Math.max(0, p.wet - dt * 0.4);
+  if (!v.inChurch) {
+    for (const n of v.npcs) if (n.special !== 'shrine') npcTick(n, dt, v);
+    pairChats(v, dt);
+    for (const a of v.animals) animalTick(a, dt, v);
+    for (const h of v.hens) animalTick(h, dt, v);
+    for (const p of v.plants) p.wet = Math.max(0, p.wet - dt * 0.4);
+  }
   // chimney smoke, lazily
   v.smokeT -= dt;
-  if (v.smokeT <= 0) { v.smokeT = 0.35; for (const b of v.buildings) if (inView(b.chim.x, b.chim.y, 160)) vfx(v, { x: b.chim.x, y: b.chim.y, vx: 8 + Math.random() * 6, vy: -16 - Math.random() * 8, life: 3 + Math.random(), size: 3, color: 'rgba(210,210,215,0.45)', smoke: true }); }
+  if (v.smokeT <= 0) { v.smokeT = 0.35; if (!v.inChurch) for (const b of v.buildings) if (!b.church && inView(b.chim.x, b.chim.y, 160)) vfx(v, { x: b.chim.x, y: b.chim.y, vx: 8 + Math.random() * 6, vy: -16 - Math.random() * 8, life: 3 + Math.random(), size: 3, color: 'rgba(210,210,215,0.45)', smoke: true }); }
   for (const f of v.fx) { f.life -= dt; f.vy += f.grav * dt; f.x += f.vx * dt; f.y += f.vy * dt; if (f.smoke) f.size += dt * 2.2; }
   v.fx = v.fx.filter(f => f.life > 0);
   // what can the hero talk to?
+  if (v.inChurch) { churchNear(v, dt); return churchCam(v, dt); }
   let best = null, bd = 1e9;
   const consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y); if (d < r && d < bd) { bd = d; best = { kind, ref, x, y, label, tag }; } };
   for (const n of v.npcs) if (!n.inside && n.alpha > 0.5 && !n.goHome) consider('npc', n, n.x, n.y, n.shop ? 72 : 64, n.name, n.role);
   if (v.b.craft && !v.talk) consider('craft', null, v.b.craft.door.x, v.b.craft.door.y + 6, 62, 'Crafting Hall', 'Opening soon');
   if (Math.abs(hero.x - v.gate.x) < 110 && Math.abs(hero.y - v.gate.y) < 80) consider('gate', null, v.gate.x - 24 * v.E, v.gate.y - 40, 999, 'The road', 'Leave the village');
+  if (!v.talk) consider('church', null, v.church.door.x, v.church.door.y + 4, 66, 'Church of Return', 'Enter');
   consider('board', null, v.board.x, v.board.y - 40, 70, 'Notice board', 'Read');
   if (!best) consider('dog', v.dog, v.dog.x, v.dog.y - 14, 46, 'Biscuit', 'Pet');     // the dog never steals the prompt from a person
   v.near = best;
@@ -1113,6 +1105,103 @@ function updateVillage(dt) {
   popups = popups.filter(p => p.t > 0);
   v.soundT -= dt;
   if (v.soundT <= 0) { v.soundT = 0.5; Sound.setScene({ biome: 'village', night: curNight > 0.5, wind: 0.02, rain: 0, pitch: 450 }); }
+}
+
+// ---------------------------------------------------------------- the church: a room of its own, entered through the big door (E); the priestess and the rite of rebirth are in here
+const CHURCH = { w: 640, h: 300, ox: 400, oy: 250 };
+function churchSolids(v) {
+  const c = CHURCH, S = [{ x0: c.ox - 90, y0: c.oy - 90, x1: c.ox + 14, y1: c.oy + c.h + 90 }, { x0: c.ox + c.w - 14, y0: c.oy - 90, x1: c.ox + c.w + 90, y1: c.oy + c.h + 90 }, { x0: c.ox - 90, y0: c.oy - 90, x1: c.ox + c.w + 90, y1: c.oy + 102 }, { x0: c.ox - 90, y0: c.oy + c.h - 2, x1: c.ox + c.w + 90, y1: c.oy + c.h + 90 },
+    { x0: c.ox + 274, y0: c.oy + 104, x1: c.ox + 366, y1: c.oy + 128 }];
+  v.cpots = [[34, 128], [606, 128], [226, 178], [414, 178]].map(([x, y], k) => ({ x: c.ox + x, y: c.oy + y, k, wet: 0 })); for (const p of v.cpots) S.push({ x: p.x, y: p.y - 4, r: 9 });
+  c.pews = []; for (const y1 of [176, 222, 268]) for (const [x0, x1] of [[50, 190], [450, 590]]) { const p = { x0: c.ox + x0, y0: c.oy + y1 - 16, x1: c.ox + x1, y1: c.oy + y1 }; c.pews.push(p); S.push({ x0: p.x0, y0: p.y0 - 4, x1: p.x1, y1: p.y1 }); }
+  return S;
+}
+// the priestess keeps herself busy: she waters the flowers, prays on one of the pews (any of them) or at the altar, polishes the altar, and stands by it between times
+function churchRoutine(v, n) {
+  const c = CHURCH, rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
+  const kind = pick(['water', 'water', 'pew', 'pew', 'altar', 'polish'].filter(k => k !== n.lastKind)); n.lastKind = kind;
+  const post = [{ go: [c.ox + 320, c.oy + 152], speed: 30 }, { t: [4, 8], face: Math.random() < 0.5 ? 1 : -1 }];
+  if (kind === 'water') {
+    const pot = pick(v.cpots), sd = pot.x < c.ox + 320 ? 1 : -1;
+    return [{ go: [pot.x + sd * 24, pot.y + 8], speed: 34 }, { do: 'water', t: [4, 6], face: -sd, tick: (n2, v2, dt) => {
+      if (Math.random() < dt * 22) vfx(v2, { x: n2.x + n2.f * 24, y: n2.y - 34, vx: n2.f * (30 + Math.random() * 20), vy: 10, grav: 340, life: 0.55, size: 1.6, color: '#a6d8ff' }); pot.wet = 1; } }, ...post];
+  }
+  if (kind === 'pew') {
+    const p = pick(c.pews), x = rnd(p.x0 + 24, p.x1 - 24);
+    return [{ go: [x, p.y1 + 8], speed: 34 }, { do: 'sitpray', t: [14, 24], face: Math.random() < 0.5 ? 1 : -1 }, ...post];
+  }
+  if (kind === 'altar') {
+    const sd = Math.random() < 0.5 ? 1 : -1;
+    return [{ go: [c.ox + 320 + sd * 26, c.oy + 137], speed: 34 }, { do: 'pray', t: [10, 16], face: -sd }, ...post];
+  }
+  const sd = Math.random() < 0.5 ? 1 : -1;                         // polishing the altar from the side
+  return [{ go: [c.ox + 320 + sd * 70, c.oy + 116], speed: 34 }, { do: 'wipe', t: [3, 5], face: -sd }, ...post];
+}
+function enterChurch() {
+  const v = vil, c = CHURCH; if (!v || v.inChurch) return;
+  v.inChurch = true; v.cOut = { x: hero.x, y: hero.y }; v.solidsOut = { s: v.solids, h: v.solidsH }; v.solids = v.cSolids; v.solidsH = v.cSolids;
+  hero.x = c.ox + 320; hero.y = c.oy + 248; hero.facing = 1; hero.moving = false; hero.walkT = 0; hero.scarf.forEach(p => { p.x = hero.x; p.y = hero.y - 50; });
+  for (const k in keys) keys[k] = false;
+  v.fade = 1; v.near = null; cam.x = c.ox; cam.y = c.oy - 20;
+  sfx('door'); sfx('bell'); popups = popups.filter(p => p.screen); popups.push({ text: 'Church of Return', x: VW / 2, y: 70, t: 2.6, big: true, screen: true, color: '#f4ecd0' });
+}
+function leaveChurch() {
+  const v = vil; if (!v || !v.inChurch) return;
+  v.inChurch = false; v.solids = v.solidsOut.s; v.solidsH = v.solidsOut.h; v.talk = null;
+  const d = v.church.door, c = vilCollide(v, d.x, d.y + 34, 9, undefined, undefined, true);
+  hero.x = c.x; hero.y = c.y; hero.facing = 1; hero.moving = false; hero.walkT = 0; hero.scarf.forEach(p => { p.x = hero.x; p.y = hero.y - 50; });
+  for (const k in keys) keys[k] = false;
+  v.fade = 1; v.near = null; sfx('door');
+  const vw = VW / VIL_ZOOM, vh = VH / VIL_ZOOM; cam.x = clampN(hero.x - vw / 2, 0, VIL_W - vw); cam.y = clampN(hero.y - vh / 2 - 12, 0, VIL_H - vh);
+}
+function churchNear(v, dt) {
+  const c = CHURCH, e = v.npcs.find(n => n.special === 'shrine');
+  if (e) {
+    e.alpha = 1;
+    if (v.talk && v.talk.ref === e) { e.moving = false; e.pose = 'stand'; e.f = hero.x >= e.x ? 1 : -1; }          // she stops what she is doing to talk
+    else { runScript(e, dt, v); if (e.pose === 'stand' && !e.moving && Math.hypot(hero.x - e.x, hero.y - e.y) < 70 && !e.cur) e.f = hero.x >= e.x ? 1 : -1; }
+    const dx = hero.x - e.x, dy = hero.y - e.y, d = Math.hypot(dx, dy), min = 9 + e.r + 2;                               // nobody walks through her
+    if (d < min) { const k = d < 0.01 ? 0 : (min - d) / d; hero.x += d < 0.01 ? min : dx * k; hero.y += dy * k; const cc = vilCollide(v, hero.x, hero.y, 9, undefined, undefined, true); hero.x = cc.x; hero.y = cc.y; }
+    for (const p of v.cpots) p.wet = Math.max(0, p.wet - dt * 0.25);
+    if (e.bubbleT > 0) { e.bubbleT -= dt; if (e.bubbleT <= 0) { e.bubble = null; e.talking = false; } }
+  }
+  let best = null, bd = 1e9;
+  const consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y); if (d < r && d < bd) { bd = d; best = { kind, ref, x, y, label, tag }; } };
+  if (e) consider('npc', e, e.x, e.y, 78, e.name, e.role + (e.pose === 'sitpray' || e.pose === 'pray' ? ' · praying' : ''));
+  consider('exit', null, c.ox + 320, c.oy + c.h - 6, 44, 'the church', 'Leave');
+  v.near = best;
+}
+function churchCam(v, dt) {
+  const c = CHURCH; cam.x = c.ox; cam.y = c.oy - 20; cam.shake = 0;
+  for (const p of popups) { p.t -= dt; if (p.pop !== undefined) p.pop += dt; if (!p.big && !p.screen) p.y -= 30 * dt; }
+  popups = popups.filter(p => p.t > 0);
+  v.soundT -= dt; if (v.soundT <= 0) { v.soundT = 0.5; Sound.setScene({ biome: 'village', night: false, wind: 0, rain: 0, pitch: 450 }); }
+}
+function drawChurchInside(v) {
+  const c = CHURCH, Z = VIL_ZOOM, t = v.t;
+  ctx.fillStyle = '#08080e'; ctx.fillRect(0, 0, VW, VH);
+  ctx.save(); ctx.scale(Z, Z); ctx.translate(-c.ox, -(c.oy - 20));
+  drawChurchRoom(v, { x: c.ox, y: c.oy });
+  const things = [], e = v.npcs.find(n => n.special === 'shrine');
+  for (const p of c.pews) things.push({ y: p.y1, d: () => drawChurchPew(p) });
+  for (const p of v.cpots) things.push({ y: p.y, d: () => drawChurchPot(p, t) });
+  const altar = { x: c.ox + 320, y: c.oy + 128 }; things.push({ y: altar.y, d: () => drawChurchAltar(altar, t) });
+  if (e) things.push({ y: e.y, d: () => drawVillager(e) });
+  things.push({ y: hero.y, d: () => drawHero(hero) });
+  things.sort((a, b) => a.y - b.y).forEach(o => o.d());
+  drawChurchLight(c.ox + 320, c.oy + 38, t);
+  for (const f of v.fx) { const a = Math.max(0, Math.min(1, f.life / f.max)); ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
+  if (e && e.bubble) drawBubble(e.x, e.y - 82, e.bubble, 1);
+  if (v.near && !v.talk) {
+    const q = v.near, ty = q.kind === 'npc' ? q.ref.y - 100 : q.y - 22, bob = Math.sin(tAnim * 5) * 2;
+    ctx.save(); ctx.fillStyle = 'rgba(20,20,28,0.88)'; ctx.strokeStyle = '#f5c451'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(q.x - 11, ty - 11 + bob, 22, 22, 6); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#f5c451'; ctx.font = 'bold 14px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText(keyLabel('interact'), q.x, ty + 5 + bob); ctx.restore();
+  }
+  ctx.restore();
+  const vg = ctx.createRadialGradient(VW / 2, VH * 0.45, VH * 0.35, VW / 2, VH * 0.45, VW * 0.62); vg.addColorStop(0, 'rgba(10,6,16,0)'); vg.addColorStop(1, 'rgba(10,6,16,0.5)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, VW, VH);
+  if (v.fade > 0) { ctx.fillStyle = `rgba(2,3,10,${v.fade})`; ctx.fillRect(0, 0, VW, VH); }
+  drawVillageHUD(v);
+  drawPopups(true);
 }
 
 // ---------------------------------------------------------------- entering and leaving
@@ -1166,7 +1255,7 @@ const HELLO = {
   rurik: ['Rurik. Woodcutter. Watch your feet.', 'Hello there, {name}. Mind the chips.'],
   orla: ['Hello, dear. Sit a while, you look like you could use it.', 'Ah, the hero. {village} has been talking about you.'],
   voss: ['Sergeant Voss. {village} is under my watch.', 'Halt. State your... oh. The hero. Carry on.'],
-  eira: ['Welcome, {name}. I am Eira. I keep the Shrine of Return, and I have been expecting you.', 'Ah. A traveller with a long road behind them. Come and see the shrine.'],
+  eira: ['Welcome, {name}. I am Eira, the priestess. I have been expecting you.', 'Ah. A traveller with a long road behind them. Light a candle with me.'],
 };
 function contextLines(n) {
   const h = hero, out = [], night = night01() > 0.5, hpf = h.hp / h.maxHp, morning = tod > 0.28 && tod < 0.45, id = n.id;
@@ -1176,7 +1265,7 @@ function contextLines(n) {
   const wk = typeof weather !== 'undefined' && weather ? weather.kind : 'clear';
   all(wk === 'rain' || wk === 'drizzle', 'Wet one, is it not? Mind the mud, {name}.'); all(wk === 'storm', 'Thunder again. Best keep to the inn tonight, {name}.'); all(wk === 'snowfall' || wk === 'blizzard', 'Snow again. At least it keeps the beasts quiet.');
   all(wk === 'fog', 'Fog like milk. Do not wander off the road, {name}.'); all(wk === 'sandstorm', 'Grit in everything. Even the soup.'); all(wk === 'heat' || wk === 'mirage', 'Hot enough to fry an egg on the well.');
-  all(h.gold >= 2000, 'That is a lot of gold to carry down a beast road, {name}. Spend a little here, I say.'); all(h.level >= levelCap(), 'You have reached the top, {name}. Eira at the shrine can show you what comes next.');
+  all(h.gold >= 2000, 'That is a lot of gold to carry down a beast road, {name}. Spend a little here, I say.'); all(h.level >= levelCap(), 'You have reached the top, {name}. Eira at the church can show you what comes next.');
   all(hasAilment(), 'You do not look well, {name}. A healing potion clears every ailment, you know.'); all(rebirths() >= 1, 'Reborn already? I could swear I remember you from before. Or I imagine it.');
   all(bondOf(id) >= 3, 'Always good to see you, {name}. ...Do not tell the others I said so.'); all(bondOf(id) >= 6, 'You are a friend of this village, {name}. We look after our own.'); all(bondOf(id) >= BOND_MAX, 'Eight hearts! There is nobody in {village} who would not stand beside you, {name}.');
   all(wave >= 19, 'Wave {wave} already. Tier {tier} beasts out there. You are braver than most.');
@@ -1190,7 +1279,7 @@ function contextLines(n) {
   if (id === 'pim') { all(morning, 'Best time to water is the morning. The plants drink it up.'); all(night, 'You should be indoors in this dark. I will see to the beds tomorrow.'); }
   if (id === 'rurik') { all(night, 'Cannot chop in the dark, can I? The axe knows when to rest.'); all(wave >= 10, 'The trees by the road thin out every set. Whatever is out there, it is hungry.'); }
   if (id === 'orla') { all(night, 'The night air is bad for old bones. Come and tell me a story in the morning.'); all(h.level >= 10, 'Level {name}... such a hero. In my day we just had a stout stick.'); }
-  if (id === 'eira') { all(h.level >= levelCap(), 'You have climbed as far as you can, {name}. The shrine is ready for you whenever you are.'); all(h.level < levelCap(), 'Level {name}... not yet at the top. Come back at level ' + levelCap() + '.'); all(rebirths() > 0, 'Reborn ' + rebirths() + ' time' + (rebirths() === 1 ? '' : 's') + ' already. The shrine knows you.'); }
+  if (id === 'eira') { all(h.level >= levelCap(), 'You have climbed as far as you can, {name}. The church is ready for you whenever you are.'); all(h.level < levelCap(), 'Level {name}... not yet at the top. Come back at level ' + levelCap() + '.'); all(rebirths() > 0, 'Reborn ' + rebirths() + ' time' + (rebirths() === 1 ? '' : 's') + ' already. The church knows you.'); }
   if (id === 'voss') { all(hpf < 0.7, 'You are bleeding, {name}. See the innkeeper before you go out that gate.'); all(h.potions === 0, 'Not a single potion? I would not walk that road without one.'); }
   if (n.kid) { all(h.gold >= 400, 'Whoa, you have so much gold! Are you rich?'); all(night, 'Mum says I should be in bed...'); }
   return out;
@@ -1238,6 +1327,8 @@ function settleVillage(v) {
 function villageInteract() {
   const v = vil; if (!v || !v.near || v.leaveT > 0 || v.skip || paused) return;
   const t = v.near;
+  if (t.kind === 'church') { enterChurch(); return; }
+  if (t.kind === 'exit') { leaveChurch(); return; }
   if (t.kind === 'dog') { v.dog.pets = (v.dog.pets | 0) + 1; if (v.dog.pets % 3 === 0 && hero.gold >= 5) { hero.gold -= 5; sfx('treat'); popups.push({ text: 'Biscuit loves the treat (-5 gold)', x: VW / 2, y: 120, t: 2, screen: true, small: true, color: '#ffd86a' }); v.dog.mode = 'follow'; v.dog.fT = 45; v.dog.cool = 0; } v.dog.petT = 3; v.dog.pose = 'sit'; v.dog.f = hero.x >= v.dog.x ? 1 : -1; v.dog.moving = false; sfx('chirp'); sfxNear(v.dog, 'bark', 0.5); for (let i = 0; i < 4; i++) vfx(v, { x: v.dog.x + (Math.random() - 0.5) * 16, y: v.dog.y - 26, vx: (Math.random() - 0.5) * 20, vy: -30, life: 1, size: 3, color: '#ff7a9a' }); return; }
   if (t.kind === 'npc') { const n = t.ref; n.f = hero.x >= n.x ? 1 : -1; hero.facing = n.x >= hero.x ? 1 : -1; n.moving = false; }
   if (t.kind === 'npc') Sound.voice(voicePitch(t.ref)); else if (t.kind === 'board') sfx('paper'); else sfx('menuOpen');
@@ -1257,7 +1348,7 @@ function openTalk(text, override) {
     if (n.shop === 'smith') btns.push(['shop:smithBuy', 'Buy weapons'], ['shop:smithUp', 'Upgrade gear'], ['shop:smithSell', 'Sell gear']);
     if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], ['wait', 'Wait for a time of day...'], ['respec', `Reset stat points (${respecCost()} gold)`]);
     if (n.special === 'guard') btns.push(['go', 'Head out to face the boss']);
-    if (n.special === 'shrine') btns.push(['shop:rebirth', hero.level >= levelCap() ? 'The Shrine of Return (rebirth)' : `The Shrine of Return (see what rebirth gives)`]);
+    if (n.special === 'shrine') btns.push(['shop:rebirth', hero.level >= levelCap() ? 'The Rite of Return (rebirth)' : 'The Rite of Return (see what rebirth gives)']);
     btns.push(['chat', `Chat ${hearts(n.id)}`], ['bye', 'Goodbye']);
     n.talking = true;
   } else if (t.kind === 'gate') {
@@ -1662,6 +1753,7 @@ document.getElementById('shop').addEventListener('click', e => {
 // ---------------------------------------------------------------- drawing
 function drawVillage() {
   const v = vil; if (!v) return;
+  if (v.inChurch) { drawChurchInside(v); return; }
   const night = night01(); curNight = night;
   ctx.fillStyle = '#000'; ctx.fillRect(0, 0, VW, VH);
   const Z = VIL_ZOOM, vw = VW / Z, vh = VH / Z;
@@ -1791,7 +1883,7 @@ function drawVillageHUD(v) {
   ctx.fillStyle = '#a3a1b8'; ctx.fillText(fitText(`${timePhase()} · Village`, 98, 11), x + 40, y + 32);
   // bottom line: what E does here
   if (v.near && !v.talk) {
-    const t = v.near, label = t.kind === 'gate' ? 'E  Leave the village' : t.kind === 'dog' ? 'E  Pet Biscuit' : t.kind === 'board' ? 'E  Read the notice board' : `E  Talk to ${t.label}${t.tag ? ' · ' + t.tag : ''}`;
+    const t = v.near, label = t.kind === 'gate' ? 'E  Leave the village' : t.kind === 'dog' ? 'E  Pet Biscuit' : t.kind === 'board' ? 'E  Read the notice board' : t.kind === 'church' ? 'E  Enter the church' : t.kind === 'exit' ? 'E  Leave the church' : `E  Talk to ${t.label}${t.tag ? ' · ' + t.tag : ''}`;
     const lbl = fitText(label, VW - 120, 13, true, 10), w = ctx.measureText(lbl).width + 30;
     hudPanel(VW / 2 - w / 2, VH - 100, w, 30, { r: 10, edge: 'rgba(245,196,81,0.55)' });
     ctx.fillStyle = '#f5c451'; ctx.textAlign = 'center'; ctx.fillText(lbl, VW / 2, VH - 80);
@@ -1802,7 +1894,7 @@ function drawVillageHUD(v) {
 // ---------------------------------------------------------------- the quest board (#17) and the Return Scroll
 // The notice board in every village offers a handful of quests; up to three can be taken at once and they travel with you across waves and biomes.
 // A finished quest waits for you at the next board (its reward is collected there). Rebirth clears the quests you were doing but keeps rewards you had not collected.
-const QUEST_MAX = 3, QUEST_KINDS = ['kills', 'type', 'elite', 'mut', 'evo', 'leader', 'boss', 'noPotion', 'noHit', 'gold', 'gear'];
+const QUEST_MAX = 3, QUEST_KINDS = ['kills', 'type', 'elite', 'mut', 'evo', 'leader', 'boss', 'noPotion', 'noHit', 'gold', 'gear', 'chest', 'dungeon'];
 const QUEST_TYPES = ['goblin', 'minotaur', 'archer', 'ogre'], QUEST_PLURAL = { goblin: 'goblins', minotaur: 'minotaurs', archer: 'archers', ogre: 'ogres' };
 const questId = () => 'q' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
 const emptyQuests = () => ({ active: [], claim: [] });
@@ -1820,6 +1912,8 @@ function questDef(kind) {
     case 'noPotion': { const n = nR(3, 5); return { goal: n, title: `${n} waves without a potion`, text: `Clear ${n} waves in a row without drinking a potion. Drinking one starts you over.`, reward: R(n * 150, n * 60) }; }
     case 'noHit': { const n = nR(1, 2); return { goal: n, title: n > 1 ? `${n} waves untouched` : 'A wave untouched', text: `Clear ${n > 1 ? n + ' waves in a row' : 'a wave'} without being hurt even once.`, reward: R(n * 320, n * 120, { gear: 1 }) }; }
     case 'gold': { const n = Math.round((250 + w * 30) / 50) * 50; return { goal: n, title: `Collect ${n} gold`, text: `The village treasury is thin. Bring in ${n} gold from the road (what you pick up counts).`, reward: R(Math.round(n * 0.6), Math.round(n * 0.3)) }; }
+    case 'chest': { const n = nR(2, 4); return { goal: n, title: `Open ${n} dungeon chests`, text: `Stone doors open in the ground now and then. Bring back what is in ${n} of their chests.`, reward: R(n * 160, n * 60, { gear: 1 }) }; }
+    case 'dungeon': return { goal: 1, title: 'Clear a dungeon', text: 'Go down a stone door, defeat the guardian at the bottom and open its treasure.', reward: R(1100, 500, { gear: 1, rune: 1 }) };
     case 'gear': { const n = nR(3, 5); return { goal: n, title: `Pick up ${n} pieces of gear`, text: `Brann wants scrap to melt. Pick up ${n} pieces of gear.`, reward: R(n * 80, n * 30) }; }
   }
 }
@@ -1843,6 +1937,8 @@ function questEvent(ev, a) {
       else if (q.kind === 'mut' && m.mut && m.mut.length && !m.elite) q.n++; else if (q.kind === 'evo' && m.evo) q.n++; else if (q.kind === 'leader' && m.leader) q.n++; else if (q.kind === 'boss' && m.type === 'boss') q.n++;
     } else if (ev === 'gold' && q.kind === 'gold') q.n += a;
     else if (ev === 'gear' && q.kind === 'gear') q.n++;
+    else if (ev === 'chest' && q.kind === 'chest') q.n++;
+    else if (ev === 'dungeon' && q.kind === 'dungeon') q.n++;
     else if (ev === 'potion' && q.kind === 'noPotion') q.n = 0;
     else if (ev === 'hit' && q.kind === 'noHit') q.n = 0;
     else if (ev === 'waveClear' && (q.kind === 'noPotion' || q.kind === 'noHit')) q.n++;
@@ -1916,6 +2012,7 @@ function drawQuestTracker() {
 const RECALL_MAX = 3, RECALL_TIME = 3.2, recallCost = () => Math.round(900 + wave * 45);
 function useRecall() {
   if (!hero || hero.dead || paused || state !== 'play' || vil) return;
+  if (dun) { popups.push({ text: 'The stone walls blunt the scroll: leave the dungeon first', x: hero.x, y: hero.y - 95, t: 1.6, color: '#f88' }); sfx('denied'); return; }
   if (hero.recallT > 0) { hero.recallT = 0; popups.push({ text: 'You put the scroll away', x: hero.x, y: hero.y - 95, t: 1, color: '#cfc0ff' }); sfx('tick'); return; }
   if ((hero.recalls | 0) <= 0) { popups.push({ text: 'You have no Return Scroll (Tobin sells them)', x: hero.x, y: hero.y - 95, t: 1.4, color: '#f88' }); sfx('denied'); return; }
   if (boss) { popups.push({ text: "The guardian is too near for the scroll to work", x: hero.x, y: hero.y - 95, t: 1.6, color: '#f88' }); sfx('denied'); return; }

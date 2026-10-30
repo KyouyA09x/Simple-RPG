@@ -46,7 +46,6 @@ jobs:
             **Download `Stick-RPG-windows.zip`, unzip it anywhere and double-click `Stick RPG.exe`.** No Node.js, no installer.
 
             - Windows may show "Windows protected your PC" because the exe is not signed: click **More info**, then **Run anyway**.
-            - This game is AI "vibe coded": expect bugs and changing balance.
-            - Tested only on Windows 11. About 300 MB on disk (130 MB zipped), about 0.5 GB of RAM.
-            - Saves are in the `saves` folder next to the exe and settings in `data`. Copy them to keep your progress when you update.
-            - Controls: WASD move, Space attack, Shift roll, Q use the equipped item, hold R to switch it (potion or Return Scroll), M character, hold Tab for the menu wheel, E talk, Esc menu, F fullscreen.
+            - AI "vibe coded": expect bugs and changing balance. Tested only on Windows 11.
+            - Saves are in the `saves` folder next to the exe; copy it when you update.
+            - What is new: see [CHANGELOG.md](https://github.com/KyouyA09x/Simple-RPG/blob/main/CHANGELOG.md).
