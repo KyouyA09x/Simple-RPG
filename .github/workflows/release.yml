@@ -1,6 +1,6 @@
 # Builds the Windows game on GitHub and publishes it as a Release. (The game lives in the simple-rpg folder of this repository.)
 # Push a tag that starts with "v" (for example v0.1.0) or run it by hand from the Actions tab.
-# The Release holds Stick-RPG-windows.zip: unzip it and run "Stick RPG.exe" (no Node.js needed).
+# The Release holds Stick-RPG-Setup-<version>.exe, the installer (no Node.js needed).
 name: Build and release (Windows)
 on:
   workflow_dispatch:
@@ -24,33 +24,22 @@ jobs:
       - run: npm ci
       - run: node build/pack.js
       - run: node build/installer.js
-      - name: Check the zip really contains the exe
-        shell: pwsh
-        run: |
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-          $z = [IO.Compression.ZipFile]::OpenRead((Resolve-Path 'build/_out/Stick RPG.zip'))
-          $hit = $z.Entries | Where-Object { $_.FullName -match 'Stick RPG\.exe$' }
-          $z.Dispose()
-          if (-not $hit) { throw 'Stick RPG.exe is missing from the zip' }
-          Copy-Item 'build/_out/Stick RPG.zip' 'Stick-RPG-windows.zip'
       - uses: actions/upload-artifact@v4
         with:
           name: stick-rpg-windows
           path: |
-            simple-rpg/Stick-RPG-windows.zip
             simple-rpg/build/_out/installer/Stick-RPG-Setup-*.exe
           if-no-files-found: error
       - uses: softprops/action-gh-release@v2
         if: startsWith(github.ref, 'refs/tags/v')
         with:
           files: |
-            simple-rpg/Stick-RPG-windows.zip
             simple-rpg/build/_out/installer/Stick-RPG-Setup-*.exe
           name: Stick RPG ${{ github.ref_name }} (Windows)
           body: |
-            **Easiest: run `Stick-RPG-Setup-*.exe`.** It installs for your user (no admin rights needed) and keeps your saves in `%APPDATA%\Stick RPG`, even if you uninstall. **Or** download `Stick-RPG-windows.zip`, unzip it anywhere and double-click `Stick RPG.exe` (portable: saves stay next to the exe).
+            **Run `Stick-RPG-Setup-*.exe`.** It installs for your user (no admin rights needed) and keeps your saves in `%APPDATA%\Stick RPG`, even if you uninstall.
 
             - Windows may show "Windows protected your PC" because the exe is not signed: click **More info**, then **Run anyway**.
             - AI "vibe coded": expect bugs and changing balance. Tested only on Windows 11.
-            - The zip keeps saves in a `saves` folder next to the exe; copy it when you update.
+            - Updating: run the newer installer over the old one; your saves stay.
             - What is new: see [CHANGELOG.md](https://github.com/KyouyA09x/Simple-RPG/blob/main/CHANGELOG.md).
