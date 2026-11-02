@@ -21,7 +21,8 @@ if (SELFTEST && !process.env.STICKRPG_PORTABLE) {                // tests never 
 } else {
   const home = app.isPackaged ? path.dirname(process.execPath) : __dirname;
   let writable = false;
-  try { fs.mkdirSync(path.join(home, 'saves'), { recursive: true }); const t = path.join(home, 'saves', '.write-test'); fs.writeFileSync(t, 'x'); fs.rmSync(t); writable = true; } catch {}
+  const installed = app.isPackaged && fs.existsSync(path.join(home, 'installed.flag'));   // set up by the installer: saves go to %APPDATA%, so uninstalling keeps them
+  if (!installed) try { fs.mkdirSync(path.join(home, 'saves'), { recursive: true }); const t = path.join(home, 'saves', '.write-test'); fs.writeFileSync(t, 'x'); fs.rmSync(t); writable = true; } catch {}
   if (writable) { app.setPath('userData', path.join(home, 'data')); SAVES_ROOT = path.join(home, 'saves'); }
   else SAVES_ROOT = path.join(LEGACY_DIR, 'saves');
   // one-time move of saves written by earlier builds into the game's own save folder

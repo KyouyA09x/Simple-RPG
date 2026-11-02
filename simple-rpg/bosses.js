@@ -19,7 +19,7 @@ const BOSSES = {
   lich:       { names: ['Lich Archer'], ail: 'curse', hp: 0.8, speed: 0.9, dmg: 1, r: 30, move: 'kite', color: '#a6f0b0', intro: 'Bone fingers draw a bowstring of cold light.',
     attacks: { volley: 3, blink: 2, summon: 1, arrowRain: 3, ring: 2 }, p2: { volley: 2, blink: 1, ring: 1 }, summon: { type: 'archer', n: 2, p2: 3 },
     theme: { epithet: 'of the Lich Archer', pref: ['crit'] } },
-  frostTitan: { names: ['Frost Titan'], ail: 'freeze', hp: 1.3, speed: 0.6, dmg: 1.05, r: 38, move: 'chase', color: '#bfeaff', intro: 'The air freezes in front of a walking glacier.', chill: true,
+  frostTitan: { names: ['Frost Titan'], ail: 'freeze', hp: 1.3, speed: 0.6, dmg: 1.05, r: 38, move: 'chase', color: '#3a96ff', intro: 'The air freezes in front of a walking glacier.', chill: true,
     attacks: { slam: 2, nova: 2, strikes: 2, breath: 3, shatter: 2 }, p2: { strikes: 2, breath: 1, shatter: 1 }, strike: 'icicle',
     theme: { epithet: 'of the Frost Titan', pref: ['cdr'] } },
   magma:      { names: ['Magma Colossus'], ail: 'burn', hp: 1.35, speed: 0.5, dmg: 1.1, r: 40, move: 'chase', color: '#ffb060', intro: 'Stone cracks and the cracks glow.',
@@ -204,13 +204,13 @@ function drawHazards() {
       const ice = h.kind === 'icicle';
       if (h.delay > 0) {
         const p = 1 - h.delay / h.d0;
-        ctx.strokeStyle = ice ? `rgba(160,220,255,${0.4 + 0.5 * p})` : `rgba(255,240,120,${0.4 + 0.5 * p})`; ctx.fillStyle = ice ? `rgba(160,220,255,${0.05 + 0.15 * p})` : `rgba(255,240,120,${0.05 + 0.15 * p})`; ctx.lineWidth = 2;
+        ctx.strokeStyle = ice ? `rgba(30,110,235,${0.55 + 0.4 * p})` : `rgba(255,240,120,${0.4 + 0.5 * p})`; ctx.fillStyle = ice ? `rgba(40,120,240,${0.1 + 0.22 * p})` : `rgba(255,240,120,${0.05 + 0.15 * p})`; ctx.lineWidth = ice ? 3 : 2;
         ctx.beginPath(); ctx.ellipse(h.x, h.y, h.r, h.r / 1.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         ctx.beginPath(); ctx.ellipse(h.x, h.y, h.r * (1 - p), h.r * (1 - p) / 1.5, 0, 0, Math.PI * 2); ctx.stroke();
       } else {
         const a = Math.max(0, h.boltT / 0.28);
-        ctx.save(); ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
-        if (ice) { ctx.fillStyle = `rgba(200,235,255,${a})`; ctx.beginPath(); ctx.moveTo(h.x - 12, h.y - 170 * a); ctx.lineTo(h.x + 12, h.y - 170 * a); ctx.lineTo(h.x, h.y + 4); ctx.closePath(); ctx.fill(); }
+        ctx.save(); if (!ice) ctx.globalCompositeOperation = 'lighter'; ctx.lineCap = 'round';
+        if (ice) { ctx.globalAlpha = Math.min(1, a * 1.4); ctx.fillStyle = '#7cc4ff'; ctx.strokeStyle = '#123a8a'; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.moveTo(h.x - 12, h.y - 170 * a); ctx.lineTo(h.x + 12, h.y - 170 * a); ctx.lineTo(h.x, h.y + 4); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = 'rgba(255,255,255,.75)'; ctx.beginPath(); ctx.moveTo(h.x - 5, h.y - 170 * a + 4); ctx.lineTo(h.x - 1, h.y - 170 * a + 4); ctx.lineTo(h.x - 2, h.y - 30); ctx.closePath(); ctx.fill(); }
         else { ctx.strokeStyle = `rgba(255,248,170,${a})`; ctx.lineWidth = 4; ctx.beginPath(); ctx.moveTo(h.x, h.y - 260); for (let i = 1; i <= 8; i++) ctx.lineTo(h.x + (((i * 37 + h.x) % 28) - 14) * (i < 8 ? 1 : 0), h.y - 260 + i * 32.5); ctx.stroke(); ctx.lineWidth = 12; ctx.strokeStyle = `rgba(255,230,120,${0.25 * a})`; ctx.stroke(); }
         ctx.restore();
       }

@@ -8,8 +8,8 @@ A single-player stickman action RPG for Windows. Fight waves of monsters across 
 
 ## Play
 
-1. Download **Stick-RPG-windows.zip** from the [latest release](../../releases/latest).
-2. Unzip it anywhere and run **Stick RPG.exe**. No Node.js or installer needed.
+1. Download **Stick-RPG-Setup-<version>.exe** (an installer, no admin rights needed) or **Stick-RPG-windows.zip** (portable) from the [latest release](../../releases/latest).
+2. Run the installer, or unzip the zip anywhere and run **Stick RPG.exe**. No Node.js needed.
 
 Windows may warn that the app is unsigned: click **More info**, then **Run anyway**. Saves go in a `saves` folder next to the exe and settings in `data`; copy both when you update. Tested on Windows 11 only (about 300 MB on disk, 0.5 GB of RAM).
 

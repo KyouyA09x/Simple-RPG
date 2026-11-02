@@ -208,7 +208,7 @@ const Sound = (() => {
     highlands:{ bpm: 92, root: 62, chords: [[0,4,7],[-3,0,4],[-5,-1,2],[-7,-3,0]], arp: 'x.x...x.x.x...x.', bass: 'x.......x.......', drums: 'k.......s.......', hat: false, pad: 0.05, lead: 0.05, leadType: 'triangle', seed: 59 },
     village: { bpm: 96, root: 60, chords: [[0,4,7],[-3,0,4],[-5,-1,2],[-7,-3,0]], arp: 'x.x.x.x.x.x.x.x.', bass: 'x...x...x...x...', drums: null, pad: 0.045, lead: 0.07, leadType: 'triangle', seed: 67 },
     gameover:{ bpm: 60,  root: 57, chords: [[0,3,7],[-4,0,3],[-7,-3,0],[-5,-1,2]], arp: 'x...............', bass: 'x...............', drums: null, pad: 0.06, lead: 0, seed: 2 },
-    // more boss themes (each boss fight takes the next one), a rebirth theme and a lullaby for the inn
+    // more boss themes (each boss fight takes the next one), a prestige theme and a lullaby for the inn
     boss2:   { bpm: 144, root: 47, chords: [[0,3,7],[1,5,8],[-4,0,3],[-2,2,5]], arp: 'x.xxx.xxx.xxx.xx', bass: 'x.xx.xx.x.xx.xx.', drums: 'k.s.k.s.kks.k.s.', hat: true, pad: 0.035, lead: 0.05, leadType: 'sawtooth', seed: 71 },
     boss3:   { bpm: 160, root: 45, chords: [[0,3,6],[-2,1,5],[-4,-1,3],[-5,-2,2]], arp: 'xxxxxxxxxxxxxxxx', bass: 'x.x.x.x.x.x.xxxx', drums: 'kks.kks.kks.kkss', hat: true, pad: 0.03, lead: 0.055, leadType: 'square', seed: 79 },
     rebirth: { bpm: 76,  root: 57, chords: [[0,4,7],[-3,0,4],[-5,-1,2],[0,4,9]], arp: 'x..x..x..x..x...', bass: 'x.......x.......', drums: null, pad: 0.06, lead: 0.045, leadType: 'sine', bell: true, seed: 83 },
@@ -217,6 +217,11 @@ const Sound = (() => {
   THEMES.shop = { bpm: 104, root: 59, chords: [[0,4,7],[5,9,12],[-3,0,4],[-5,-1,2]], arp: 'x.x.x.x.x.x.x.x.', bass: 'x...x...x...x...', drums: 'k...s...k...s...', hat: true, pad: 0.03, lead: 0.06, leadType: 'triangle', seed: 97 };
   THEMES.boss4 = { bpm: 138, root: 43, chords: [[0,3,7],[3,7,10],[-2,2,5],[1,5,8]], arp: 'x.xxx.xx.xxx.xxx', bass: 'x.x.xx.xx.x.xx.x', drums: 'k.ssk.s.k.ssk.sk', hat: true, pad: 0.035, lead: 0.05, leadType: 'sawtooth', seed: 101 };
   THEMES.boss5 = { bpm: 168, root: 46, chords: [[0,4,7],[1,5,8],[-1,3,6],[-4,0,3]], arp: 'xxxxxxxxxxxxxxxx', bass: 'xx.xxx.xxx.xxx.x', drums: 'ks.sks.sksksks.s', hat: true, pad: 0.03, lead: 0.055, leadType: 'square', seed: 103 };
+  // the prologue: a cell, a river, a waking, a fire
+  THEMES.pro_cell = { bpm: 54, root: 45, chords: [[0, 3, 7], [1, 5, 8], [-2, 2, 5], [-4, 0, 3]], arp: 'x.......x.......', bass: 'x...............', drums: 'k...............', hat: false, pad: 0.065, lead: 0.04, leadType: 'sine', bell: true, seed: 41 };
+  THEMES.pro_river = { bpm: 58, root: 50, chords: [[0, 3, 7], [-4, 0, 3], [-2, 2, 5], [-5, -1, 2]], arp: 'x...x...x...x...', bass: 'x.......x.......', drums: null, pad: 0.06, lead: 0.045, leadType: 'sine', bell: true, seed: 43 };
+  THEMES.pro_wake = { bpm: 68, root: 57, chords: [[0, 4, 7], [-3, 0, 4], [-5, -1, 2], [-7, -3, 0]], arp: 'x...x...x...x...', bass: 'x.......x.......', drums: null, pad: 0.05, lead: 0.06, leadType: 'triangle', seed: 47 };
+  THEMES.pro_fire = { bpm: 146, root: 46, chords: [[0, 3, 7], [1, 5, 8], [-1, 3, 6], [-4, 0, 3]], arp: 'xxxxxxxxxxxxxxxx', bass: 'x.xx.xx.x.xx.xx.', drums: 'k.s.kks.k.s.kkss', hat: true, pad: 0.035, lead: 0.05, seed: 53 };
   // every area's music has a night version: slower, softer, no drums, sparser notes, a bell-like lead (it takes over when night falls)
   for (const n of ['forest', 'desert', 'snow', 'volcano', 'swamp', 'jungle', 'ruins', 'highlands', 'village']) {
     const b = THEMES[n];
@@ -229,6 +234,7 @@ const Sound = (() => {
     title: ['minor', 'x...x.x.x...x...', 1.1], forest: ['pent', 'x.xx.x.xx.x.x.x.', 1], desert: ['phrygn', 'x..x.x..x.x..x.x', 1], snow: ['minor', 'x...x...x.x.x...', 1.5], volcano: ['minor', 'xx.xx.x.xx.xx.xx', 1.1],
     boss: ['minor', 'x.xxx.xxx.xxx.xx', 1.1], boss2: ['phrygn', 'xx.xx.xx.xx.xxx.', 1.1], boss3: ['minor', 'x.xx.xxx.xx.xxxx', 1.1], boss4: ['phrygn', 'xxx.xx.xxx.xx.xx', 1.1], boss5: ['phryg', 'xx.xxx.xxx.xxx.x', 1.1],
     camp: ['pent', 'x.....x...x.....', 1.3], swamp: ['dorian', 'x....x....x.x...', 1.3], jungle: ['major', 'x.xx.xx.x.xx.x.x', 1], ruins: ['minor', 'x.......x...x...', 1.4], highlands: ['major', 'x.x...x.x.x.x...', 1.2],
+    pro_cell: ['phrygn', 'x.......x...x...', 1.4], pro_river: ['minor', 'x...x.......x...', 1.4], pro_wake: ['major', 'x..x..x.x..x..x.', 1.2], pro_fire: ['phrygn', 'xx.xx.xx.xx.xxx.', 1.1],
     village: ['major', 'x.x.xx.xx.x.xx..', 1], shop: ['major', 'x.xx.x.xx.xx.x.x', 1], inn: ['pent', 'x...x.x...x.x...', 1.3], rebirth: ['lydian', 'x..x..x.x..x..x.', 0.9],
   };
   for (const [name, th] of Object.entries(THEMES)) {

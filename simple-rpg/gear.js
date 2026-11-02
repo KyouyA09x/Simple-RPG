@@ -3,11 +3,11 @@
 // Level stats are not touched here: gear adds on top of them, under hard caps.
 // Game code reads gear through hero.gear (a plain sum, rebuilt by recalcGear() whenever equipment changes).
 
-let INV_MAX = 24;                                                                   // rebirth adds slots (see rebirth.js)
+let INV_MAX = 24;                                                                   // prestige adds slots (see rebirth.js)
 const GEAR_SLOTS = ['weapon', 'armor', 'helmet', 'ring1', 'ring2', 'necklace', 'artifact'];     // equipment positions
 const ITEM_SLOTS = ['weapon', 'armor', 'helmet', 'ring', 'necklace', 'artifact'];               // what an item can be (a ring fits ring1 or ring2)
 const SLOT_LABEL = { weapon: 'Weapon', armor: 'Armor', helmet: 'Helmet', ring1: 'Ring 1', ring2: 'Ring 2', ring3: 'Ring 3', weapon2: 'Weapon 2', ring: 'Ring', necklace: 'Necklace', artifact: 'Artifact' };
-// two slots that only exist after rebirth milestones: a third ring (rebirth 5) and a spare weapon to swap to (rebirth 10)
+// two slots that only exist after prestige milestones: a third ring (prestige 5) and a spare weapon to swap to (prestige 10)
 const EXTRA_SLOTS = ['ring3', 'weapon2'];
 const slotOpen = k => k === 'ring3' ? rebirths() >= 5 : k === 'weapon2' ? rebirths() >= 10 : true;
 const activeSlots = () => [...GEAR_SLOTS, ...EXTRA_SLOTS].filter(slotOpen);
@@ -26,7 +26,7 @@ const RARITIES = [
 const RARITY_BASE_W = [18, 32, 27, 14, 7, 0.44, 0.11, 0];          // Secret is never rolled normally (boss pieces only, see rollRarity)
 // how fast better grades pile up with depth: slow, and it stops growing after six bosses, so Legendary and Mythical stay rare (about 2% and 0.7% at wave 50)
 const RARITY_DEPTH_GROWTH = 1.12, RARITY_DEPTH_CAP = 6;
-const SECRET_BOSS_CHANCE = 0.005;                               // per boss piece; rebirth luck barely touches it on purpose (anti-farming)
+const SECRET_BOSS_CHANCE = 0.005;                               // per boss piece; prestige luck barely touches it on purpose (anti-farming)
 const GEAR_DROP_CHANCE = 0.045, BOSS_EXTRA_PIECE = [0.25, 0.05];   // per kill; and the chance of a 2nd and a 3rd piece from a boss (bosses drop extra pieces on top of the normal drop)
 
 // every stat a piece can carry: its maximum (what a top-of-the-range Secret roll gives) and how to show it
@@ -35,8 +35,8 @@ const GEAR_STATS = {
   dmg:     { name: 'Damage',            max: 50,   int: true, fmt: v => `+${Math.round(v)}` },
   hp:      { name: 'Max HP',            max: 400,  int: true, fmt: v => `+${Math.round(v)}` },
   dr:      { name: 'Damage reduction',  max: 0.20, fmt: v => `+${pctText(v)}` },
-  crit:    { name: 'Crit chance',       max: 0.26, fmt: v => `+${pctText(v)}` },
-  critDmg: { name: 'Crit damage',       max: 1.0,  fmt: v => `+${v.toFixed(2)}×` },
+  crit:    { name: 'Crit chance',       max: 0.07, fmt: v => `+${pctText(v)}` },
+  critDmg: { name: 'Crit damage',       max: 0.30, fmt: v => `+${v.toFixed(2)}×` },
   speed:   { name: 'Move speed',        max: 0.20, fmt: v => `+${pctText(v)}` },
   cdr:     { name: 'Faster actions',    max: 0.28, fmt: v => `+${pctText(v)}` },      // shorter flip cooldown and swing time
   stamina: { name: 'Max stamina',       max: 110,  int: true, fmt: v => `+${Math.round(v)}` },
@@ -52,9 +52,10 @@ const WFX = {
   bleed:  { name: 'Rend',  color: '#e0405a', mul: 0.9, blurb: 'Deep cuts that keep bleeding' },
   frost:  { name: 'Frost', color: '#8fdcff', mul: 1.0, blurb: 'Slows enemies, and at level III can freeze them' },
   shock:  { name: 'Storm', color: '#fff06a', mul: 1.3, blurb: 'Stuns now and then and arcs to a nearby enemy' },
+  vamp:   { name: 'Vampiric', color: '#c4284e', mul: 1.2, blurb: 'Siphons life from every hit you land' },
 };
-const WFX_KEYS = Object.keys(WFX), WFX_LV = 3, ROMAN = ['', 'I', 'II', 'III'];
-const wfxCost = (it, k, lv) => Math.round((90 + (it.value || 20) * 0.9) * [0, 1, 2.6, 5.2][lv] * WFX[k].mul);
+const WFX_KEYS = Object.keys(WFX), WFX_LV = 5, ROMAN = ['', 'I', 'II', 'III', 'IV', 'V'];
+const wfxCost = (it, k, lv) => Math.round((90 + (it.value || 20) * 0.9) * [0, 1, 2.6, 5.2, 8.6, 13][lv] * WFX[k].mul);
 function wfxText(k, lv, dmg) {                                                      // what the effect does, in numbers for a weapon that hits for `dmg`
   const d = p => Math.max(1, Math.round(dmg * p));
   switch (k) {
@@ -62,15 +63,17 @@ function wfxText(k, lv, dmg) {                                                  
     case 'poison': return `${d(0.07 * lv)} a second for 5 seconds, per stack (up to 3 stacks)`;
     case 'bleed': return `${d(0.06 * lv)} damage every half second for 4 seconds (${d(0.06 * lv) * 8} in all)`;
     case 'frost': return `Slows by half for ${2 + lv} seconds${lv >= 3 ? ', 12% chance to freeze solid for a second' : ''}`;
+    case 'vamp': return `Heals you for ${d(0.025 * lv)} on every hit (${lv * 2.5}% of the blow)`;
     case 'shock': return `${10 + 7 * lv}% chance to stun for ${(0.6 + 0.2 * lv).toFixed(1)} seconds, and lightning arcs to a nearby enemy for ${20 * lv}% of the hit`;
   }
   return '';
 }
 const WFX_PATH = { fire: 'M16 4 C20 10 24 13 24 19 A8 8 0 0 1 8 19 C8 14 11 12 13 8 C14 11 15 12 16 12 Z', poison: 'M16 4 C20 11 25 15 25 20 A9 9 0 0 1 7 20 C7 15 12 11 16 4 Z', bleed: 'M9 6 L23 26 M15 5 L26 21 M5 12 L17 28',
+  vamp: 'M16 27 C9 20 7 15 9 10 C11 6 15 7 16 11 C17 7 21 6 23 10 C25 15 23 20 16 27 Z M13 12 L16 18 L19 12',
   frost: 'M16 4 V28 M6 10 L26 22 M26 10 L6 22 M12 6 L16 10 L20 6 M12 26 L16 22 L20 26', shock: 'M18 3 L8 18 H15 L12 29 L24 12 H17 Z' };
-const wfxSvg = (k, px = 28) => { const W = WFX[k], filled = k === 'fire' || k === 'poison' || k === 'shock'; return `<svg viewBox="0 0 32 32" width="${px}" height="${px}"><path d="${WFX_PATH[k]}" fill="${filled ? W.color : 'none'}" fill-opacity="${filled ? 0.35 : 0}" stroke="${W.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; };
+const wfxSvg = (k, px = 28) => { const W = WFX[k], filled = k === 'fire' || k === 'poison' || k === 'shock' || k === 'vamp'; return `<svg viewBox="0 0 32 32" width="${px}" height="${px}"><path d="${WFX_PATH[k]}" fill="${filled ? W.color : 'none'}" fill-opacity="${filled ? 0.35 : 0}" stroke="${W.color}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>`; };
 // ---- essences: the weapon effects are found, not chosen. Only elites and bosses drop them, nobody buys or sells them, and like runes they can be improved (at a cost and with a risk).
-// Flame, Venom, Rend, Frost and Storm in levels I to III. An essence is imbued into a weapon at the Enchantress; the old one comes back to your pouch.
+// Flame, Venom, Rend, Frost, Storm and Vampiric in levels I to V. An essence is imbued into a weapon at the Enchantress; the old one comes back to your pouch.
 const ESS_MAX = 30, essKey = (k, lv) => k + lv;
 const ESS = {};
 for (const k of WFX_KEYS) for (let lv = 1; lv <= WFX_LV; lv++) ESS[essKey(k, lv)] = { fx: k, lv, title: `${WFX[k].name} Essence ${ROMAN[lv]}`, color: WFX[k].color };
@@ -79,8 +82,8 @@ const essCount = k => (hero && hero.ess && hero.ess[k]) | 0;
 const essTotal = () => ESS_KEYS.reduce((a, k) => a + essCount(k), 0);
 function addEss(k, n = 1) { if (!ESS[k]) return 0; if (!hero.ess) hero.ess = {}; const before = essCount(k); hero.ess[k] = Math.min(ESS_MAX, before + n); return hero.ess[k] - before; }
 const essNext = k => ESS[k] && ESS[k].lv < WFX_LV ? essKey(ESS[k].fx, ESS[k].lv + 1) : null;
-const essUpChance = k => !essNext(k) ? 0 : Math.min(0.9, Math.max(0.05, [0.5, 0.28][ESS[k].lv - 1] + gearStat('upLuck') * 0.5));
-const essUpCost = k => essNext(k) ? Math.round([0, 0, 520, 1900][ESS[k].lv + 1] * (1 + (typeof wave === 'number' ? wave : 0) * 0.03)) : 0;
+const essUpChance = k => !essNext(k) ? 0 : Math.min(0.9, Math.max(0.05, [0.5, 0.28, 0.16, 0.08][ESS[k].lv - 1] + gearStat('upLuck') * 0.5));
+const essUpCost = k => essNext(k) ? Math.round([0, 0, 520, 1900, 5200, 14000][ESS[k].lv + 1] * (1 + (typeof wave === 'number' ? wave : 0) * 0.03)) : 0;
 const canEssUp = k => !!essNext(k) && essCount(k) >= 1 && essCount(essNext(k)) < ESS_MAX;
 function attemptEssUp(k, roll = Math.random()) {                          // 'up', 'down' (a level II falls to I like a failed forge upgrade), 'fail' (a level I stays) or null
   if (!canEssUp(k)) return null;
@@ -99,7 +102,7 @@ function stripWeapon(it) { if (!it || !it.fx) return false; addEss(essKey(it.fx.
 const ESS_BIOME = { forest: 'bleed', desert: 'fire', snow: 'frost', volcano: 'fire', swamp: 'poison', jungle: 'bleed', ruins: 'poison', highlands: 'shock' };       // a biome's own creatures carry its kind of essence
 function rollEssKey(boost = 1) {
   const home = typeof currentBiomeKey === 'function' ? ESS_BIOME[currentBiomeKey()] : null, k = home && Math.random() < 0.55 ? home : WFX_KEYS[Math.floor(Math.random() * WFX_KEYS.length)];
-  const ws = [100, 16 * boost, 2.5 * boost]; let x = Math.random() * ws.reduce((a, c) => a + c, 0), lv = 1;
+  const ws = [100, 16 * boost, 2.5 * boost, 0.25 * boost * boost, 0.04 * boost * boost]; let x = Math.random() * ws.reduce((a, c) => a + c, 0), lv = 1;
   for (let i = 0; i < ws.length; i++) if ((x -= ws[i]) <= 0) { lv = i + 1; break; }
   return essKey(k, lv);
 }
@@ -157,7 +160,7 @@ function makeName(item, sword, baseIdx) {
 // ---------------------------------------------------------------- rolling
 // t is "how deep" you are: bosses defeated plus how far into the current set. Deeper = better grades, not just more drops.
 function rollRarity(t = 0, bossPiece = false) {
-  if (bossPiece && Math.random() < SECRET_BOSS_CHANCE * (1 + 0.25 * (dropLuck() - 1))) return 7;      // Secret gets only a quarter of the rebirth luck
+  if (bossPiece && Math.random() < SECRET_BOSS_CHANCE * (1 + 0.25 * (dropLuck() - 1))) return 7;      // Secret gets only a quarter of the prestige luck
   const lk = rarityLuck() + gearStat('gradeLuck');
   const w = RARITY_BASE_W.map((b, i) => b * Math.pow(RARITY_DEPTH_GROWTH, Math.min(t, RARITY_DEPTH_CAP) * (i - 2) / 2) * (i >= 3 && i < 7 ? 1 + lk * (i - 2) : 1));
   let x = Math.random() * w.reduce((a, b) => a + b, 0);
@@ -181,9 +184,9 @@ function rollItem(o = {}) {
   let sword = null;
   if (slot === 'weapon') {                                         // a weapon is one of the existing swords, up to the hero's level
     const level = Math.max(1, o.level || (typeof hero !== 'undefined' && hero ? hero.level : 1));
-    const eligible = SWORDS.filter(s => !s.sig && s.lvl <= level);                // a boss's own weapon comes only from that boss
+    const eligible = SWORDS.filter(s => !s.sig && !s.shop && s.lvl <= level);                // a boss's own weapon comes only from that boss
     const pool = eligible.flatMap((s, i) => Array(i + 1).fill(s));  // better swords are likelier
-    const higher = SWORDS.filter(s => !s.sig && s.lvl > level && s.lvl <= level + 8);                            // now and then a weapon you are not ready for drops (6%, 12% from a boss; never more than 8 levels ahead, the nearer the likelier)
+    const higher = SWORDS.filter(s => !s.sig && !s.shop && s.lvl > level && s.lvl <= level + 8);                            // now and then a weapon you are not ready for drops (6%, 12% from a boss; never more than 8 levels ahead, the nearer the likelier)
     const stretch = higher.length && Math.random() < (o.boss ? 0.12 : 0.06);
     sword = (o.base && SWORDS.find(s => s.id === o.base)) || (stretch ? gearRand(higher.flatMap(s => Array(Math.max(1, 4 - Math.floor((s.lvl - level) / 2))).fill(s))) : gearRand(pool)); item.base = sword.id;     // o.base: a chosen weapon (dev menu)
   }
@@ -225,7 +228,7 @@ function recalcGear() {
   for (const k in LUCK_CAPS) g[k] = Math.min(LUCK_CAPS[k], g[k]);
   hero.gear = g;
   const w = hero.equip.weapon;
-  if (w) { const sw = SWORDS.find(s => s.id === w.base) || SWORDS[0]; if (hero.sword !== sw) hero.combo = 0; hero.sword = sw; }
+  if (w) { const sw = w.base === 'fists' ? PRO_FISTS : (SWORDS.find(s => s.id === w.base) || SWORDS[0]); if (hero.sword !== sw) hero.combo = 0; hero.sword = sw; }
   const delta = Math.round(g.hp) - (hero.gearHp | 0);                  // max HP from gear is tracked separately so equipping never double-counts
   if (delta) { hero.maxHp = Math.max(1, hero.maxHp + delta); hero.gearHp = Math.round(g.hp); if (delta > 0) hero.hp += delta; }
   hero.hp = Math.min(hero.hp, hero.maxHp);
@@ -240,7 +243,7 @@ const RUNE_BASE = {
   vigor:   { name: 'Vigor',    color: '#e2565a', stat: 'hp',        val: 35,    w: 5, price: 45, glyph: 'M11 6 V26 M11 6 L20 11 L11 16 L21 21 L11 26' },
   guard:   { name: 'Guard',    color: '#6fb5ff', stat: 'dr',        val: 0.01,  w: 5, price: 50, glyph: 'M8 8 H24 V17 Q24 24 16 27 Q8 24 8 17 Z' },
   haste:   { name: 'Haste',    color: '#5fd07a', stat: 'cdr',       val: 0.015, w: 5, price: 50, glyph: 'M11 6 V26 M11 6 H18 Q23 6 23 11 Q23 16 18 16 H11 M16 16 L23 26' },
-  keen:    { name: 'Keen',     color: '#ffd24a', stat: 'crit',      val: 0.01,  w: 5, price: 55, glyph: 'M16 7 L24 16 L16 25 L8 16 Z M16 12 L20 16 L16 20 L12 16 Z' },
+  keen:    { name: 'Keen',     color: '#ffd24a', stat: 'crit',      val: 0.005,  w: 5, price: 55, glyph: 'M16 7 L24 16 L16 25 L8 16 Z M16 12 L20 16 L16 20 L12 16 Z' },
   fortune: { name: 'Fortune',  color: '#c36bff', stat: 'upLuck',    val: 0.03,  w: 2, price: 95, glyph: 'M11 26 V6 M11 11 L21 6 M11 17 L21 12' },
   plenty:  { name: 'Plenty',   color: '#f5c451', stat: 'dropLuck',  val: 0.06,  w: 2, price: 95, glyph: 'M11 6 V26 M11 6 L21 11 L11 16 M11 16 L21 21 L11 26' },
   destiny: { name: 'Destiny',  color: '#3ff2e0', stat: 'gradeLuck', val: 0.02,  w: 1, price: 130, glyph: 'M9 8 L23 24 M23 8 L9 24 M16 5 V27' },
@@ -261,12 +264,19 @@ for (const b in RUNE_BASE) RUNE_TIERS.forEach((T, i) => {
     val: B.val >= 1 ? Math.round(v) : Math.round(v * 1000) / 1000, w: B.w * T.w, price: Math.round(B.price * 6 * T.price), glyph: B.glyph };
 });
 const RUNE_KEYS = Object.keys(RUNES), RUNE_MAX = 30;
+// which pieces take which runes: a rune goes only where its bonus makes sense (a Guard rune in armour or a helm, a Keen rune in a weapon, ring or necklace...)
+const RUNE_FITS = { might: ['weapon', 'ring', 'necklace'], vigor: ['armor', 'helmet', 'necklace'], guard: ['armor', 'helmet'], haste: ['weapon', 'ring', 'helmet'],
+  keen: ['weapon', 'ring', 'necklace'], fortune: ['artifact', 'necklace'], plenty: ['artifact', 'helmet'], destiny: ['artifact', 'ring'] };
+const runeFits = (it, k) => !!(it && RUNES[k] && RUNE_FITS[RUNES[k].base].includes(it.slot));
+const FIT_LABEL = { weapon: 'weapons', armor: 'armour', helmet: 'helmets', ring: 'rings', necklace: 'necklaces', artifact: 'artifacts' };
+const runeFitText = k => RUNE_FITS[RUNES[k].base].map(s => FIT_LABEL[s]).join(', ');
 const socketsOf = it => (it && RARITIES[it.rarity].sockets) | 0;
 const runeCount = k => (hero && hero.runes && hero.runes[k]) | 0;
+const statShort = (k, v) => GEAR_STATS[k].fmt(v).replace(/ (to succeed|gear drops|better grades)$/, '');
 const runeLine = k => { const R = RUNES[k], S = GEAR_STATS[R.stat]; return `${R.title}: ${S.fmt(R.val)}${S.name === 'Upgrade luck' || S.name === 'Drop luck' || S.name === 'Grade luck' ? '' : ' ' + S.name}`; };
 function addRune(k, n = 1) { if (!RUNES[k]) return 0; if (!hero.runes) hero.runes = {}; const before = runeCount(k); hero.runes[k] = Math.min(RUNE_MAX, before + n); return hero.runes[k] - before; }
 function socketRune(it, k) {                                                  // put a rune from your stock into a free socket
-  if (!it || !RUNES[k] || runeCount(k) < 1 || (it.rn || []).length >= socketsOf(it)) return false;
+  if (!it || !RUNES[k] || runeCount(k) < 1 || (it.rn || []).length >= socketsOf(it) || !runeFits(it, k)) return false;
   hero.runes[k]--; (it.rn || (it.rn = [])).push(k); recalcGear(); return true;
 }
 function unsocketRune(it, idx) {                                              // take it back out: the rune returns to your stock, nothing is lost
@@ -303,7 +313,9 @@ function attemptRuneUp(k, roll = Math.random()) {                        // 'up'
 }
 
 const gearHas = name => !!(hero && hero.gear && hero.gear.unique.includes(name));
-const gearStat = k => (hero && hero.gear ? hero.gear[k] : 0) || 0;
+const buffOn = k => !!(hero && hero.buffs && hero.buffs[k] > 0);
+const LUCK_POTION = { dropLuck: 0.3, gradeLuck: 0.1 };                   // the Luck Potion leans drops and grades your way for a while (on top of gear)
+const gearStat = k => ((hero && hero.gear ? hero.gear[k] : 0) || 0) + (buffOn('luck') && LUCK_POTION[k] || 0);
 
 function bagFind(id) { return hero.inv.findIndex(i => i.id === id); }
 function addToBag(item) { if (hero.inv.length >= INV_MAX) return false; hero.inv.push(item); return true; }
@@ -322,7 +334,7 @@ function equipFromBag(id, slotKey) {
   recalcGear(); sfx('equip');
   return 'ok';
 }
-// rebirth 10: swap the weapon in your hand with the spare one
+// prestige 10: swap the weapon in your hand with the spare one
 function swapWeapons() {
   if (!slotOpen('weapon2')) return 'locked';
   const b = hero.equip.weapon2; if (!b) return 'empty';
@@ -377,7 +389,8 @@ function discardFromBag(id) { const i = bagFind(id); if (i < 0) return false; re
 
 // ---------------------------------------------------------------- caps (level stats + gear, never beyond the ceiling)
 function capValue(key, levelPart) {
-  return Math.min(GEAR_CAPS[key], levelPart + gearStat(key));
+  const cap = key === 'crit' ? critCap() : key === 'critDmg' ? critDmgCap() : GEAR_CAPS[key];
+  return Math.min(cap, levelPart + gearStat(key));
 }
 
 // ---------------------------------------------------------------- saving and loading (never trust a save file)
@@ -438,7 +451,7 @@ function loadGear(d) {
 }
 
 // ---------------------------------------------------------------- drops
-// normal 2.5% per kill (scaled by difficulty and rebirth luck), bosses always drop 1-3 pieces and roll one tier deeper
+// normal 2.5% per kill (scaled by difficulty and prestige luck), bosses always drop 1-3 pieces and roll one tier deeper
 function depthOf() { return tierOf(wave) + (setPos(wave) - 1) / 20; }
 const SIG_DROP = 0.2;                                                // the chance a boss drops its own weapon (times luck)
 function gearDropsFor(m) {
@@ -600,6 +613,12 @@ const bowArt = (wood, wood2, gem) => ICO.rot(-45,
 const staffArt = (col, wood = ICO.wood, trim = ICO.goldD) => ICO.rot(40,
   ICO.r(15, 9, 2.2, 22, wood, 0.6) + ICO.l('M17 10 V30', ICO.woodD, 0.5) + ICO.r(14.4, 24, 3.4, 2.2, ICO.leather, 0.6) + ICO.r(14.4, 15, 3.4, 2, ICO.leather, 0.6) +
   ICO.l('M12.4 8 Q11.2 2.6 16 2 Q20.8 2.6 19.6 8', trim, 1.6, 'stroke-linecap="round"') + ICO.c(16, 5.8, 5, 'rgba(255,255,255,.18)') + ICO.c(16, 5.8, 3.4, col) + ICO.c(15, 4.8, 1.2, 'rgba(255,255,255,.85)'), 1.1);
+const xbowArt = (wood, limb, gem) => ICO.rot(-45,
+  ICO.r(4, 14.4, 23, 3.4, wood, 0.8) + ICO.r(3, 13.4, 6, 5.4, '#4a3420', 0.8) + ICO.l('M21 4.5 Q28 16 21 27.5', '#3a2a18', 3.6, 'stroke-linecap="round"') + ICO.l('M21 4.5 Q28 16 21 27.5', limb, 2.3, 'stroke-linecap="round"') +
+  ICO.l('M21 4.5 L15.4 16 L21 27.5', '#efe6c8', 0.7) + ICO.l('M15.4 16 L28.6 16', '#8a6a3c', 1.3) + ICO.p('M31 16 L27 13.8 L27 18.2 Z', '#dfe6ef') + ICO.r(13, 13.6, 2.2, 4.8, '#6a6a76', 0.5) + (gem ? ICO.c(9, 16, 1.4, gem) : ''), 1.05);
+const wandArt = (col, wood = '#c9a36a', trim = ICO.gold) => ICO.rot(40,
+  ICO.r(15.2, 8, 1.7, 22, wood, 0.6) + ICO.r(14.7, 24, 2.7, 3.6, '#4a3420', 0.5) + ICO.r(14.4, 12.5, 3.3, 1.6, trim, 0.4) +
+  ICO.c(16, 4.8, 5.2, 'rgba(255,255,255,.16)') + ICO.p('M16 0.8 L19.4 5.4 L16 10.6 L12.6 5.4 Z', col) + ICO.p('M16 0.8 L19.4 5.4 L16 5.4 Z', 'rgba(255,255,255,.35)') + ICO.c(15, 4.2, 0.9, 'rgba(255,255,255,.9)'), 1.15);
 const WEAPON_ART = {
   wood:   ICO.rot(45, swordArt(SWORD_STYLES.wood), 1.34),
   iron:   ICO.rot(45, swordArt(SWORD_STYLES.iron), 1.34),
@@ -643,6 +662,16 @@ const WEAPON_ART = {
     ICO.l('M13 15 V21 M16.5 15 V21 M20 15 V21', '#5d6a7a', 0.7) + ICO.p('M8.5 15.5 Q4 14.5 3.6 18 Q3.6 21.5 8.5 20.6 Z', '#c3ccd8') + ICO.l('M5.6 17 Q6.6 18.8 8 18.6', '#5d6a7a', 0.6) +
     ICO.p('M9 23 H23 V28.5 H9 Z', '#6f7886') + ICO.r(9, 23, 14, 2.2, ICO.gold, 0.4) + ICO.c(11.6, 26.4, 0.8, ICO.gold) + ICO.c(16, 26.4, 0.8, ICO.gold) + ICO.c(20.4, 26.4, 0.8, ICO.gold),
 };
+WEAPON_ART.xbow = xbowArt('#a97a46', '#7a5a30');
+WEAPON_ART.hxbow = xbowArt('#6a4a28', '#4a4a56', '#7fb0e0');
+WEAPON_ART.arbalest = xbowArt('#a8b4c8', '#e8d28a', '#ff9a4a');
+WEAPON_ART.wand = wandArt('#e0c890');
+WEAPON_ART.cwand = wandArt('#9fe4ff', '#d8e6f0', '#9fe4ff');
+WEAPON_ART.rwand = wandArt('#ffb86a', '#5a3a80', '#ffd24a');
+WEAPON_ART.sabre = ICO.rot(45, recolor(swordArt(SWORD_STYLES.iron), '#c9a36a', 0.5), 1.34);
+WEAPON_ART.woodaxe = recolor(WEAPON_ART.axe, '#c9a36a', 0.45);
+WEAPON_ART.pike = recolor(WEAPON_ART.spear, '#9ec0e0', 0.45);
+WEAPON_ART.forgehammer = recolor(WEAPON_ART.hammer, '#e0a060', 0.5);
 WEAPON_ART.horned = recolor(WEAPON_ART.axe, '#d9a066', 0.5);
 WEAPON_ART.pilferer = recolor(WEAPON_ART.dagger, '#9be36f', 0.5);
 WEAPON_ART.ooze = recolor(WEAPON_ART.whip, '#7fe07f', 0.5);
@@ -651,6 +680,7 @@ WEAPON_ART.sandreaper = recolor(WEAPON_ART.scythe, '#ffe08a', 0.5);
 WEAPON_ART.magmaG = ICO.rot(45, recolor(swordArt(SWORD_STYLES.great), '#ff7a2a', 0.6), 1.26);
 WEAPON_ART.lichbow = recolor(bowArt('#c9d6c9', '#a6f0b0', '#a6f0b0'), '#a6f0b0', 0.35);
 WEAPON_ART.tempest = staffArt('#fff3a0', '#5a6a8a', '#fff3a0');
+BLADE_SPEC.sabre = { ...BLADE_SPEC.iron, make: bk => recolor(swordArt({ ...SWORD_STYLES.iron, bk }), '#c9a36a', 0.5) };
 BLADE_SPEC.magmaG = { ...BLADE_SPEC.great, make: bk => recolor(swordArt({ ...SWORD_STYLES.great, bk }), '#ff7a2a', 0.6) };
 BLADE_SPEC.pilferer = { ...BLADE_SPEC.dagger, make: bk => recolor(daggerArt(bk), '#9be36f', 0.5) };
 // armor, by which armor it is (the order of BASE_NAMES.armor); every body is the same 32 x 32 tunic outline
@@ -802,6 +832,7 @@ const WEAPON_GEOM = {                                                // lk: how 
   spear: { hx: 16, gy: 19, ty: 0.8, lk: 1, sx: 0.8 }, axe: { hx: 16, gy: 20, ty: 3, lk: 1.1, sx: 0.95 }, hammer: { hx: 16, gy: 22, ty: 3.5, lk: 1.1, sx: 1 },
   scythe: { hx: 16, gy: 20, ty: 3, lk: 1.05, sx: 0.95 }, halberd: { hx: 16, gy: 22, ty: 0.5, lk: 1, sx: 0.85 },
 };
+WEAPON_GEOM.woodaxe = WEAPON_GEOM.axe; WEAPON_GEOM.pike = WEAPON_GEOM.spear; WEAPON_GEOM.forgehammer = WEAPON_GEOM.hammer;
 WEAPON_GEOM.horned = WEAPON_GEOM.axe; WEAPON_GEOM.glacier = WEAPON_GEOM.hammer; WEAPON_GEOM.sandreaper = WEAPON_GEOM.scythe;
 function weaponLength(sw) {                                         // how far the weapon reaches from the hand on screen (the hero's picture is drawn to this length); the hit area follows it
   const bs = BLADE_SPEC[sw.id];
@@ -818,7 +849,7 @@ function artImage(key, body, minY = 0, H = 32) {
   return e.ok ? e.img : null;
 }
 function weaponSprite(sw) {
-  if (sw.kind === 'whip' || sw.kind === 'fist' || sw.kind === 'bow' || sw.kind === 'staff') return null;                // these are drawn by hand (the lash moves, the fists are on both hands)
+  if (sw.kind === 'whip' || sw.kind === 'fist' || sw.kind === 'bow' || sw.kind === 'staff' || sw.kind === 'crossbow' || sw.kind === 'wand') return null;                // these are drawn by hand (the lash moves, the fists are on both hands)
   const bs = BLADE_SPEC[sw.id];
   if (bs) {                                                          // a sword: the blade is longer in the art, the hilt keeps its proportions
     const D = sw.len * bs.lk + 4;
@@ -844,7 +875,7 @@ function statRows(item, versus) {
     const dtxt = diff === null || Math.abs(diff) < 1e-9 ? '' : ` <small class="${diff > 0 ? 'up' : 'down'}">(${diff > 0 ? '+' : '−'}${S.fmt(Math.abs(diff)).replace('+', '')})</small>`;
     rows.push(`<div class="srow"><span>${S.name}</span><b>${S.fmt(item.stats[k])}${dtxt}</b></div>`);
   }
-  for (const rk of item.rn || []) { const R = RUNES[rk]; rows.push(`<div class="srow"><span style="color:${R.color}">◆ ${R.title}</span><b>${GEAR_STATS[R.stat].fmt(R.val)}</b></div>`); }
+  for (const rk of item.rn || []) { const R = RUNES[rk]; rows.push(`<div class="srow"><span style="color:${R.color}">◆ ${R.title}</span><b>${statShort(R.stat, R.val)}</b></div>`); }
   const free = socketsOf(item) - (item.rn || []).length; if (free > 0) rows.push(`<div class="srow"><span>◇ Free socket${free > 1 ? 's' : ''}</span><b>${free}</b></div>`);
   if (versus) for (const k in versus.stats) if (!(k in item.stats)) rows.push(`<div class="srow"><span>${GEAR_STATS[k].name}</span><b class="down">${GEAR_STATS[k].fmt(0)} <small class="down">(−${GEAR_STATS[k].fmt(versus.stats[k]).replace('+', '')})</small></b></div>`);
   return rows.join('');
@@ -854,7 +885,7 @@ function weaponLine(item) {
   const fx = [sw.burn && 'burn', sw.slow && 'slow', sw.stun && 'stuns', sw.pull && 'pulls in', sw.back && 'hits behind', sw.critBonus && `+${Math.round(sw.critBonus * 100)}% crit`, sw.lifesteal && 'life steal'].filter(Boolean).join(', ');
   const own = item.fx ? `<div class="srow"><span style="color:${WFX[item.fx.k].color}">${WFX[item.fx.k].name} ${ROMAN[item.fx.lv]}</span><b>${wfxText(item.fx.k, item.fx.lv, sw.dmg + Math.round(item.stats.dmg || 0)).split(' (')[0]}</b></div>` : '';
   return own + (item.look && LOOKS[sw.id] ? `<div class="srow"><span>Look</span><b>${LOOKS[sw.id].text(item.look)}</b></div>` : '') + `<div class="srow"><span>Weapon damage</span><b>${sw.dmg + Math.round(item.stats.dmg || 0)}</b></div>` +
-    (sw.note ? `<div class="srow"><span>Signature</span><b>${sw.note}</b></div>` : '') + `<div class="srow"><span>${sw.ranged ? 'Range' : 'Reach'} · swing · cost</span><b>${sw.ranged ? sw.range : Math.round(15 + (sw.kind === 'fist' ? 12 : sw.kind === 'whip' ? sw.len : weaponLength(sw)))} · ${sw.time}s · ${sw.cost}</b></div>` + (fx ? `<div class="srow"><span>Effect</span><b>${fx}</b></div>` : '');
+    (sw.note ? `<div class="srow"><span>${sw.sig ? 'Signature' : 'Note'}</span><b>${sw.note}</b></div>` : '') + `<div class="srow"><span>${sw.ranged ? 'Range' : 'Reach'} · swing · cost</span><b>${sw.ranged ? sw.range : Math.round(15 + (sw.kind === 'fist' ? 12 : sw.kind === 'whip' ? sw.len : weaponLength(sw)))} · ${sw.time}s · ${sw.cost}</b></div>` + (fx ? `<div class="srow"><span>Effect</span><b>${fx}</b></div>` : '');
 }
 // Several pieces at once: "Select several" turns the backpack into a tick-list; quick buttons pick everything up to a grade; then discard them, or sell them when you are in the village.
 let invMulti = null, invArm = false;                    // the ids ticked (null = off), and whether Discard has been pressed once already
@@ -892,16 +923,16 @@ function renderInvTabs() {
 function renderInvRunes() {
   const el = id => document.getElementById(id);
   el('invH1').textContent = 'Gear sockets'; el('invH2').textContent = 'Rune pouch'; el('invH3').textContent = 'Details'; el('invH4').textContent = 'Rune bonuses';
-  const owned = RUNE_KEYS.filter(k => runeCount(k) > 0).sort((a, b) => RUNES[b].tier - RUNES[a].tier || RUNE_KEYS.indexOf(a) - RUNE_KEYS.indexOf(b));
+  const owned = RUNE_KEYS.filter(k => runeCount(k) > 0).sort((a, b) => RUNE_KEYS.indexOf(RUNES[a].base) - RUNE_KEYS.indexOf(RUNES[b].base) || RUNES[b].tier - RUNES[a].tier);
   if (invRune && !owned.includes(invRune)) invRune = null;
-  el('invBar').innerHTML = `<div class="hint" style="margin:0 0 .5em">Pick a rune, then press an empty socket (+) to set it. Press a filled socket to take the rune back out. Runes are improved at Ysolde's altar.</div>`;
+  el('invBar').innerHTML = `<div class="hint" style="margin:0 0 .5em">${invRune ? `Press a glowing <b>+</b> to set the rune. It fits ${runeFitText(invRune)}.` : 'Pick a rune, then a socket. Press a filled socket to take its rune out.'}</div>`;
   const pieces = activeSlots().map(k => hero.equip[k]).filter(i => i && socketsOf(i)).map(it => ({ it, eq: true })).concat(hero.inv.filter(i => socketsOf(i)).map(it => ({ it, eq: false })));
   el('invEquip').innerHTML = pieces.length ? pieces.map(({ it, eq }) => {
-    const R = RARITIES[it.rarity], rn = it.rn || [];
+    const R = RARITIES[it.rarity], rn = it.rn || [], fit = invRune && runeFits(it, invRune), full = rn.length >= socketsOf(it);
     const socks = Array.from({ length: socketsOf(it) }, (_, i) => rn[i]
       ? `<button class="sk on" data-rsock="off:${escapeHtml(it.id)}:${i}" style="--rc:${RUNES[rn[i]].tier > 1 ? RUNES[rn[i]].tc : RUNES[rn[i]].color}" title="${escapeHtml(runeLine(rn[i]))} (press to take it out)">${runeSvg(rn[i], 26)}</button>`
-      : `<button class="sk${invRune ? ' ready' : ''}" data-rsock="put:${escapeHtml(it.id)}:${i}" title="${invRune ? 'Set ' + escapeHtml(RUNES[invRune].title) + ' here' : 'Pick a rune first'}">+</button>`).join('');
-    return `<div class="rpiece" style="border-color:${R.color}"><div class="ico">${slotSvg(it.slot, R.color, it)}</div><div class="rtxt"><b style="color:${R.color}" title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</b><small>${eq ? 'Worn' : 'Backpack'} · ${SLOT_LABEL[it.slot]}</small></div><div class="rsocks">${socks}</div></div>`;
+      : `<button class="sk${fit ? ' ready' : ''}" data-rsock="put:${escapeHtml(it.id)}:${i}" title="${!invRune ? 'Pick a rune first' : fit ? 'Set ' + escapeHtml(RUNES[invRune].title) + ' here' : escapeHtml(RUNES[invRune].name) + ' runes do not fit a ' + SLOT_LABEL[it.slot].toLowerCase()}">+</button>`).join('');
+    return `<div class="rpiece${invRune && (!fit || full) ? ' dim' : ''}" style="border-color:${R.color}"><div class="ico">${slotSvg(it.slot, R.color, it)}</div><div class="rtxt"><b style="color:${R.color}" title="${escapeHtml(it.name)}">${escapeHtml(it.name)}</b><small>${eq ? 'Worn' : 'Backpack'} · ${SLOT_LABEL[it.slot]}</small></div><div class="rsocks">${socks}</div></div>`;
   }).join('') : '<div class="hint" style="margin:0">No gear with sockets yet. Uncommon and better pieces have them: 1 on Uncommon and Rare, 2 on Polished and Legendary, 3 on Mythical and Secret.</div>';
   const cells = owned.map(k => { const R = RUNES[k], tc = R.tier > 1 ? R.tc : R.color;
     return `<div class="cell rune ${invRune === k ? 'sel' : ''}" data-rune="${k}" style="border-color:${tc};background:${withAlpha(R.color, 0.12)}" title="${escapeHtml(runeLine(k))}">${runeSvg(k, 40)}<i class="upn">×${runeCount(k)}</i></div>`; });
@@ -909,16 +940,17 @@ function renderInvRunes() {
   el('invGrid').innerHTML = cells.join('') + '<div class="cell empty"></div>'.repeat(pad);
   // what the socketed runes add up to
   const sum = {}; for (const { it } of pieces) for (const k of it.rn || []) { const R = RUNES[k]; sum[R.stat] = (sum[R.stat] || 0) + R.val; }
-  const rows = Object.keys(sum).map(s => `<div class="srow"><span>${GEAR_STATS[s].name}</span><b>${GEAR_STATS[s].fmt(sum[s])}</b></div>`);
+  const rows = Object.keys(sum).map(s => `<div class="srow"><span>${GEAR_STATS[s].name}</span><b>${statShort(s, sum[s])}</b></div>`);
   el('invTotals').innerHTML = (rows.length ? rows.join('') : '<div class="hint" style="margin:0">Nothing socketed yet.</div>') +
     (essTotal() ? `<div class="runestock"><span>Essences</span>${ESS_KEYS.filter(k => essCount(k)).map(k => `<i title="${escapeHtml(ESS[k].title)}" style="--rc:${ESS[k].color}">${essSvg(k, 20)}<b>${essCount(k)}</b></i>`).join('')}</div>` : '');
   const d = el('invDetail');
-  if (!invRune) { d.innerHTML = `<div class="hint" style="margin:0">${owned.length ? 'Select a rune to see what it does and where it can go.' : 'You have no runes. Monsters drop them now and then (bosses most often), and Ysolde the Enchantress sells them in the village.'}<br><br>Runes are lost when you rebirth, except those socketed in the Mythical and Secret pieces you keep.</div>`; return; }
+  if (!invRune) { d.innerHTML = `<div class="hint" style="margin:0">${owned.length ? 'Select a rune to see what it does and where it can go.' : 'You have no runes. Monsters drop them now and then (bosses most often), and Ysolde the Enchantress sells them in the village.'}<br><br>Runes are lost when you prestige, except those socketed in the Mythical and Secret pieces you keep.</div>`; return; }
   const R = RUNES[invRune], tc = R.tier > 1 ? R.tc : R.color, nx = runeNext(invRune), S = GEAR_STATS[R.stat];
   d.innerHTML = `<div class="dico" style="border-color:${tc};background:${withAlpha(R.color, 0.12)}">${runeSvg(invRune, 60)}</div><div class="dname" style="color:${tc}">${escapeHtml(R.title)}</div>
     <div class="dsub">Tier ${R.tier} of ${RUNE_TIERS.length} · you hold ${runeCount(invRune)}</div>
-    <div class="srow"><span>${S.name}</span><b>${S.fmt(R.val)}</b></div>
-    ${nx ? `<div class="srow"><span>Next tier</span><b style="color:${RUNES[nx].tc}">${escapeHtml(RUNES[nx].tname)} · ${S.fmt(RUNES[nx].val)}</b></div>` : '<div class="srow"><span>Tier</span><b>The finest</b></div>'}
+    <div class="srow"><span>${S.name}</span><b>${statShort(R.stat, R.val)}</b></div>
+    ${nx ? `<div class="srow"><span>Next tier</span><b style="color:${RUNES[nx].tc}">${escapeHtml(RUNES[nx].tname)} · ${statShort(R.stat, RUNES[nx].val)}</b></div>` : '<div class="srow"><span>Tier</span><b>The finest</b></div>'}
+    <div class="srow"><span>Fits</span><b>${runeFitText(invRune)}</b></div>
     <div class="hint cmpnote">Set it into a socket on the left. A piece takes runes of any tier.</div>`;
 }
 function renderInventory() {
@@ -961,8 +993,8 @@ function renderInventory() {
   if (g.cdr) line('Faster', GEAR_STATS.cdr.fmt(g.cdr));
   if (g.gold) line('Gold find', GEAR_STATS.gold.fmt(g.gold));
   line('Damage taken', '−' + pctText(dmgReduction()), ` <small>/${pctText(GEAR_CAPS.dr)}</small>`);
-  line('Crit chance', pctText(critChance()), ` <small>/${pctText(GEAR_CAPS.crit)}</small>`);
-  line('Crit damage', `${critMult().toFixed(2)}×`, ` <small>/${GEAR_CAPS.critDmg}×</small>`);
+  line('Crit chance', pctText(critChance()), ` <small>/${pctText(critCap())}</small>`);
+  line('Crit damage', `${critMult().toFixed(2)}×`, ` <small>/${critDmgCap().toFixed(1)}×</small>`);
   line('Move speed', `+${pctText(moveSpeed() / BASE_SPEED - 1)}`, ` <small>/${pctText(GEAR_CAPS.speed)}</small>`);
   if (g.upLuck) line('Upgrade luck', GEAR_STATS.upLuck.fmt(g.upLuck), ` <small>/${pctText(LUCK_CAPS.upLuck)}</small>`);
   if (g.dropLuck) line('Drop luck', GEAR_STATS.dropLuck.fmt(g.dropLuck), ` <small>/${pctText(LUCK_CAPS.dropLuck)}</small>`);
@@ -1008,7 +1040,7 @@ document.getElementById('inv').addEventListener('click', e => {
     const [op, id, idx] = rs.dataset.rsock.split(':'), it = invPieces().find(i => i.id === id);
     if (op === 'put' && it && invRune && socketRune(it, invRune)) { sfx('socket'); saveGame(true, true); }
     else if (op === 'off' && it && unsocketRune(it, +idx)) { sfx('unsocket'); saveGame(true, true); }
-    else { sfx('denied'); if (op === 'put' && !invRune) invMsg('Pick a rune from the pouch first'); }
+    else { sfx('denied'); if (op === 'put' && !invRune) invMsg('Pick a rune from the pouch first'); else if (op === 'put' && it && invRune && !runeFits(it, invRune)) invMsg(`${RUNES[invRune].name} runes fit ${runeFitText(invRune)}`); }
     renderInventory(); return;
   }
   const multi = e.target.closest('[data-multi]');

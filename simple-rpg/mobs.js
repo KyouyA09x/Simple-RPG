@@ -22,6 +22,8 @@ const MELEE = {
   harpy:    { extra: 20, wind: 0.3,  hit: 0.1,  rec: 0.45, cd: 1.0,  lunge: 90,  mul: 0.9,  snd: 'whoosh' },
 };
 
+MELEE.bat = { extra: 8, wind: 0.25, hit: 0.1, rec: 0.4, cd: 0.9, lunge: 60, mul: 0.8, snd: 'whoosh' };
+MELEE.mimic = { extra: 30, wind: 0.5, hit: 0.18, rec: 0.7, cd: 1.0, lunge: 90, mul: 1.3, snd: 'slam' };
 function swingPos(m) {
   const s = m.mel;
   if (s) {
@@ -41,7 +43,7 @@ function swingPos(m) {
 
 // per-creature upkeep, before its brain runs
 function mobTick(m, dt) {
-  shieldTick(m); fidgetTick(m, dt);
+  shieldTick(m); fidgetTick(m, dt); vmoveTick(m, dt, Math.hypot(hero.x - m.x, hero.y - m.y));
   if (m.fireT > 0) m.fireT = Math.max(0, m.fireT - dt);
   if (m.recoilT > 0) m.recoilT = Math.max(0, m.recoilT - dt);
   if (m.alertT === undefined) m.alertT = 0.45;                          // the moment after it rises from the ground: it looks up and notices you
@@ -196,7 +198,7 @@ Object.assign(ATK, {
       m.facing = Math.cos(m.beamA) >= 0 ? 1 : -1;
       m.tickT -= dt;
       if (m.tickT <= 0 && !hero.dead && inCone(m, m.beamA, 300, 0.42)) { m.tickT = 0.32; damageHero(Math.max(1, Math.round(m.dmg * 0.32)), false, m); hero.chillT = 2.5; }
-      if (gfx.particles) for (let i = 0; i < 3; i++) { const a = m.beamA + (Math.random() - 0.5) * 0.7, s = 220 + Math.random() * 160; particles.push({ x: m.x + Math.cos(a) * 30, y: m.y - 60 + Math.sin(a) * 18, vx: Math.cos(a) * s, vy: Math.sin(a) * s * 0.62, life: 0.5, max: 0.5, size: 3, color: 'rgba(200,238,255,0.8)', add: true }); }
+      if (gfx.particles) for (let i = 0; i < 3; i++) { const a = m.beamA + (Math.random() - 0.5) * 0.7, s = 220 + Math.random() * 160; particles.push({ x: m.x + Math.cos(a) * 30, y: m.y - 60 + Math.sin(a) * 18, vx: Math.cos(a) * s, vy: Math.sin(a) * s * 0.62, life: 0.5, max: 0.5, size: 3, color: i ? 'rgba(70,150,255,0.85)' : 'rgba(20,70,170,0.8)', add: false }); }
       if (Math.random() < dt * 6) sfx('crackle');
     } },
   shatter:  { wind: 0.9, fire(m) { ringStrikes(m, 'icicle', 3, 80, 80, 0.8); shake(6); } },
@@ -382,14 +384,17 @@ function wavePool() {                                                    // what
   return pool.length ? pool : [mobsOfBiome(currentBiomeKey())[0]];
 }
 const NEW_MOBS = ['wolf', 'scorpion', 'icesprite', 'fireimp', 'bogLurker', 'panther', 'skeleton', 'harpy'];
-const isNewMob = m => NEW_MOBS.includes(m.type);
+const DUN_MOBS = ['bat', 'mimic'];                                       // the creatures of the dungeons, which no wave brings
+const isNewMob = m => NEW_MOBS.includes(m.type) || DUN_MOBS.includes(m.type);
 // lungers: circle you at `ring`, crouch for `wind`, then spring `speed` px/s for `dur` seconds; pause `cd`
 const LUNGE = {
   wolf:    { ring: 150, range: 230, wind: 0.32, speed: 430, dur: 0.38, cd: 1.5, hop: 5 },
   panther: { ring: 250, range: 340, wind: 0.6,  speed: 480, dur: 0.42, cd: 2.4, hop: 7 },
   harpy:   { ring: 190, range: 290, wind: 0.55, speed: 270, dur: 0.5, cd: 3.0, hop: 0 },
+  bat:     { ring: 120, range: 210, wind: 0.3, speed: 330, dur: 0.34, cd: 1.1, hop: 0 },
+  mimic:   { ring: 70, range: 170, wind: 0.5, speed: 360, dur: 0.3, cd: 1.4, hop: 16 },
 };
-const FLYERS = { icesprite: { z: 34, want: 215, shot: '#9fe4ff', ail: 'chill', snd: 'chill' }, fireimp: { z: 30, want: 200, shot: '#ff7a2a', ail: 'burn', snd: 'lava' }, harpy: { z: 46 } };
+const FLYERS = { bat: { z: 36 }, icesprite: { z: 34, want: 215, shot: '#9fe4ff', ail: 'chill', snd: 'chill' }, fireimp: { z: 30, want: 200, shot: '#ff7a2a', ail: 'burn', snd: 'lava' }, harpy: { z: 46 } };
 
 function newMobAI(m, dt, dx, dy, dist, spd, slowMul, own) {
   if (!own && NEW_MOBS2.includes(m.type)) return newMobAI2(m, dt, dx, dy, dist, spd, slowMul);
@@ -523,6 +528,23 @@ function drawScorpion(m) {
   ctx.restore();
   drawHpBar(m, 46);
 }
+function drawMimic(m) {                                                    // a chest with teeth
+  const f = m.facing, z = m.hopZ || 0, wind = m.state === 'windup', lunge = m.state === 'charge', open = wind ? 0.7 : lunge ? 1 : 0.14 + 0.08 * Math.sin(tAnim * 3 + m.x), sc = m.scale || 1, c = statusTint(m, '#8a5a30');
+  ctx.save(); ctx.globalAlpha *= 0.3; drawShadow(m.x, m.y, 22 * sc * (1 - z / 90)); ctx.restore();
+  ctx.save(); ctx.translate(m.x, m.y - z); ctx.scale(f * sc, sc); ctx.lineJoin = 'round';
+  const step = m.moving ? Math.sin(m.walkT * 2) * 3 : 0;
+  ctx.fillStyle = '#4a2e16'; ctx.strokeStyle = '#111'; ctx.lineWidth = 1.6; for (const lx of [-14, 14]) { ctx.beginPath(); ctx.ellipse(lx, -3 + (lx > 0 ? step : -step) * 0.5, 7, 4.5, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
+  ctx.fillStyle = c; ctx.fillRect(-22, -28, 44, 24); ctx.strokeRect(-22, -28, 44, 24); ctx.fillStyle = '#4a2e16'; ctx.fillRect(-22, -19, 44, 4);
+  if (open > 0.3) { ctx.fillStyle = '#b3243a'; ctx.beginPath(); ctx.moveTo(-18, -28); ctx.lineTo(20, -28); ctx.quadraticCurveTo(26, -22 + open * 4, 14, -17); ctx.lineTo(-18, -17); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle = '#f2eedd'; for (let i = 0; i < 6; i++) { const tx = -17 + i * 7; ctx.beginPath(); ctx.moveTo(tx - 2.6, -28); ctx.lineTo(tx, -22); ctx.lineTo(tx + 2.6, -28); ctx.closePath(); ctx.fill(); }
+  ctx.save(); ctx.translate(-22, -28); ctx.rotate(-open * 0.95);
+  ctx.fillStyle = c; ctx.beginPath(); ctx.moveTo(0, 0); ctx.quadraticCurveTo(22, -24, 44, 0); ctx.closePath(); ctx.fill(); ctx.stroke(); ctx.fillStyle = '#4a2e16'; ctx.fillRect(14, -16, 4, 14); ctx.fillRect(26, -14, 4, 12);
+  ctx.fillStyle = '#f2eedd'; for (let i = 0; i < 6; i++) { const tx = 4 + i * 7; ctx.beginPath(); ctx.moveTo(tx - 2.6, 0); ctx.lineTo(tx, 6); ctx.lineTo(tx + 2.6, 0); ctx.closePath(); ctx.fill(); }
+  ctx.fillStyle = wind || lunge ? '#ff4a3a' : '#ffd24a'; for (const ex of [26, 36]) { ctx.beginPath(); ctx.ellipse(ex, -9, 2.6, 3.4, 0, 0, Math.PI * 2); ctx.fill(); }
+  ctx.fillStyle = '#d9b44a'; ctx.fillRect(21, -4, 4, 6);
+  ctx.restore(); ctx.restore();
+  drawHpBar(m, 48 * sc + z);
+}
 function drawFlyer(m, kind) {                                              // ice sprite, fire imp, harpy
   const { x, facing: f } = m, z = m.hopZ || 0, y = m.y - z, fl = Math.sin(tAnim * (m.state === 'charge' ? 30 : 16) + x), sp = swingPos(m), aim = m.state === 'aim', wind = m.state === 'windup' || sp < -0.3;
   ctx.save(); ctx.globalAlpha *= 0.28; drawShadow(x, m.y, 9 * (1 - z / 120)); ctx.restore();
@@ -546,6 +568,15 @@ function drawFlyer(m, kind) {                                              // ic
     ctx.fillStyle = wind || aim ? '#fff' : '#ffe060'; ctx.beginPath(); ctx.arc(x + f * 3, y - 15, 1.8, 0, Math.PI * 2); ctx.fill();
     if (aim) { const p = 1 - m.stateT / 0.65; const g = ctx.createRadialGradient(x + f * 12, y - 16, 1, x + f * 12, y - 16, 4 + p * 7); g.addColorStop(0, '#fff6c0'); g.addColorStop(1, 'rgba(255,100,20,0)'); ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x + f * 12, y - 16, 4 + p * 7, 0, Math.PI * 2); ctx.fill(); }
     drawHpBar(m, 50 + z);
+  } else if (kind === 'bat') {
+    const c = statusTint(m, '#4a4058'), dive = m.state === 'charge', flap = dive ? 0.2 : fl, sp = dive ? 10 : 20;
+    ctx.fillStyle = '#2e2838'; ctx.strokeStyle = '#17121e'; ctx.lineWidth = 1.2;
+    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + sd * 3, y - 14); ctx.quadraticCurveTo(x + sd * sp * 0.7, y - 28 - flap * 9, x + sd * sp, y - 12 - flap * 5); ctx.lineTo(x + sd * sp * 0.68, y - 9); ctx.lineTo(x + sd * sp * 0.42, y - 12); ctx.lineTo(x + sd * sp * 0.2, y - 8); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = c; ctx.beginPath(); ctx.ellipse(x, y - 12, 5.6, 8, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + sd * 2, y - 19); ctx.lineTo(x + sd * 5, y - 27); ctx.lineTo(x + sd * 6.4, y - 18); ctx.closePath(); ctx.fill(); ctx.stroke(); }
+    ctx.fillStyle = wind || dive ? '#ff3a3a' : '#ff8a6a'; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.arc(x + sd * 2.4 + f * 0.6, y - 15, 1.3, 0, Math.PI * 2); ctx.fill(); }
+    if (wind || dive) { ctx.fillStyle = '#fff'; for (const sd of [-1, 1]) { ctx.beginPath(); ctx.moveTo(x + sd * 1.6, y - 8); ctx.lineTo(x + sd * 2.6, y - 4); ctx.lineTo(x + sd * 3.4, y - 8); ctx.fill(); } }
+    drawHpBar(m, 38 + z);
   } else {                                                                  // harpy
     const c = statusTint(m, '#c9a0e0'), dive = m.state === 'charge', tuck = dive ? 0.25 : 1, flap = dive ? 0 : fl;
     ctx.fillStyle = '#7a5a9a'; ctx.strokeStyle = '#3a2a4a'; ctx.lineWidth = 1.2;
@@ -630,7 +661,7 @@ Object.assign(MELEE, {
 // what each creature turns into when it has lived long enough (EVO_T seconds on the field): tougher, bigger, hits harder, its ailments twice as likely
 const EVO = { goblin: 'Goblin Chief', minotaur: 'Bull Lord', ogre: 'Ogre Warlord', slime: 'Ooze Mass', archer: 'Marksman', wolf: 'Dire Wolf', scorpion: 'Giant Scorpion', icesprite: 'Frost Wraith', fireimp: 'Fire Fiend',
   bogLurker: 'Bog Horror', panther: 'Shadow Panther', skeleton: 'Bone Captain', harpy: 'Storm Harpy', treant: 'Elder Treant', mummy: 'Mummy Lord', frostwolf: 'Winter Alpha', magmaslime: 'Magma Mass',
-  wisp: 'Greater Wisp', sporeshroom: 'Doom Cap', cursedKnight: 'Death Knight', golem: 'Mountain Golem' };
+  bat: 'Vampire Bat', mimic: 'Greater Mimic', wisp: 'Greater Wisp', sporeshroom: 'Doom Cap', cursedKnight: 'Death Knight', golem: 'Mountain Golem' };
 const EVO_T = 38;
 function evolveMob(m) {
   m.evo = true; m.evoName = EVO[m.type];
@@ -645,7 +676,7 @@ function mobBoost(m, dt) {
   m.age = (m.age || 0) + dt;
   if (m.leader) for (const o of enemies) if (o !== m && o.type === m.type && !o.leader && Math.hypot(o.x - m.x, o.y - m.y) < 260) o.rallyT = 0.3;
   if (m.type === 'wisp') for (const o of enemies) if (o !== m && o.type !== 'wisp' && o.type !== 'boss' && Math.hypot(o.x - m.x, o.y - m.y) < 150) o.wispT = 0.4;
-  if (!m.evo && EVO[m.type] && !m.elite && m.type !== 'boss' && (m.size ?? 1) >= 1 && !(m.spawnT > 0) && m.age > EVO_T) evolveMob(m);
+  if (!m.evo && EVO[m.type] && !m.elite && !m.callBy && m.type !== 'boss' && (m.size ?? 1) >= 1 && !(m.spawnT > 0) && m.age > EVO_T) evolveMob(m);
   return (m.rallyT > 0 ? 1.2 : 1) * (m.rageT > 0 ? 1.35 : 1) * (m.wispT > 0 ? 1.25 : 1);
 }
 function leaderFell(m) {
@@ -854,6 +885,7 @@ const FIDGETS = {
   slime: [['jiggle'], ['jiggle', 'bubble']], magmaslime: [['jiggle', 'bubble'], ['bubble']], archer: [['look'], ['sway'], ['scratch', '...']], skeleton: [['look'], ['rattle']],
   wolf: [['sniff'], ['shake'], ['look']], frostwolf: [['shake'], ['sniff']], panther: [['stretch'], ['sniff'], ['tail']], scorpion: [['tail'], ['sway']],
   icesprite: [['twinkle']], fireimp: [['spark'], ['preen']], harpy: [['preen'], ['look']], wisp: [['loop'], ['twinkle']], bogLurker: [['bubble'], ['sway']],
+  bat: [['preen'], ['look']], mimic: [['jiggle'], ['sway']],
   treant: [['sway', 'leaf'], ['stretch']], mummy: [['sway', 'sand'], ['look']], sporeshroom: [['puff'], ['sway']], cursedKnight: [['look', 'chill'], ['sway']], golem: [['dust'], ['stretch']],
 };
 const FID_TIME = { scratch: 1.2, look: 1.5, paw: 1.3, snort: 1.1, stretch: 1.3, jiggle: 1.0, bubble: 1.4, sway: 1.8, sniff: 1.4, shake: 0.9, tail: 1.2, twinkle: 1.4, spark: 1.2, preen: 1.3, loop: 1.5, puff: 1.3, rattle: 0.9, dust: 1.2, leaf: 1.5, sand: 1.5, chill: 1.4 };
@@ -930,6 +962,8 @@ const DEATH = {
   frostwolf: { t: 1.0, hold: 0.55, fx: 'ice', at: 0.35, pose: (m, p) => { ctx.translate(0, -Math.sin(Math.min(1, p * 2.4) * Math.PI) * 14); rotAbout(m, -m.facing * easeOutQ(p * 2.4) * 3.1); ctx.translate(0, easeOutQ(p * 2.4) * 6); } },
   panther:  { t: 1.1, hold: 0.45, fx: 'shadow', at: 0.3, pose: (m, p) => { rotAbout(m, -m.facing * easeOutQ(p * 2) * 1.5); ctx.translate(0, easeOutQ(p * 2) * 4); } },
   scorpion: { t: 1.0, hold: 0.55, pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1, 1 - easeOutQ(p * 2) * 0.35); ctx.rotate(m.facing * easeOutQ(p * 2) * 0.35); ctx.translate(-m.x, -m.y); } },
+  bat:      { t: 0.8, hold: 0.5, at: 0.5, fx: 'feathers', pose: (m, p) => { const fall = Math.min(1, p / 0.55), z = (m.hopZ || 36) * (1 - fall * fall); ctx.translate(0, (m.hopZ || 36) - z); rotAbout(m, -m.facing * fall * 3.6); } },
+  mimic:    { t: 1.1, hold: 0.55, at: 0.4, fx: 'thud', pose: (m, p) => { ctx.translate(Math.sin(p * 40) * 2 * (1 - p), Math.min(1, p * 2.5) * 6); ctx.translate(m.x, m.y); ctx.scale(1 + easeOutQ(p * 2) * 0.25, 1 - easeOutQ(p * 2) * 0.4); ctx.translate(-m.x, -m.y); } },
   harpy:    { t: 1.0, hold: 0.6, at: 0.62, fx: 'feathers', pose: (m, p) => { const fall = Math.min(1, p / 0.6), z = (m.hopZ || 40) * (1 - fall * fall); ctx.translate(0, (m.hopZ || 40) - z); rotAbout(m, m.facing * fall * 5.2); } },
   icesprite: { t: 0.55, hold: 0.1, at: 0.04, fx: 'shatter', pose: (m, p) => { ctx.translate(m.x, m.y); ctx.scale(1 + p * 0.5, 1 + p * 0.5); ctx.translate(-m.x, -m.y); } },
   fireimp:  { t: 0.7, hold: 0.15, at: 0.04, fx: 'embers', pose: (m, p) => { ctx.translate(m.x, m.y - (m.hopZ || 30)); ctx.scale(1 + p * 0.6, Math.max(0.1, 1 - p * 1.2)); ctx.translate(-m.x, -m.y + (m.hopZ || 30)); } },
@@ -978,4 +1012,121 @@ function deathTick(c, dt) {                                                     
   c.dieT += dt;
   const D = DEATH[c.type];
   if (D && D.fx && !c._did && c.dieT / c.dieMax >= (D.at ?? 0)) { c._did = true; deathEffect(c, D); }
+}
+
+// ---------------------------------------------------------------- variant moves
+// A mutation gives a creature a move of its own (spit, bash, dart, roar, quake, drain) and an evolved creature gets the signature move of its form.
+// Each one is shown before it lands: the creature stops, a ring or a line on the ground fills, and the name pops up. All of them can be dodged, and they never come at once.
+const VM = {
+  spit:   { range: [80, 420],  wind: 0.6,  cd: [6, 9] },   bash:  { range: [90, 320], wind: 0.7,  cd: [7, 10] },  dart:  { range: [90, 320], wind: 0.3,  cd: [5, 8] },
+  roar:   { range: [0, 200],   wind: 0.55, cd: [8, 11] },  quake: { range: [0, 230],  wind: 0.85, cd: [8, 12] },  drain: { range: [0, 250],  wind: 0.5,  cd: [7, 10] },
+  call:   { range: [0, 600],   wind: 0.9,  cd: [12, 16] }, charge: { range: [120, 380], wind: 0.8, cd: [8, 11] }, volley: { range: [120, 460], wind: 0.7, cd: [7, 10] },
+  nova:   { range: [0, 230],   wind: 0.8,  cd: [8, 11] },  pounce: { range: [100, 340], wind: 0.5, cd: [6, 9] },  pool:  { range: [60, 420],  wind: 0.7, cd: [9, 12] },
+};
+const MUT_MOVE = {
+  mutated: { id: 'spit', name: 'Spit', col: '#6fe36f' }, armored: { id: 'bash', name: 'Shield Bash', col: '#b8cadc' }, swift: { id: 'dart', name: 'Dart', col: '#5fe0ff' },
+  frenzied: { id: 'roar', name: 'Roar', col: '#ff5a5a' }, giant: { id: 'quake', name: 'Quake', col: '#ffb35a' }, vampiric: { id: 'drain', name: 'Drain', col: '#c77dff' },
+};
+const EVO_MOVE = {
+  goblin: { id: 'call', name: 'Rally Cry', col: '#9ad84a' }, minotaur: { id: 'charge', name: 'Bull Rush', col: '#d9a066' }, ogre: { id: 'quake', name: "Warlord's Stomp", col: '#c9a36a' },
+  slime: { id: 'pool', name: 'Ooze Flood', col: '#7fe07f', kind: 'acid' }, archer: { id: 'volley', name: 'Arrow Rain', col: '#e0c890' }, wolf: { id: 'call', name: 'Howl', col: '#cfd6e0' },
+  scorpion: { id: 'volley', name: 'Venom Spray', col: '#9be36f' }, icesprite: { id: 'nova', name: 'Frost Nova', col: '#bfeaff', chill: true }, fireimp: { id: 'pool', name: 'Fire Wave', col: '#ff9a40', kind: 'lava' },
+  bogLurker: { id: 'pool', name: 'Bog Surge', col: '#7aa86a', kind: 'acid' }, panther: { id: 'pounce', name: 'Shadow Pounce', col: '#7a6aa0' }, skeleton: { id: 'call', name: 'Raise Bones', col: '#e8e0c8' },
+  harpy: { id: 'volley', name: 'Storm Feathers', col: '#c9a0e0' }, treant: { id: 'quake', name: 'Root Slam', col: '#6aa84a' }, mummy: { id: 'drain', name: 'Curse of Ages', col: '#e6cf9c' },
+  frostwolf: { id: 'pounce', name: 'Winter Lunge', col: '#cfeaff' }, magmaslime: { id: 'pool', name: 'Magma Burst', col: '#ff7a2a', kind: 'lava' }, bat: { id: 'drain', name: 'Blood Feast', col: '#c77dff' },
+  mimic: { id: 'pounce', name: 'Greedy Lunge', col: '#d9b44a' }, wisp: { id: 'nova', name: 'Spirit Flare', col: '#9fffd0' }, sporeshroom: { id: 'pool', name: 'Spore Cloud', col: '#d89acb', kind: 'acid' },
+  cursedKnight: { id: 'charge', name: 'Dread Charge', col: '#8a8aff' }, golem: { id: 'quake', name: 'Mountain Stomp', col: '#9a9a8a' },
+};
+function vmoveMoves(m) {
+  const out = []; if (m.mut) for (const k of m.mut) if (MUT_MOVE[k]) out.push(MUT_MOVE[k]); if (m.evo && EVO_MOVE[m.type]) out.push(EVO_MOVE[m.type]); return out;
+}
+const vmCool = v => v.S.cd[0] + Math.random() * (v.S.cd[1] - v.S.cd[0]);
+function vmoveTick(m, dt, dist) {
+  if (m.type === 'boss' || m.dieT !== undefined || m.sleep || (m.spawnT || 0) > 0 || hero.dead || m.bear) return;
+  if (!m.mut && !m.evo) return;
+  const v = m.vm || (m.vm = { cd: 3 + Math.random() * 4, ph: 'idle', t: 0 });
+  if (v.ph === 'idle') {
+    v.cd -= dt;
+    if (v.cd > 0 || m.state !== 'walk' || m.mel || m.stunT > 0 || (m.alertT || 0) > 0) return;
+    const list = vmoveMoves(m); if (!list.length) return;
+    const mv = list[Math.floor(Math.random() * list.length)], S = VM[mv.id];
+    if (dist < S.range[0] || dist > S.range[1]) { v.cd = 0.5; return; }
+    v.ph = 'wind'; v.t = 0; v.mv = mv; v.S = S; v.tx = hero.x; v.ty = hero.y; m.facing = Math.sign(hero.x - m.x) || m.facing;
+    popups.push({ text: mv.name + '!', x: m.x, y: m.y - 96 * (m.scale || 1), t: 0.8, color: mv.col, small: true });
+    return;
+  }
+  m.melCd = Math.max(m.melCd || 0, 0.3); m.stateT = Math.max(m.stateT || 0, 0.15);                  // the older brains wait too: no wind-up of their own while this one is going
+  if (m.stunT > 0 || (v.ph === 'wind' && m.state !== 'walk')) { v.ph = 'idle'; v.cd = 1.5; return; }       // a stun (or another attack) breaks it off
+  if (v.ph === 'wind') {
+    v.t += dt;
+    if (['bash', 'charge', 'pounce', 'dart'].includes(v.mv.id)) { v.tx = hero.x; v.ty = hero.y; }                  // it keeps its eyes on you until the last moment
+    if (v.t >= v.S.wind) vmoveFire(m, v);
+  } else if (v.ph === 'dash') {
+    v.t += dt; const ox = m.x, oy = m.y;
+    m.x += v.dx * v.sp * dt; m.y += v.dy * v.sp * dt; m.x = Math.max(15, Math.min(WW - 15, m.x)); m.y = Math.max(50, Math.min(WH - 10, m.y));
+    if (dun) dunPush(m, Math.max(10, m.r * 0.8));
+    m.moving = true; m.walkT = (m.walkT || 0) + dt * 14;
+    if (gfx.particles) particles.push({ x: ox, y: oy - 30, vx: 0, vy: -10, life: 0.3, max: 0.3, size: 6 * (m.scale || 1), color: v.mv.col, add: true });
+    if (!v.hit && !hero.dead && !invulnerable() && Math.hypot(hero.x - m.x, (hero.y - m.y) * 1.3) < m.r + 18) { v.hit = true; damageHero(Math.round(m.dmg * v.mul), true, m); if (v.mv.id === 'bash' || v.mv.id === 'charge') shake(4); }
+    if (v.t >= v.dur) {
+      if (v.n > 0) { v.n--; v.hit = false; v.t = 0; const a = Math.atan2(hero.y - m.y, hero.x - m.x) + (Math.random() < 0.5 ? 0.9 : -0.9); v.dx = Math.cos(a); v.dy = Math.sin(a); v.dur = 0.2; }
+      else { v.ph = 'idle'; v.cd = vmCool(v); m.moving = false; }
+    }
+  } else if (v.ph === 'beam') {
+    v.t += dt; if (v.t >= 0.35) { v.ph = 'idle'; v.cd = vmCool(v); }
+  }
+}
+function vmoveFire(m, v) {
+  const mv = v.mv, id = mv.id, col = mv.col, ang = Math.atan2(hero.y - 20 - (m.y - 40), hero.x - m.x), done = () => { v.ph = 'idle'; v.cd = vmCool(v); };
+  const fan = (n, spread, sp, mul) => { for (let i = 0; i < n; i++) { const a = ang + (i - (n - 1) / 2) * spread; projectiles.push({ x: m.x, y: m.y - 40, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, t: 3.4, dmg: Math.max(1, Math.round(m.dmg * mul)), orb: col, src: m }); } };
+  const dash = (sp, dur, mul, n = 0) => { const dx = hero.x - m.x, dy = hero.y - m.y, d = Math.hypot(dx, dy) || 1; v.ph = 'dash'; v.t = 0; v.dx = dx / d; v.dy = dy / d; v.sp = sp; v.dur = dur; v.mul = mul; v.hit = false; v.n = n; sfx('whoosh'); };
+  const ring = (R, mul, chill) => { shockwaves.push({ x: m.x, y: m.y, r: 10, maxR: R, hit: false, dmg: Math.max(1, Math.round(m.dmg * mul)), color: col, chill: !!chill }); };
+  switch (id) {
+    case 'spit': fan(3, 0.24, 260, 0.6); sfx('hitBlunt'); done(); break;
+    case 'volley': fan(5, 0.2, 280, 0.5); sfx('click'); done(); break;
+    case 'bash': dash(430, 0.38, 1.3); break;
+    case 'charge': dash(480, 0.6, 1.6); break;
+    case 'dart': dash(560, 0.22, 0.9, 1); break;
+    case 'pounce': dash(600, 0.3, 1.4); break;
+    case 'roar': ring(150, 0.5); m.rageT = 3; sfx('roar'); shake(4); burst(m.x, m.y - 35, col, 14, 160, 3, 40, true); done(); break;
+    case 'quake': ring(230, 1.0); sfx('quake'); shake(8); burst(m.x, m.y, '#b9a98a', 18, 200, 3.5, 80); done(); break;
+    case 'nova': ring(210, 0.9, mv.chill); sfx(mv.chill ? 'thunder' : 'boom'); shake(5); burst(m.x, m.y - 35, col, 16, 200, 3, 60, true); done(); break;
+    case 'pool': {
+      for (let i = 0; i < 3 && hazards.length < 24; i++) { const a = (i - 1) * 0.5 + Math.atan2(hero.y - m.y, hero.x - m.x), d = 60 + i * 55, p = clampWorld(m.x + Math.cos(a) * d, m.y + Math.sin(a) * d * 0.7); hazards.push({ k: 'pool', x: p.x, y: p.y, r: 46, life: 5, max: 5, tick: 0, dmg: Math.max(2, Math.round(m.dmg * 0.3)), kind: mv.kind || 'acid', born: 0 }); }
+      sfx('glub'); done(); break;
+    }
+    case 'call': {
+      const kids = enemies.filter(o => o.callBy === m).length;
+      if (kids < 4 && enemies.length < 18) for (let i = 0; i < 2; i++) { const e = spawnEnemy(m.type, { x: m.x + (i ? 46 : -46), y: m.y + 8 }, { noVariant: true }); if (e) { e.callBy = m; e.hp = e.maxHp = Math.max(1, Math.round(e.maxHp * 0.35)); e.xp = Math.round(e.xp * 0.3); e.sleep = false; } }
+      sfx('roar'); burst(m.x, m.y - 35, col, 14, 160, 3, 40, true); done(); break;
+    }
+    case 'drain': {
+      const d = Math.hypot(hero.x - m.x, hero.y - m.y);
+      if (d < v.S.range[1] && !hero.dead && !invulnerable()) { const got = damageHero(Math.round(m.dmg * 0.8), true, m) || 0; if (got > 0) { m.hp = Math.min(m.maxHp, m.hp + got * 0.8); popups.push({ text: '+' + Math.round(got * 0.8), x: m.x, y: m.y - 80, t: 0.5, color: col, small: true }); } }
+      v.ph = 'beam'; v.t = 0; sfx('wail'); break;
+    }
+    default: done();
+  }
+}
+// what you see of it: the ring or line that fills while it winds up, and the thread of a drain
+function drawVMoveFx(m) {
+  const v = m.vm; if (!v || (v.ph !== 'wind' && v.ph !== 'beam')) return;
+  const col = v.mv.col, id = v.mv.id;
+  ctx.save();
+  if (v.ph === 'beam') { ctx.strokeStyle = withAlpha(col, 0.8 * (1 - v.t / 0.35)); ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(m.x, m.y - 40); ctx.quadraticCurveTo((m.x + hero.x) / 2, Math.min(m.y, hero.y) - 70, hero.x, hero.y - 40); ctx.stroke(); ctx.restore(); return; }
+  const p = Math.min(1, v.t / v.S.wind);
+  if (['roar', 'quake', 'nova'].includes(id)) {
+    const R = id === 'roar' ? 150 : id === 'quake' ? 230 : 210;
+    ctx.fillStyle = withAlpha(col, 0.05 + 0.1 * p); ctx.strokeStyle = withAlpha(col, 0.3 + 0.5 * p); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(m.x, m.y, R, R / 1.7, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = withAlpha(col, 0.25 + 0.3 * p); ctx.beginPath(); ctx.ellipse(m.x, m.y, R * p, R * p / 1.7, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (['bash', 'charge', 'dart', 'pounce'].includes(id)) {
+    const dx = v.tx - m.x, dy = v.ty - m.y, d = Math.hypot(dx, dy) || 1, L = id === 'charge' ? 290 : id === 'pounce' ? 180 : id === 'bash' ? 163 : 123;
+    ctx.strokeStyle = withAlpha(col, 0.3 + 0.5 * p); ctx.lineWidth = 3; ctx.setLineDash([8, 6]); ctx.beginPath(); ctx.moveTo(m.x, m.y); ctx.lineTo(m.x + dx / d * L, m.y + dy / d * L); ctx.stroke(); ctx.setLineDash([]);
+  } else if (id === 'pool') {
+    ctx.strokeStyle = withAlpha(col, 0.2 + 0.4 * p); ctx.lineWidth = 2; for (let i = 0; i < 3; i++) { const a = (i - 1) * 0.5 + Math.atan2(hero.y - m.y, hero.x - m.x), d = 60 + i * 55; ctx.beginPath(); ctx.ellipse(m.x + Math.cos(a) * d, m.y + Math.sin(a) * d * 0.7, 46, 46 / 1.7, 0, 0, Math.PI * 2); ctx.stroke(); }
+  } else {                                                                         // spit, volley, call: it gathers light over its head
+    const r = 6 + 16 * p; ctx.globalCompositeOperation = 'lighter'; ctx.fillStyle = withAlpha(col, 0.2 + 0.4 * p); ctx.beginPath(); ctx.arc(m.x, m.y - 48 * (m.scale || 1), r, 0, Math.PI * 2); ctx.fill();
+  }
+  ctx.restore();
 }

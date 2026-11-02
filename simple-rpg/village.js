@@ -3,7 +3,7 @@
 // (`world`, `enemies`, `wave`...) is left exactly as it was and play resumes where it stopped.
 // villagers.js holds the drawing; this file holds the layout, villager routines, hero control, shops and saving.
 
-const VIL_W = 3000, VIL_H = 1080, VIL_ROAD = 548, VIL_LANE = 905;
+const VIL_W = 4000, VIL_H = 1450;
 const VIL_ZOOM = 1.5;           // the village is drawn this much bigger than the battlefield, so people and buildings read clearly
 let vil = null;                 // the village being visited, or null
 let villageSkip = -1;           // boss wave whose village was already visited (it only appears once per set)
@@ -26,26 +26,47 @@ const LAMPS = [null,
   { name: "Hunter's Lantern", bonus: 80,  cost: 420 },
   { name: 'Radiant Lantern',  bonus: 130, cost: 1000 },
 ];
-const POTION_HEAL = 0.45, POTION_MAX = 15;                  // up to 15 of each kind
+const POTION_HEAL = 0.45, POTION_MAX = 15, BUFF_MAX = 4;     // up to 15 of each healing kind, but only 4 Strength / Luck potions at a time
+const potionMax = k => POTIONS[k] && POTIONS[k].buff ? BUFF_MAX : POTION_MAX;
 // Potions come in kinds (only the Healing Potion for now: it heals and also cures every ailment). Q drinks. Add a kind here (and what it does in drinkPotion) to add a potion.
 const POTIONS = {
   heal: { name: 'Healing Potion', short: 'Heal', color: '#d9534f', field: 'potions' },
+  str:  { name: 'Strength Potion', short: 'Might', color: '#ff9a3a', field: 'strPots', buff: true, dur: 150, text: '+25% damage for 2½ minutes' },
+  luck: { name: 'Luck Potion', short: 'Luck', color: '#3fc47a', field: 'luckPots', buff: true, dur: 240, text: 'Better drops and a better chance at high grades for 4 minutes' },
+  swift: { name: 'Swiftness Potion', short: 'Swift', color: '#4fc3f7', field: 'swiftPots', buff: true, dur: 150, text: '+25% move speed for 2½ minutes' },
+  ward: { name: 'Ward Potion', short: 'Ward', color: '#9a8cff', field: 'wardPots', buff: true, dur: 150, text: '20% less damage taken for 2½ minutes' },
 };
+const BUFF_KEYS = ['str', 'luck', 'swift', 'ward'];
+const STASH = { heal: { name: 'Healing Potion', color: '#e0405a' }, scroll: { name: 'Return Scroll', color: '#cfc0ff' }, str: { name: 'Strength Potion', color: '#ff9a3a' }, luck: { name: 'Luck Potion', color: '#3fc47a' }, swift: { name: 'Swiftness Potion', color: '#4fc3f7' }, ward: { name: 'Ward Potion', color: '#9a8cff' } };
+function addStash(k) {                                                                          // a potion found in a chest: false when the satchel is already full of that kind
+  if (k === 'scroll') { if ((hero.recalls | 0) >= RECALL_MAX) return false; hero.recalls = (hero.recalls | 0) + 1; return true; }
+  const P = POTIONS[k]; if (!P || potionCount(k) >= potionMax(k)) return false; hero[P.field] = potionCount(k) + 1; return true;
+}
 const POTION_KEYS = Object.keys(POTIONS);
 const potionCount = k => (hero && hero[POTIONS[k].field]) | 0;
 const potionCost = () => Math.round(22 + wave * 2.2);
+const buffPotionCost = k => Math.round(potionCost() * (k === 'luck' ? 7 : k === 'ward' ? 6 : 5));
 // every harmful effect on the hero that a Healing Potion removes. New ailments go in AILS (variants.js).
 const hasAilment = () => !!(hero.poison || hero.chillT > 0 || (hero.ail && Object.keys(hero.ail).length));
 function cureAilments() { clearPoison(); hero.chillT = 0; }
 function applyLamp() { hero.lightBonus = (LAMPS[hero.lamp | 0] || { bonus: 0 }).bonus; }
 
 function potionSay(text, color) { popups.push({ text, x: VW / 2, y: VH - 112, t: 1.4, screen: true, small: true, color }); }
-function useUtility() { if (hero.util === 'scroll') useRecall(); else drinkPotion(); }          // Q: whichever utility is equipped
+function useUtility() { if (hero.util === 'scroll') useRecall(); else if (BUFF_KEYS.includes(hero.util)) drinkBuff(hero.util); else drinkPotion(); }          // Q: whichever utility is equipped
 function equipUtility(id) {
-  if (id !== 'potion' && id !== 'scroll') return;
+  if (id !== 'potion' && id !== 'scroll' && !BUFF_KEYS.includes(id)) return;
   if (hero.util === id) return;
   hero.util = id; hero.potionAnim = null; sfx('switch');
-  potionSay(id === 'scroll' ? 'Return Scroll equipped' : 'Healing Potion equipped', id === 'scroll' ? '#cfc0ff' : '#7fd08a');
+  const P = POTIONS[id]; potionSay(id === 'scroll' ? 'Return Scroll equipped' : `${P ? P.name : 'Healing Potion'} equipped`, id === 'scroll' ? '#cfc0ff' : P && P.buff ? P.color : '#7fd08a');
+}
+function drinkBuff(kind) {                                                                      // strength and luck: drunk for a timed boost (drinking again tops the time up)
+  if (!hero || hero.dead || paused || (state !== 'play' && state !== 'village')) return;
+  const P = POTIONS[kind]; if (potionCount(kind) <= 0) { potionSay(`No ${P.name}s left`, '#f88'); sfx('denied'); return; }
+  if ((hero.potionCd || 0) > 0) return;
+  if ((hero.buffs[kind] || 0) > P.dur * 0.6) { potionSay(`${P.name} is still working`, '#ccc'); return; }
+  hero[P.field]--; hero.potionCd = 1; hero.buffs[kind] = P.dur; questEvent('potion');
+  potionSay(P.text, P.color); sfx('potion'); sfx('gulp');
+  if (state === 'play') burst(hero.x, hero.y - 30, P.color, 14, 90, 3, -30, true);
 }
 function drinkPotion() {
   if (!hero || hero.dead || paused || (state !== 'play' && state !== 'village')) return;
@@ -73,7 +94,7 @@ function drawFlask(kind, cx, cy, alpha, scale, rot, empty) {
   ctx.restore();
 }
 function drawPotionSlot(x, cy) {
-  const w = 40, h = 40, y = cy - h / 2, sel = POTIONS[hero.potionSel] ? hero.potionSel : 'heal', P = POTIONS[sel], n = potionCount(sel);
+  const w = 40, h = 40, y = cy - h / 2, sel = POTIONS[hero.util] ? hero.util : 'heal', P = POTIONS[sel], n = potionCount(sel);
   hudPanel(x, y, w, h, { r: 12, edge: withAlpha(P.color, 0.6) });
   const an = hero.potionAnim, k = an ? clamp01((tAnim - an.t0) / 0.32) : 1, mid = x + w / 2, my = cy - 1;
   ctx.save(); ctx.beginPath(); ctx.roundRect(x + 1.5, y + 1.5, w - 3, h - 3, 10.5); ctx.clip();
@@ -152,10 +173,17 @@ const SHOP_ROW = {                                     // the row north of the r
   armoury: { w: 190, wh: 72, rh: 46, sign: 'shield' },
   jewel:   { w: 160, wh: 64, rh: 42, sign: 'gem', flowers: true },
   craft:   { w: 180, wh: 72, rh: 48, sign: 'hammer', paint: { wall: '#c9bba4', roof: '#5a4638', trim: '#3a2a20' } },       // the Crafting Hall: shuttered for now
-  church:  { w: 270, wh: 96, rh: 64, church: true, paint: { wall: '#e6e1d3', roof: '#58627f', trim: '#7a6a4a', chimney: false } },       // the church of Return: the priestess and the rite of rebirth are inside
+  church:  { w: 270, wh: 96, rh: 64, church: true, paint: { wall: '#e6e1d3', roof: '#58627f', trim: '#7a6a4a', chimney: false } },       // the church of Return: the priestess and the rite of prestige are inside
+  atelier: { w: 170, wh: 70, rh: 50, sign: 'rune', paint: { wall: '#c3d3d6', roof: '#2f6073', trim: '#1f3f4c' } },       // Orin's rune atelier: pale teal walls and a slate-blue roof; rune work (improving, imbuing) is done here, Ysolde only sells the runes
+  guild:   { w: 210, wh: 78, rh: 52, sign: 'guild', paint: { wall: '#bfae8c', roof: '#7a2a2a', trim: '#3a2a1a' } },       // the Adventurers' Guild: the quest board, the guildmaster and the adventurers are inside
   enchant: { w: 170, wh: 70, rh: 50, sign: 'rune', paint: { wall: '#cfc6e4', roof: '#4b3a8c', trim: '#33265c' } },       // Ysolde's house: lavender walls and a deep violet roof, whatever the biome
 };
-const YARD_W = { garden: 230, lawn: 430, smith: 300, wood: 310 };       // widths of the yards south of the road
+
+function vilNearNet(v, x, y) {                            // the point on a path nearest to (x, y)
+  let best = v.net[0], bd = 1e12; for (const q of v.net) { const d = (q[0] - x) ** 2 + (q[1] - y) ** 2; if (d < bd) { bd = d; best = q; } } return best;
+}
+
+let CHAT_ON = false;                                    // the Chat menu (news, tips, ball, stories) is hidden for now; flip this to bring it back
 
 function buildVillage() {
   const B = BIOMES[zone % BIOMES.length], st = VIL_STYLE[B.key] || VIL_STYLE.forest;
@@ -163,7 +191,7 @@ function buildVillage() {
   const E = r() < 0.5 ? 1 : -1;                          // the gate is on the east (1) or west (-1) side; you arrive from the other
   const v = {
     B, st, seed, E, name: st.name, t: 0, fade: 1, leaveT: 0, solids: [], hsolids: [], statics: [], buildings: [], b: {}, npcs: [], animals: [], hens: [],
-    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 4 + Math.floor(Math.random() * 5) },
+    fx: [], plants: [], lamps: [], keep: [], patches: [], stock: { potion: 9 + Math.floor(Math.random() * 7), str: 1 + Math.floor(Math.random() * 2), luck: Math.floor(Math.random() * 2) + (Math.random() < 0.5 ? 1 : 0), swift: 1 + Math.floor(Math.random() * 2), ward: Math.floor(Math.random() * 2) + (Math.random() < 0.5 ? 1 : 0) },
     near: null, talk: null, shop: null, kidMode: 'ball', kidT: 25, tag: { it: 0, imm: 0 }, kickCd: 0, chaseT: 0, chaser: null, lastKicker: null,
     stats: { stuck: 0, snaps: 0 }, smokeT: 0, soundT: 0, doneLeave: false,
   };
@@ -177,23 +205,89 @@ function buildVillage() {
   const CX = VIL_W / 2;
 
   // ---- buildings: doors face south ----
+  const pick = a => a[Math.floor(r() * a.length)];
   const mkB = (id, x, y, w, wh, rh, extra = {}) => {
-    const b = { id, x, y, w, wh, rh, wall: st.wall, trim: st.trim, roof: st.roofs[v.buildings.length % st.roofs.length], ...extra };
+    const kx = extra.kx ?? 1.15, ky = extra.ky ?? 1.35;       // drawn bigger than the old design so the people fit the doors
+    w *= kx; wh *= ky; rh *= ky;
+    const b = { id, x, y, w, wh, rh, kx, ky, wall: st.wall, trim: st.trim, roof: st.roofs[v.buildings.length % st.roofs.length], ...extra };
+    if (!b.church) {                                          // every building is rolled: how it is built, roofed, lit and decorated
+      b.ws = pick(['board', 'plaster', 'stone', 'log', 'brick']); b.rs = pick(['hip', 'gable', 'mansard', 'thatch', 'hip', 'gable']); b.wst = Math.floor(r() * 2);
+      b.shut = r() < 0.5; b.shutC = pick(['#3f6a4a', '#2f5a8a', '#8a3a30', '#6a4a2a']); b.box = r() < 0.4; b.vine = r() < 0.25; b.awn = r() < 0.35 ? pick(['#c0392b', '#2f6aa8', '#2f8a6a', '#d9a030']) : null;
+      b.porch = !b.awn && r() < 0.25; b.dorm = r() < 0.4; b.lantern = r() < 0.4; b.chL = r() < 0.5; b.dsq = r() < 0.4; b.wood = r() < 0.25;
+      if (!extra.wall) b.wall = b.ws === 'brick' ? mixHex(st.wall, '#b8644a', 0.7) : b.ws === 'log' ? mixHex(st.wall, '#9a6a3c', 0.75) : shadeHex(st.wall, (r() - 0.5) * 0.18);
+      if (extra.houseOf || id === 'inn' || (extra.shop && !extra.wall)) {                // timber cottages: palette, roof pitch, porch, wing, ridge and garden are all rolled
+        const PRE = [{ wood: '#a8773f', beam: '#4a2f18', roof: '#6b6a3a' }, { wood: '#8a7a66', beam: '#3e342a', roof: '#4f6a7a' }, { wood: '#b24a36', beam: '#3a1f16', roof: '#4a4038' }, { wood: '#e2d6b8', beam: '#5a3a22', roof: '#a8453a', plaster: true },
+          { wood: '#cfd9c8', beam: '#3f4a3a', roof: '#5a7a4a', plaster: true }, { wood: '#d7c4a0', beam: '#4a3220', roof: '#c9a24a', plaster: true }, { wood: '#6a4a32', beam: '#2a1a10', roof: '#6a3a3a' }, { wood: '#c8b0a0', beam: '#5a3a3a', roof: '#4a5a8a', plaster: true }, { wood: '#c9a560', beam: '#5a3a18', roof: '#8a4a2a' }];
+        b.cottage = true; b.cv = { ...pick(PRE), rf: pick([0.8, 1, 1.25]), wing: r() < 0.7 ? 1 : 0, porch: pick(['open', 'open', 'closed', 'balcony']), win2: r() < 0.5, shut: r() < 0.5 ? pick(['#3f6a4a', '#2f5a8a', '#8a3a30', '#c9a030']) : null, ridge: pick(['cap', 'vane', 'finials', 'cross']), barrel: r() < 0.6, dx: extra.shop ? 0 : 0.2, ex: ['pots', 'basket', 'fence', 'bench', 'woodpile'].filter(() => r() < 0.45) };
+        b.doorX = extra.shop ? 0 : Math.round((b.chL ? 1 : -1) * w * 0.2);
+      }
+    }
     b.door = { x: x + (b.doorX || 0), y: y + 22 };
-    b.chim = { x: x + w * 0.26 + 7, y: y - wh - rh - 10 };
+    b.chim = b.cottage ? { x: x + (b.chL ? -1 : 1) * w * (b.cv.wing !== 0 ? 0.63 : 0.4), y: y - wh - rh * (b.cv.wing !== 0 ? 0.78 : 0.7) - 18 * ky } : { x: x + (b.chL ? -w * 0.26 - 14 * kx : w * 0.26) + 7 * kx, y: y - wh - rh - 10 };
     v.buildings.push(b); v.b[id] = b;
     rect(x - w / 2, y - 40, x + w / 2, y);
     add(y, () => drawBuilding(b, curNight > 0.45, curNight > 0.45));
     return b;
   };
-  // north row: five shops in a random order
+  // ---- the plaza, the way in and the way out: the paths wind between them ----
+  const style = pick(['ring', 'ring', 'twin', 'twin', 'spread', 'tight']); v.style = style;
+  const plaza = { x: CX + Math.round((r() - 0.5) * (style === 'twin' ? 500 : 900)), y: 690 + Math.round((r() - 0.5) * 220), rx: 215, ry: 80 };
+  v.plaza = plaza;
+  const gate = { x: E > 0 ? VIL_W - 52 : 52, y: 520 + Math.round(r() * 380) };            // the way in and the way out each have their own height
+  v.gate = gate;
+  prop('gate', gate.x, gate.y); rect(gate.x - 52, gate.y - 12, gate.x - 34, gate.y + 2); rect(gate.x + 34, gate.y - 12, gate.x + 52, gate.y + 2);
+  v.arrive = { x: E > 0 ? 112 : VIL_W - 112, y: 520 + Math.round(r() * 380) };
+  const wx = v.arrive.x + (E > 0 ? 70 : -70), wy = v.arrive.y - 48;
+  prop('welcome', wx, wy, { text: st.name }); circle(wx, wy - 2, 5); keep(wx - 60, wy - 60, wx + 60, wy + 20);
+  v.paths = []; v.net = [];                                // the dirt paths (drawn into the ground) and a point every 40 units along them
+  const addPath = (pts, w) => { v.paths.push({ pts, w }); for (const p of pts) v.net.push(p); };
+  const curve = (a, b, amp) => {                           // a wandering line from a to b
+    const n = Math.max(2, Math.round(Math.hypot(b[0] - a[0], b[1] - a[1]) / 40)), nx = -(b[1] - a[1]), ny = b[0] - a[0], L = Math.hypot(nx, ny) || 1, s1 = r() < 0.5 ? 1 : -1, ph = r() * 6.28, pts = [];
+    for (let i = 0; i <= n; i++) { const t = i / n, w = Math.sin(Math.PI * t) * (amp * s1 + Math.sin(t * 9 + ph) * amp * 0.3); pts.push([a[0] + (b[0] - a[0]) * t + nx / L * w, a[1] + (b[1] - a[1]) * t + ny / L * w]); }
+    return pts;
+  };
+  const sgn = E > 0 ? -1 : 1;                              // the side of the plaza the arrival is on
+  addPath(curve([v.arrive.x, v.arrive.y], [plaza.x + sgn * plaza.rx * 0.8, plaza.y], 70 + r() * 80), 50);
+  addPath(curve([plaza.x - sgn * plaza.rx * 0.8, plaza.y], [gate.x, gate.y], 70 + r() * 80), 50);
+  addPath([[gate.x, gate.y], [E > 0 ? VIL_W - 120 : 120, gate.y]], 40); addPath([[v.arrive.x, v.arrive.y], [E > 0 ? 120 : VIL_W - 120, v.arrive.y]], 40);
+  let c2 = null;                                          // a twin village has a second, smaller square with its own path to the main one
+  if (style === 'twin') {
+    const sx = plaza.x > CX ? -1 : 1; c2 = { x: Math.max(650, Math.min(VIL_W - 650, plaza.x + sx * (950 + r() * 350))), y: 600 + Math.round(r() * 440) };
+    let q = null, bd = 1e12; for (const p of v.net) { const d = Math.hypot(p[0] - c2.x, p[1] - c2.y); if (d < bd) { bd = d; q = p; } }
+    addPath(curve(q, [c2.x, c2.y], 60 + r() * 60), 44); patch(c2.x, c2.y, 120, 60, '#b8b2a2', 0.5, { n: 60, rx: 110, ry: 52, cols: ['#c9c3b2', '#a8a292'], w: 4, h: 2 });
+    prop('well', c2.x, c2.y); circle(c2.x, c2.y - 4, 27); v.well2 = c2;
+  }
+  const trunk = v.net.slice();
+
+  // ---- buildings scatter round the plaza: shops first, then the yards, each in a random free spot ----
   const order = shuffle(Object.keys(SHOP_ROW));
-  const sumW = order.reduce((a, k) => a + SHOP_ROW[k].w, 0), gapN = (VIL_W - 260 - sumW) / (order.length - 1);
-  let cursor = 130;
-  for (const id of order) { const s = SHOP_ROW[id]; mkB(id, cursor + s.w / 2, 336 + Math.floor(r() * 24), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers, church: s.church, ...(s.paint || {}) }); cursor += s.w + gapN; }
-  v.shopOrder = order;
-  const { alch, store, armoury, jewel, enchant } = v.b;
-  v.church = v.b.church; v.cSolids = churchSolids(v);
+  const kxOf = s => s.church ? 1.1 : 1.15, wOf = k => SHOP_ROW[k].w * kxOf(SHOP_ROW[k]);
+  const placed = [...(c2 ? [[c2.x - 190, c2.y - 120, c2.x + 190, c2.y + 110]] : []), [plaza.x - 330, plaza.y - 175, plaza.x + 330, plaza.y + 165], [E > 0 ? gate.x - 230 : 0, gate.y - 170, E > 0 ? VIL_W : gate.x + 230, gate.y + 170], [E > 0 ? 0 : v.arrive.x - 260, v.arrive.y - 170, E > 0 ? v.arrive.x + 260 : VIL_W, v.arrive.y + 170]];
+  const fits = (f, m) => f[0] > 150 && f[2] < VIL_W - 150 && f[1] > 170 && f[3] < VIL_H - 60 && !placed.some(p => f[0] < p[2] + m && f[2] > p[0] - m && f[1] < p[3] + m && f[3] > p[1] - m)
+    && !trunk.some(p => p[0] > f[0] - 45 && p[0] < f[2] + 45 && p[1] > f[1] - 45 && p[1] < f[3] + 45);
+  const sc = { ring: 1, twin: 0.8, spread: 1.3, tight: 0.78 }[style], xs = style === 'spread' ? 2.0 : 1.75;
+  const putPiece = (rel, rmin, rmax, cen = plaza) => {                  // the first free spot at a random angle round the plaza, a given distance out (the map is wide, so x is stretched)
+    for (const m of [34, 22, 12, 4]) for (let k = 0; k < 500; k++) {
+      const a = r() * 6.2832, d = (rmin + r() * (rmax - rmin)) * sc, ax = cen.x + Math.cos(a) * d * xs, ay = cen.y + Math.sin(a) * d, f = rel(ax, ay);
+      if (fits(f, m)) { placed.push(f); return [ax, ay]; }
+    }
+    for (let k = 0; k < 6000; k++) { const ax = 200 + r() * (VIL_W - 400), ay = 200 + r() * (VIL_H - 300), f = rel(ax, ay); if (fits(f, 14)) { placed.push(f); return [ax, ay]; } }
+    const ax = 300 + r() * (VIL_W - 600), ay = 400 + r() * 500; placed.push(rel(ax, ay)); return [ax, ay];
+  };
+  const near = ['church', ...shuffle(['inn', 'guild', 'store', 'alch'])], far = shuffle(['armoury', 'jewel', 'craft', 'atelier', 'enchant']);
+  const YBOX = { garden: [-15, 250, 555, 935], lawn: [-10, 445, 570, 930], smith: [-20, 320, 690, 935], wood: [0, 320, 615, 915] };       // the yards: x offset, width, top and bottom as drawn
+  const yorder = shuffle(Object.keys(YBOX)).sort((p, q) => (YBOX[q][1] * (YBOX[q][3] - YBOX[q][2])) - (YBOX[p][1] * (YBOX[p][3] - YBOX[p][2])) + (r() - 0.5) * 60000), yspot = {};
+  const shopAt = id => {
+    const s = SHOP_ROW[id], w = wOf(id), ky = s.church ? 1.15 : 1.35, h = (s.wh + s.rh) * ky, isNear = near.includes(id);
+    const [bx, by] = putPiece((ax, ay) => [ax - w / 2 - 55, ay - h - 15, ax + w / 2 + 45, ay + 88], isNear ? 330 : 470, isNear ? 560 : 880, isNear || !c2 || r() < 0.4 ? plaza : c2);
+    mkB(id, Math.round(bx), Math.round(by), s.w, s.wh, s.rh, { sign: s.sign, flowers: s.flowers, church: s.church, shop: !s.church, kx: kxOf(s), ky, ...(s.paint || {}) });
+  };
+  near.forEach(shopAt);
+  yorder.forEach((k, i) => { const [bx0, bw, by0, by1] = YBOX[k], bh = by1 - by0; const [cx, cy] = putPiece((ax, ay) => [ax - bw / 2, ay - bh / 2, ax + bw / 2, ay + bh / 2], 520 + i * 120, 900 + i * 120, !c2 || r() < 0.4 ? plaza : c2); yspot[k] = [Math.round(cx - bw / 2 - bx0), Math.round(cy - bh / 2 - by0)]; });
+  far.forEach(shopAt);
+  v.shopOrder = order.slice().sort((p, q) => v.b[p].x - v.b[q].x);
+  const { alch, store, armoury, jewel, enchant, atelier } = v.b;
+  v.church = v.b.church; v.cSolids = churchSolids(v); innSolids(v); guildSolids(v);
 
   // ---- shop counters and a bit of clutter at the left corner of every shop ----
   const counter = (b, w, kind, awn) => {
@@ -201,7 +295,7 @@ function buildVillage() {
     add(p.y, () => VPROP.counter(p)); rect(p.x - w / 2, p.y - 14, p.x + w / 2, p.y + 4);
     v.hsolids.push({ x0: p.x - w / 2 - 20, y0: b.y + 2, x1: p.x - w / 2, y1: p.y + 4 }, { x0: p.x + w / 2, y0: b.y + 2, x1: p.x + w / 2 + 20, y1: p.y + 4 });   // the shopkeeper's side of the counter is closed to you
   };
-  counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b'); counter(armoury, 120, 'armour', '#2f6aa8'); counter(jewel, 100, 'jewel', '#2f8a6a'); counter(enchant, 108, 'enchant', '#5b3fa8');
+  counter(alch, 110, 'alch', '#6a4fb0'); counter(store, 124, 'store', '#c0392b'); counter(armoury, 120, 'armour', '#2f6aa8'); counter(jewel, 100, 'jewel', '#2f8a6a'); counter(enchant, 108, 'enchant', '#5b3fa8'); counter(atelier, 108, 'enchant', '#1f6a82');
   const barrel = (x, y, o = {}) => { prop('barrel', x, y, o); circle(x, y - 4, 11); };
   const crates = (x, y) => { prop('crates', x, y); rect(x - 20, y - 14, x + 19, y + 1); };
   for (const id of order) {
@@ -212,32 +306,20 @@ function buildVillage() {
   }
 
   // ---- plaza: well, benches, notice board (their sides are rolled) ----
-  const plaza = { x: CX, y: 505, rx: 215, ry: 80 };
-  v.plaza = plaza;
   prop('well', plaza.x, plaza.y); circle(plaza.x, plaza.y - 4, 27);
-  const sA = r() < 0.5 ? 1 : -1;
-  const doors = v.buildings.filter(b => b.y < VIL_ROAD).map(b => b.door.x);
-  const clearOfDoors = x => { for (let i = 0; i < 8; i++) { const d = doors.find(dx => Math.abs(dx - x) < 56); if (!d) break; x += (x >= d ? 1 : -1) * (58 - Math.abs(x - d)); } return x; };
-  const bax = clearOfDoors(plaza.x + sA * 140), bbx = clearOfDoors(plaza.x - sA * 140), brx = clearOfDoors(plaza.x + sA * 250);
-  const benchA = prop('bench', bax, 484); rect(bax - 29, 484 - 24, bax + 29, 484 - 4);
-  const benchB = prop('bench', bbx, 484); rect(bbx - 29, 484 - 24, bbx + 29, 484 - 4);
-  const board = prop('board', brx, 505); rect(brx - 28, 505 - 14, brx + 28, 505);
+  const sA = r() < 0.5 ? 1 : -1;                          // the benches and the board stand on the cobbles, off to the sides of where the paths come in
+  const bax = plaza.x + sA * 125, bbx = plaza.x - sA * 125, by = plaza.y - 45, brx = plaza.x + 62, bry = plaza.y + 60;
+  const benchA = prop('bench', bax, by); rect(bax - 29, by - 24, bax + 29, by - 4);
+  const benchB = prop('bench', bbx, by); rect(bbx - 29, by - 24, bbx + 29, by - 4);
+  const board = prop('board', brx, bry); rect(brx - 28, bry - 14, brx + 28, bry);
   v.board = board; v.benchA = benchA; v.benchB = benchB;
-  keep(board.x - 50, 440, board.x + 50, 560);
+  keep(board.x - 50, plaza.y - 65, board.x + 50, plaza.y + 80);
 
-  // ---- the gate on one end of the road, a welcome sign at the other ----
-  const gate = { x: E > 0 ? VIL_W - 52 : 52, y: VIL_ROAD + 8 };
-  v.gate = gate;
-  prop('gate', gate.x, gate.y); rect(gate.x - 52, gate.y - 12, gate.x - 34, gate.y + 2); rect(gate.x + 34, gate.y - 12, gate.x + 52, gate.y + 2);
-  const wx = E > 0 ? 150 : VIL_W - 150;
-  prop('welcome', wx, 502, { text: st.name }); circle(wx, 500, 5);
-  v.arrive = { x: E > 0 ? 112 : VIL_W - 112, y: VIL_ROAD + 4 };
-
-  // ---- the yards south of the road, in a random order ----
+  // ---- the yards: each is a small place of its own, dropped into a free spot (dy moves it up or down from where it was drawn) ----
   const YARDS = {
-    garden(ox) {                                         // Old Pim's garden, his house and a clothesline
-      mkB('houseA', ox + 115, 835, 150, 62, 40, { flowers: true });
-      const G = { x0: ox + 20, y0: 585, x1: ox + 210, y1: 700, gapY0: 621, gapY1: 661, gapAt: ox + 115 < plaza.x ? 'E' : 'W' };
+    garden(ox, dy) {                                     // Old Pim's garden, his house and a clothesline
+      mkB('houseA', ox + 115, 872 + dy, 150, 62, 40, { flowers: true, ky: 1.25, houseOf: true });
+      const G = { x0: ox + 20, y0: 585 + dy, x1: ox + 210, y1: 700 + dy, gapY0: 621 + dy, gapY1: 661 + dy, gapAt: ox + 115 < plaza.x ? 'E' : 'W' };
       v.garden = G;
       prop('fence', G.x0, G.y0 + 5, { len: G.x1 - G.x0 }); rect(G.x0, G.y0 - 4, G.x1, G.y0 + 6);
       prop('fence', G.x0, G.y1 + 5, { len: G.x1 - G.x0 }); rect(G.x0, G.y1 - 2, G.x1, G.y1 + 8);
@@ -250,55 +332,91 @@ function buildVillage() {
         const p = { x: G.x0 + 30 + i * 26, y: G.y0 + (row ? 87 : 27), kind: (i + row * 2 + (v.seed % 3)) % 4, g: 0.35 + r() * 0.5, wet: 0, ph: r() * 6.28, c: i };
         v.plants.push(p); add(p.y, () => drawPlant(p));
       }
-      prop('line', ox + 10, 765, { len: 200 }); circle(ox + 10, 763, 4); circle(ox + 210, 763, 4);
-      keep(ox - 15, 700, ox + 230, 790);
+      prop('line', ox + 10, 765 + dy, { len: 200 }); circle(ox + 10, 763 + dy, 4); circle(ox + 210, 763 + dy, 4);
+      keep(ox - 15, 700 + dy, ox + 230, 790 + dy);
     },
-    lawn(ox) {                                           // the kids' lawn, a house and the chicken yard
-      mkB('houseB', ox + 180, 835, 150, 62, 40);
-      v.lawn = { x0: ox + 25, y0: 618, x1: ox + 285, y1: 745 };
-      keep(ox, 590, ox + 320, 775);
-      prop('coop', ox + 342, 800); rect(ox + 318, 774, ox + 366, 800);
-      v.yard = { x0: ox + 275, y0: 836, x1: ox + 405, y1: 892 };
-      keep(ox + 250, 770, ox + 430, 900);
-      patch(ox + 155, 682, 190, 90, B.grass[1], 0.55);
-      patch(ox + 348, 862, 95, 50, '#c8a85a', 0.55, { n: 90, rx: 80, ry: 40, cols: ['#d8bc68', '#b89848'], w: 3, h: 1 });
+    lawn(ox, dy) {                                       // the kids' lawn, a house and the chicken yard
+      mkB('houseB', ox + 180, 878 + dy, 150, 62, 40, { ky: 1.25, houseOf: true });
+      v.lawn = { x0: ox + 25, y0: 618 + dy, x1: ox + 285, y1: 745 + dy };
+      keep(ox, 590 + dy, ox + 320, 775 + dy);
+      prop('coop', ox + 342, 800 + dy); rect(ox + 318, 774 + dy, ox + 366, 800 + dy);
+      v.yard = { x0: ox + 275, y0: 836 + dy, x1: ox + 405, y1: 892 + dy };
+      keep(ox + 250, 770 + dy, ox + 430, 900 + dy);
+      patch(ox + 155, 682 + dy, 190, 90, B.grass[1], 0.55);
+      patch(ox + 348, 862 + dy, 95, 50, '#c8a85a', 0.55, { n: 90, rx: 80, ry: 40, cols: ['#d8bc68', '#b89848'], w: 3, h: 1 });
     },
-    smith(ox) {                                          // Brann's forge: smithy, forge, anvil, quench barrel and a weapon rack
-      mkB('smith', ox + 110, 835, 210, 70, 44, { sign: 'anvil' });
-      v.forge = prop('forge', ox + 252, 836); rect(ox + 224, 802, ox + 280, 838);
-      v.anvil = prop('anvil', ox + 178, 892, { hot: 0 }); circle(ox + 178, 888, 12);
-      prop('barrel', ox + 82, 888, { water: true }); circle(ox + 82, 884, 11);
-      v.rack = prop('rack', ox + 22, 884); rect(ox + 2, 868, ox + 44, 886);
-      keep(ox - 10, 800, ox + 300, 925);
-      patch(ox + 178, 884, 100, 46, '#1e1a18', 0.6);
+    smith(ox, dy) {                                      // Brann's forge: smithy, forge, anvil, quench barrel and a weapon rack
+      mkB('smith', ox + 110, 835 + dy, 210, 70, 44, { sign: 'anvil', kx: 1.05, ky: 1.2 });
+      v.forge = prop('forge', ox + 252, 836 + dy); rect(ox + 224, 802 + dy, ox + 280, 838 + dy);
+      v.anvil = prop('anvil', ox + 178, 892 + dy, { hot: 0 }); circle(ox + 178, 888 + dy, 12);
+      prop('barrel', ox + 82, 888 + dy, { water: true }); circle(ox + 82, 884 + dy, 11);
+      v.rack = prop('rack', ox + 22, 884 + dy); rect(ox + 2, 868 + dy, ox + 44, 886 + dy);
+      keep(ox - 10, 800 + dy, ox + 300, 925 + dy);
+      patch(ox + 178, 884 + dy, 100, 46, '#1e1a18', 0.6);
     },
-    wood(ox) {                                           // Rurik's woodcutter yard and house
-      mkB('houseC', ox + 190, 700, 130, 60, 38, { flowers: true });
-      v.stump = prop('stump', ox + 100, 792, { split: 0 }); circle(ox + 100, 788, 13);
-      v.logs = prop('logs', ox + 38, 852, { n: 6 }); rect(ox + 10, 838, ox + 66, 854);
-      v.stack = prop('stack', ox + 258, 850, { n: 4 }); rect(ox + 224, 812, ox + 294, 852);
-      keep(ox, 740, ox + 305, 915);
-      patch(ox + 135, 820, 165, 90, '#c9a972', 0.5, { n: 120, rx: 140, ry: 76, cols: ['#e6cf9c', '#b99863'], w: 3, h: 1.5 });
+    wood(ox, dy) {                                       // Rurik's woodcutter yard and house
+      mkB('houseC', ox + 190, 742 + dy, 130, 60, 38, { flowers: true, ky: 1.25, houseOf: true });
+      v.stump = prop('stump', ox + 100, 792 + dy, { split: 0 }); circle(ox + 100, 788 + dy, 13);
+      v.logs = prop('logs', ox + 38, 852 + dy, { n: 6 }); rect(ox + 10, 838 + dy, ox + 66, 854 + dy);
+      v.stack = prop('stack', ox + 258, 850 + dy, { n: 4 }); rect(ox + 224, 812 + dy, ox + 294, 852 + dy);
+      keep(ox, 740 + dy, ox + 305, 915 + dy);
+      patch(ox + 135, 820 + dy, 165, 90, '#c9a972', 0.5, { n: 120, rx: 140, ry: 76, cols: ['#e6cf9c', '#b99863'], w: 3, h: 1.5 });
     },
   };
-  const yorder = shuffle(Object.keys(YARDS));
-  const sumY = yorder.reduce((a, k) => a + YARD_W[k], 0), gapS = (VIL_W - 300 - sumY) / (yorder.length - 1);
-  cursor = 150; v.yardOrder = yorder;
-  for (const k of yorder) { YARDS[k](cursor); cursor += YARD_W[k] + gapS; }
-  for (const b of v.buildings) {                         // keep trees off the doors and their paths
-    if (b.y < VIL_ROAD) keep(b.x - b.w / 2 - 30, b.y - 140, b.x + b.w / 2 + 30, VIL_ROAD + 50);
-    else keep(b.x - b.w / 2 - 30, b.y - 140, b.x + b.w / 2 + 30, VIL_LANE + 40);
+  yorder.forEach(k => YARDS[k](yspot[k][0], yspot[k][1]));
+  v.yardOrder = yorder.slice().sort((p, q) => (p === 'garden' ? v.garden.x0 : p === 'lawn' ? v.lawn.x0 : p === 'smith' ? v.forge.x : v.stump.x) - (q === 'garden' ? v.garden.x0 : q === 'lawn' ? v.lawn.x0 : q === 'smith' ? v.forge.x : v.stump.x));
+
+  // ---- a little path from every door to the nearest path, the nearest ones first so the far ones can join them ----
+  const GC = 20, GW = Math.ceil(VIL_W / GC), GH = Math.ceil(VIL_H / GC), blk = new Uint8Array(GW * GH), isNet = new Uint8Array(GW * GH);
+  const cellOf = (x, y) => Math.max(0, Math.min(GW - 1, Math.floor(x / GC))) + Math.max(0, Math.min(GH - 1, Math.floor(y / GC))) * GW;
+  const block = (x0, y0, x1, y1) => { for (let cy = Math.max(0, Math.floor(y0 / GC)); cy <= Math.min(GH - 1, Math.floor(y1 / GC)); cy++) for (let cx = Math.max(0, Math.floor(x0 / GC)); cx <= Math.min(GW - 1, Math.floor(x1 / GC)); cx++) blk[cy * GW + cx] = 1; };
+  for (const sd of v.solids) { if (sd.r !== undefined) block(sd.x - sd.r - 10, sd.y - sd.r - 10, sd.x + sd.r + 10, sd.y + sd.r + 10); else block(sd.x0 - 10, sd.y0 - 10, sd.x1 + 10, sd.y1 + 10); }
+  for (const bd of v.buildings) block(bd.x - bd.w / 2 - 12, bd.y - bd.wh - bd.rh * 0.85, bd.x + bd.w / 2 + 12, bd.y);           // a building is blocked roof and all, not just its foot
+  block(v.lawn.x0 - 14, v.lawn.y0 - 14, v.lawn.x1 + 14, v.lawn.y1 + 14); if (v.yard) block(v.yard.x0 - 10, v.yard.y0 - 10, v.yard.x1 + 10, v.yard.y1 + 10);          // the kids' lawn and the hen yard are not for paths
+  for (const p of v.net) isNet[cellOf(p[0], p[1])] = 1;
+  for (let cy = 0; cy < GH; cy++) for (let cx = 0; cx < GW; cx++) { const x = (cx + 0.5) * GC, y = (cy + 0.5) * GC; if (((x - plaza.x) / plaza.rx) ** 2 + ((y - plaza.y) / plaza.ry) ** 2 < 0.8) { isNet[cy * GW + cx] = 1; blk[cy * GW + cx] = 0; } }
+  const nearBlk = new Uint8Array(GW * GH); for (let c = 0; c < GW * GH; c++) if (blk[c]) { const cx = c % GW, cy = (c / GW) | 0; for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) { const nx = cx + dx, ny = cy + dy; if (nx >= 0 && ny >= 0 && nx < GW && ny < GH) nearBlk[ny * GW + nx] = 1; } }
+  const route = (sx, sy) => {                              // the cheapest way from (sx, sy) to any path, round everything that is in the way
+    const start = cellOf(sx, sy), sxc = start % GW, syc = (start / GW) | 0, free = new Set(); for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) free.add((syc + dy) * GW + sxc + dx);
+    const dist = new Float64Array(GW * GH).fill(1e9), prev = new Int32Array(GW * GH).fill(-1), heap = [[0, start]]; dist[start] = 0; let goal = -1;
+    const push = (d, c) => { heap.push([d, c]); let i = heap.length - 1; while (i > 0) { const pa = (i - 1) >> 1; if (heap[pa][0] <= heap[i][0]) break; [heap[pa], heap[i]] = [heap[i], heap[pa]]; i = pa; } };
+    const pop = () => { const top = heap[0], last = heap.pop(); if (heap.length) { heap[0] = last; let i = 0; for (;;) { const l = 2 * i + 1, rr = l + 1; let m = i; if (l < heap.length && heap[l][0] < heap[m][0]) m = l; if (rr < heap.length && heap[rr][0] < heap[m][0]) m = rr; if (m === i) break; [heap[m], heap[i]] = [heap[i], heap[m]]; i = m; } } return top; };
+    while (heap.length) {
+      const [d, c] = pop(); if (d > dist[c]) continue;
+      if (isNet[c] && c !== start) { goal = c; break; }
+      const cx = c % GW, cy = (c / GW) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        if (!dx && !dy) continue; const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue; const n = ny * GW + nx;
+        if (blk[n] && !free.has(n)) continue; if (dx && dy && ((blk[cy * GW + nx] && !free.has(cy * GW + nx)) || (blk[ny * GW + cx] && !free.has(ny * GW + cx)))) continue;
+        const nd = d + (dx && dy ? 1.41 : 1) * (nearBlk[n] ? 1.7 : 1); if (nd < dist[n]) { dist[n] = nd; prev[n] = c; push(nd, n); }
+      }
+    }
+    if (goal < 0) return null; const out = []; for (let c = goal, g = 0; c >= 0 && g < 4000; c = prev[c], g++) out.push([(c % GW + 0.5) * GC, (((c / GW) | 0) + 0.5) * GC]); out.reverse();
+    return out.filter((_, i) => i % 2 === 0 || i === out.length - 1);
+  };
+  const byDist = v.buildings.slice().sort((p, q) => Math.hypot(p.x - plaza.x, p.y - plaza.y) - Math.hypot(q.x - plaza.x, q.y - plaza.y));
+  for (const bd of byDist) {
+    const q = vilNearNet(v, bd.door.x, bd.door.y + 40), side = q[0] >= bd.x ? 1 : -1;
+    const go = bd.shop ? [[bd.door.x, bd.door.y], [bd.door.x + side * 50, bd.door.y + 14], [bd.door.x + side * 104, bd.door.y + 44]] : [[bd.door.x, bd.door.y], [bd.door.x, bd.door.y + 36]];       // a shop's path goes round the end of its counter, not under it
+    const from = go[go.length - 1], rt = route(from[0], from[1]);
+    if (rt) { const pts = [...go, ...rt.slice(1)]; addPath(pts, 34); for (const p of pts) isNet[cellOf(p[0], p[1])] = 1; }
+    else if (Math.hypot(q[0] - from[0], q[1] - from[1]) > 50) addPath([...go, ...curve(from, q, 22).slice(1)], 34);
   }
+  for (const b of v.buildings) keep(b.x - b.w / 2 - 30, b.y - 150, b.x + b.w / 2 + 30, b.y + 90);         // keep trees off the doors
 
-  // ---- lamp posts along the road and round the plaza ----
+  // ---- lamp posts along the main paths and round the plaza ----
   const lampAt = (x, y) => { prop('lamp', x, y); circle(x, y - 3, 5); v.lamps.push({ x: x + 9, y: y - 46 }); };
-  for (let x = 190; x < VIL_W - 150; x += 170) if (Math.abs(x - plaza.x) > plaza.rx + 20 && Math.abs(x - gate.x) > 150) lampAt(x + Math.floor(r() * 30), 520);
-  lampAt(plaza.x - 120, 570); lampAt(plaza.x + 120, 570);
+  trunk.forEach((p, i) => {
+    if (i % 6 !== 3 || Math.abs(p[0] - plaza.x) < plaza.rx + 40 || Math.abs(p[0] - gate.x) < 150 || Math.abs(p[0] - v.arrive.x) < 150) return;
+    const x = p[0] + 4, y = p[1] + (i % 12 === 3 ? 38 : -38);
+    if (!vilOverlaps(v, x, y, 16)) lampAt(x, y);
+  });
+  lampAt(plaza.x - 120, plaza.y + 65); lampAt(plaza.x + 120, plaza.y + 65);
 
-  // ---- roads and plazas stay clear of trees ----
-  keep(0, VIL_ROAD - 55, VIL_W, VIL_ROAD + 55); keep(95, VIL_ROAD, 145, VIL_LANE + 25); keep(VIL_W - 145, VIL_ROAD, VIL_W - 95, VIL_LANE + 25);
-  keep(95, VIL_LANE - 28, VIL_W - 95, VIL_LANE + 28); keep(plaza.x - plaza.rx - 20, plaza.y - plaza.ry - 20, plaza.x + plaza.rx + 20, plaza.y + plaza.ry + 20);
-  keep(E > 0 ? VIL_W - 105 : 0, 470, E > 0 ? VIL_W : 105, 640);
+  // ---- paths and plazas stay clear of trees ----
+  for (const p of v.net) keep(p[0] - 46, p[1] - 46, p[0] + 46, p[1] + 46);
+  keep(plaza.x - plaza.rx - 20, plaza.y - plaza.ry - 20, plaza.x + plaza.rx + 20, plaza.y + plaza.ry + 20);
+  keep(E > 0 ? VIL_W - 105 : 0, gate.y - 110, E > 0 ? VIL_W : 105, gate.y + 110); keep(E > 0 ? 0 : VIL_W - 105, v.arrive.y - 110, E > 0 ? 105 : VIL_W, v.arrive.y + 110);
 
   // ---- trees and rocks: a ring around the village and a few inside ----
   const kinds = st.trees.filter(k => PROP_ART[k]);
@@ -349,19 +467,37 @@ function bakeVillageGround(v) {
   bakeGroundDetail(c, r, B);
   for (let i = 0; i < 2000; i++) { c.fillStyle = r() < 0.5 ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.05)'; c.fillRect(r() * VIL_W, r() * VIL_H, 1 + r() * 2, 1 + r() * 1.4); }
   const dirt = mixHex(B.ground, st.dirt, 0.72), edgeCol = shadeHex(dirt, -0.22), cob = mixHex(B.ground, '#b8b2a2', 0.72);
-  const stroke = (pts, w) => {
-    c.lineCap = 'round'; c.lineJoin = 'round';
-    c.strokeStyle = withAlpha(edgeCol, 0.5); c.lineWidth = w + 12; c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
-    c.strokeStyle = dirt; c.lineWidth = w; c.beginPath(); pts.forEach((p, i) => i ? c.lineTo(p[0], p[1]) : c.moveTo(p[0], p[1])); c.stroke();
-  };
-  const wig = x => Math.sin(x / 170) * 8;
-  const main = []; for (let x = -20; x <= VIL_W + 20; x += 40) main.push([x, VIL_ROAD + wig(x)]);
-  stroke(main, 50);
-  stroke([[120, VIL_ROAD], [120, VIL_LANE]], 40); stroke([[VIL_W - 120, VIL_ROAD], [VIL_W - 120, VIL_LANE]], 40); stroke([[120, VIL_LANE], [VIL_W - 120, VIL_LANE]], 40);
-  for (const b of v.buildings) stroke(b.y < VIL_ROAD ? [[b.door.x, b.door.y], [b.door.x, VIL_ROAD]] : [[b.door.x, b.door.y], [b.door.x, VIL_LANE]], 34);
+  const trace = pts => { c.beginPath(); c.moveTo(pts[0][0], pts[0][1]); for (let i = 1; i < pts.length - 1; i++) c.quadraticCurveTo(pts[i][0], pts[i][1], (pts[i][0] + pts[i + 1][0]) / 2, (pts[i][1] + pts[i + 1][1]) / 2); const l = pts[pts.length - 1]; c.lineTo(l[0], l[1]); };
+  const pass = (col, grow, lw) => { c.strokeStyle = col; for (const q of v.paths) { c.lineWidth = lw ? lw * q.w : q.w + grow; trace(q.pts); c.stroke(); } };
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  pass(withAlpha(mixHex(B.ground, dirt, 0.5), 0.22), 40); pass(withAlpha(mixHex(B.ground, dirt, 0.6), 0.4), 24);          // the verge: grass worn thin round the edge, every path at once so the junctions blend
+  pass(withAlpha(edgeCol, 0.6), 9); pass(dirt, 0); pass(withAlpha(shadeHex(dirt, 0.1), 0.6), 0, 0.6);
+  for (const q of v.paths) {                                // ragged edges, wheel ruts, stones and tufts along every path
+    const pts = q.pts, nrm = pts.map((p, i) => { const a = pts[Math.max(0, i - 1)], b = pts[Math.min(pts.length - 1, i + 1)], dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy) || 1; return [-dy / L, dx / L]; });
+    for (let i = 0; i < pts.length; i++) for (const sd of [-1, 1]) for (let k = 0; k < 1; k++) {
+      const o = q.w / 2 + (r() - 0.5) * 8, x = pts[i][0] + nrm[i][0] * sd * o + (r() - 0.5) * 30 * 0.5, y = pts[i][1] + nrm[i][1] * sd * o + (r() - 0.5) * 15;
+      c.fillStyle = r() < 0.5 ? withAlpha(dirt, 0.85) : withAlpha(mixHex(B.ground, dirt, 0.2), 0.5); c.beginPath(); c.ellipse(x, y, 3 + r() * 5, 2 + r() * 3.5, r() * 3, 0, 6.3); c.fill();
+    }
+    if (q.w >= 40) for (const sd of [-0.22, 0.22]) {         // two wheel ruts, broken up
+      c.save(); c.setLineDash([26 + r() * 20, 12 + r() * 14]); c.strokeStyle = withAlpha(edgeCol, 0.32); c.lineWidth = 3; trace(pts.map((p, i) => [p[0] + nrm[i][0] * q.w * sd, p[1] + nrm[i][1] * q.w * sd])); c.stroke(); c.restore();
+    }
+    for (let i = 0; i < pts.length; i++) {
+      for (let k = 0; k < 2; k++) {                          // stones set in the dirt
+        const o = (r() - 0.5) * q.w * 0.9, x = pts[i][0] + nrm[i][0] * o + (r() - 0.5) * 24, y = pts[i][1] + nrm[i][1] * o + (r() - 0.5) * 12, s = 1.5 + r() * 2.6;
+        c.fillStyle = withAlpha(shadeHex(dirt, -0.28), 0.8); c.beginPath(); c.ellipse(x + 0.7, y + 0.8, s, s * 0.7, 0, 0, 6.3); c.fill();
+        c.fillStyle = r() < 0.5 ? '#a49e90' : '#8d8778'; c.beginPath(); c.ellipse(x, y, s, s * 0.7, 0, 0, 6.3); c.fill();
+      }
+      if (r() < 0.8) for (const sd of [-1, 1]) {             // grass tufts and the odd flower on the verge
+        const o = q.w / 2 + 6 + r() * 12, x = pts[i][0] + nrm[i][0] * sd * o + (r() - 0.5) * 18, y = pts[i][1] + nrm[i][1] * sd * o + (r() - 0.5) * 8;
+        c.strokeStyle = r() < 0.5 ? shadeHex(B.grass[1], 0.25) : shadeHex(B.grass[1], -0.25); c.lineWidth = 1.4; c.beginPath();
+        for (const dx of [-3, 0, 3]) { c.moveTo(x + dx * 0.6, y); c.lineTo(x + dx, y - 4 - r() * 4); } c.stroke();
+        if (r() < 0.18) { c.fillStyle = ['#f6e27a', '#ffffff', '#f28ab2', '#b99bff'][Math.floor(r() * 4)]; c.beginPath(); c.arc(x + 4, y - 3, 1.8, 0, 6.3); c.fill(); }
+      }
+    }
+  }
   c.save();                                              // speckle the dirt so it reads as packed earth
   for (let i = 0; i < 3000; i++) {
-    const x = r() * VIL_W, y = VIL_ROAD - 26 + r() * 52 + wig(x);
+    const q = v.net[Math.floor(r() * v.net.length)], x = q[0] + (r() - 0.5) * 46, y = q[1] + (r() - 0.5) * 46;
     c.fillStyle = r() < 0.5 ? withAlpha(edgeCol, 0.5) : withAlpha(shadeHex(dirt, 0.2), 0.45); c.fillRect(x, y, 1 + r() * 3, 1 + r() * 2);
   }
   c.restore();
@@ -392,7 +528,15 @@ function bakeVillageGround(v) {
 // ---------------------------------------------------------------- the people
 // more for everyone to say (the first lines live with each person below); {biome} {village} {name} {wave} {tier} are filled in when they speak
 const MORE_LINES = {
-  mira: ['Three drops of this and you will feel ten years younger. Four and you will feel nothing at all.', 'Do not shake the bottles. Do not drop the bottles. Do not look at the green bottle.', 'Every set of ten waves, the herbs grow stranger. {biome} herbs are the strangest yet.'],
+  maren: ['I grow the herbs the infirmary needs. And, when no one is looking, the roses.', 'The fountain was here before the church. The church was built around it, politely.', 'Heroes trample my beds. I forgive them. Mostly.'],
+  ada: ['Lend me your tales and I will write them down. The brave ones and the embarrassing ones.', 'The oldest book upstairs is in a language no one speaks. I talk to it anyway.', 'Do not eat in the scriptorium. The books can tell.'],
+  bree: ['The bell rope is for the priestess. We have all pulled it. We do not discuss it.', 'Warm beds are the quietest kind of magic.', 'There is a draught in the east corner. I have named it Gerald.'],
+  tomas: ['Pilgrims sleep upstairs. The soup is the real miracle.', 'I have knelt in nine churches. This one has the best acoustics for snoring.', 'Sit with me a while, {name}. Waiting is a kind of walking.'],
+  wren: ['Do you know which window is the oldest? I think it is the blue one. It has a crack.', 'I want to climb the stairs and ring the bell. Is that allowed? Nobody says no.', 'Nuns are very quiet. I tested it with a dropped spoon.'],
+  cass: ['Some sermons are very short. Those are the good ones.', 'If you find an old rune, do not rub it. Bring it to me and let me rub it.', 'The scriptorium smells of old paper and warm candle wax. It is the best smell in the village.'],
+  fenn: ['Nuns do not haggle. I tried. I left with a prayer and no discount.', 'Everyone prays for coins here. I pray for good roads. We are both disappointed.', 'I am just resting my feet, {name}. Do not tell my feet.'],
+  marl: ['The beds upstairs are very soft. Do not tell the heroes, they will never leave.', 'I have counted the beams. There are forty-one. One is wrong.', 'Soup at noon, soup at dusk. I am not complaining.'],
+  mira: ['Three drops of this and you will feel ten years younger. Four and you will feel nothing at all.', 'Do not shake the bottles. Do not drop the bottles. Do not look at the green bottle.', 'Every time a guardian falls, the herbs grow stranger. {biome} herbs are the strangest yet.'],
   tobin: ['Rope, lanterns, rations... and one slightly used boot. Do not ask.', 'Business is good for a village on the edge of a beast road.', 'I would give you a discount, {name}, but I would then be out of business.'],
   hilda: ['The beds are clean, the soup is hot, and there is nothing on my shelf that bites. Mostly.', 'You are welcome to stay as long as you like. The innkeeper in me says so. The one who pays the bills is quieter.', 'Folk come through {village} all the time. Few come back with that look in their eye.'],
   brann: ['Iron remembers every blow. So should you.', 'A hero with bad gear is just a short story.', 'Hm. You swing like someone who has been hit a lot. Good. That is how you learn.', 'Spare gear? Bring it. Honest coin for honest steel.'],
@@ -403,7 +547,7 @@ const MORE_LINES = {
   orla: ['I knit a scarf for the hero every winter. None of them have ever come back to collect it.', 'In my day the road had a toll. Now it has a beast. I preferred the toll.', 'Sit, dear. The best stories take a while, and so does the tea.', 'That dog is smarter than the mayor. Do not tell the mayor.'],
   voss: ['Orders are simple. Nobody comes in with a weapon drawn. Nobody goes out unprepared. That includes you.', 'Quiet night, quiet morning. I like it that way. The beast on the road does not.', 'I have stood this gate for eleven winters. Nothing has got past me. Yet.', 'Rest, buy what you need, and leave on your own terms. The road waits.'],
   pip: ['I can do forty keepy-ups! ...Three. I can do three.', 'Nell cheats at tag. She says she does not. She does.', 'Do you have a sword? A real one? Can I hold it? ...No? Okay.', 'Tam says the dog can talk. Tam is nine and lies a lot.'],
-  nell: ['One day I will fight monsters too. I will be much better than Pip.', 'Granny Orla says I may have her old stick. It is very long.', 'If you see my ball, it is red. If you see Pip, it is probably his fault.', 'We play until the lamps come on. Then Mum shouts.'],
+  nell: ['One day I will fight monsters too. I will be much better than Pip.', 'Granny Wenna says I may have her old stick. It is very long.', 'If you see my ball, it is red. If you see Pip, it is probably his fault.', 'We play until the lamps come on. Then Mum shouts.'],
   tam: ['The ball went into the hay again. Pip says he did not kick it. He did.', 'Do you think the beast is scared of us? I would be scared of us.', 'My dad says you are very brave. My mum says you are very late for dinner.', 'I am the fastest in the village. ...After Nell.'],
 };
 // ---------------------------------------------------------------- more to say, and more to do
@@ -414,29 +558,31 @@ const EXTRA_LINES = {
   tobin: ['A lantern is just a small sun you can carry. Do not tell the sun I said so.', 'Every hero buys the same three things: rope, lantern, regret. I only sell two.', 'Fog, night, deep ruins... light is the cheapest armour there is.'],
   dagna: ['Mail is a promise to your ribs. Keep it.', 'A dent is a story. A hole is a funeral. I fix both. Mostly the first.', 'I do not do pretty. I do alive.'],
   lysa: ['A ring on every finger and still your pockets will be empty. That is how you know it is good jewellery.', 'This stone brings luck. That one brings a lot of questions. I sell both.', 'Look closely at the clasp. That is where the quality hides.'],
+  orin: ['A rune does not break. It loses its nerve. I put it back.', 'Gold and time: those are the only two things that improve a rune. I charge for both.', 'If it fails, it falls a tier. Do not look at me like that. I did not make the rules.'],
+  orin: ['Essences hold magic that wants to be used. A weapon is a good place for it.', 'A Tier V essence is the sort of thing you tell your grandchildren about. From a safe distance.', 'Bring me the runes Ysolde sells and the ones the monsters drop. They all burn the same.'],
   ysolde: ['Faint runes are cheap, and every Eternal one began as a Faint one. Remember that when you lose a few.', 'A rune never forgets the hand that shaped it. That is why they hum when you hold them.', 'Do not hoard. A rune in a pouch is a song nobody hears.', 'If the altar refuses, it is not cruelty. It is a stone that is not ready.'],
   hilda: ['The best soup is the one you eat after a long road. I have never made it better than that.', 'There is always a bed. There is always a bowl. That is the whole business.', 'I hear every rumour. I repeat none of them. Except the good ones.'],
   brann: ['A blade is only as honest as the one who sharpens it.', 'Upgrade a sword too many times and it sulks. Ask me how I know.', 'Spend gold on iron, not regret.'],
   pim: ['Carrots are patient. Cabbages are stubborn. Roses are drama.', 'Every dawn I tell the plants good morning. The beans never answer. The beans are rude.', 'A garden is just a slow conversation with the weather.'],
   rurik: ['Cut it clean, stack it neat, burn it warm. That is all of woodcraft.', 'Trees do not mind being cut if you ask them first. I always ask.', 'The splitting maul has a name. I will not tell you what it is.'],
   orla: ['The village is quiet because the young ones are loud elsewhere.', 'Your boots tell me a long story. Go on, sit and tell me the rest.', 'I have outlived three innkeepers and one very rude goat.'],
-  eira: ['A return is not an ending, {name}. It is the part of the song that circles back.', 'Level does not forget. Neither does the church.', 'The Mythical pieces cling to you. You are lucky to be liked by such things.'],
+  eira: ['A return is not an ending, {name}. It is the part of the song that circles back.', 'The light does not forget. Neither does the church.', 'The Mythical pieces cling to you. You are lucky to be liked by such things.'],
   voss: ['I have counted the gate posts every morning for eleven years. They have not moved.', 'A guard is a patient man with a sharp stick.', 'Nothing is quiet here forever, hero. That is what the stick is for.'],
   pip: ['I am the fastest in the village. Nell says she is. She is not.', 'When I grow up I will have a sword and a dog and a very big ball.'],
   nell: ['Pip says I cannot be a hero because I am small. I say heroes start small. Like acorns.', 'Tam is the strongest kicker. But I am the sneakiest.'],
   tam: ['I can kick it over the roof. Almost. Next time.', 'Mum says I eat too many carrots. Old Pim says that is impossible.'],
 };
 const RUMORS = [
-  'They say the beast on the road changes with every set of waves. Bring something that bites back.',
+  'They say a new beast takes the road each time the last one falls. Bring something that bites back.',
   'A trader from {biome} swore the stones there hum at night. I did not ask which stones.',
   'The priestess says the church bell rings by itself when a hero is close to the top.',
-  'Wave {wave} already? The last hero stopped well before that. Folk still talk about them.',
+  'Already this far down the road, {name}? The last hero turned back well before that. Folk still talk about them.',
   'Ysolde has been buying every rune she can find. The rune dealers are nervous.',
   'Brann is working on something big. Or he dropped his hammer. Hard to tell.',
   'The kids found a shiny coin by the well. Pip says it is cursed. It is not. I checked.',
   "Mira's cauldron went green last night. Nobody will admit to anything.",
   'Sergeant Voss swears he heard singing from the gate at midnight. Voss does not drink.',
-  'Orla says the Wardens left a message in the old road stones. Nobody can read it.',
+  'Wenna says the Wardens left a message in the old road stones. Nobody can read it.',
   'A merchant says the beasts out there hate fire. Bring a burning blade, they said.',
   'The hens have been laying double. Rurik says it is the weather. Pim says it is the beast.',
   'If you want a good ring, wait for Lysa\'s next shipment. If you want a cheap one, wait longer.',
@@ -449,6 +595,7 @@ const ASK_WORK = {
   tobin: ['Lanterns, rope, anything that keeps you alive after dark. Light is the best armour.', 'I buy low, sell high, and give every hero the benefit of the doubt.'],
   dagna: ['I test every piece on a straw dummy first. Then on Brann. Then on you.', 'Armour is a conversation between steel and the thing that wants to hurt you. I make sure steel wins.'],
   lysa: ['Rings, necklaces and artifacts. Everything small, everything lucky, everything priced accordingly.', 'I find the stones, the dwarves cut them, and I sell the story along with the ring.'],
+  orin: ['I improve runes and essences, and I imbue weapons. Ysolde sells the stones; I work them.', 'Hand me a rune and some gold. Sometimes you get a better rune. Sometimes a lesson.'],
   ysolde: ['I coax runes out of the stone and teach them to hold their shape. Then I let you carry them. Responsibly.', 'The shelf is what I have. The altar is what I do. Bring me what you carry and I will see how far it can go.'],
   hilda: ['I keep the beds, the fire and the peace. In that order on a good day.', 'Rest here and the day starts fresh and your journey is safely written down. That is the whole trick.'],
   brann: ['Weapons to buy, gear to temper, spare iron to sell. The anvil does the rest.', 'Every blade I make was a lump of ore with ambitions.'],
@@ -473,7 +620,7 @@ const STORIES = [
 const PAIR_CHAT = {
   'mira|tobin': ["Tobin, you owe me for the lantern oil!", 'Put it on my tab, Mira!'],
   'brann|dagna': ['Dagna, your helm dented my hammer.', 'Then your hammer is too soft!'],
-  'orla|pim': ['Pim, your tomatoes were delicious. Take it as a compliment.', 'Bless you, Orla. They only grow for you.'],
+  'orla|pim': ['Pim, your tomatoes were delicious. Take it as a compliment.', 'Bless you, Wenna. They only grow for you.'],
   'hilda|rurik': ['Rurik, more firewood for the inn?', 'Two cartloads by noon, Hilda.'],
   'lysa|ysolde': ['Ysolde, that stone is humming again.', 'That is rather the point, Lysa.'],
   'eira|voss': ['Sergeant, any heroes today?', 'One. Looks promising.'],
@@ -492,9 +639,9 @@ function bondAdd(id, k) { hero.bond = hero.bond || {}; hero.bond[id] = Math.min(
 const giveItem = (slot, rar) => { const it = rollItem({ slot, rarity: rar, level: hero.level + 2 }); if (addToBag(it)) return `${it.name}`; hero.gold += 120; return '120 gold (your pack was full)'; };
 const giveGold = g => { hero.gold += g; hero.goldPulse = 0.6; return `${g} gold`; };
 const givePots = h => { hero.potions = Math.min(POTION_MAX, (hero.potions | 0) + h); return `${h} Healing Potion${h > 1 ? 's' : ''}`; };
-const giveRune = () => { const k = rollRuneKey(1.5, 3); addRune(k); return `a ${RUNES[k].title}`; };
+const giveRune = () => { const k = rollRuneKey(1.5, 3), ti = RUNES[k].title; addRune(k); return `${/^[AEIOU]/.test(ti) ? 'an' : 'a'} ${ti}`; };
 const GIFTS = {
-  mira: () => givePots(3), tobin: () => giveGold(60 + wave * 6), dagna: () => giveItem('armor', 3), lysa: () => giveItem('ring', 3), ysolde: giveRune, hilda: () => givePots(3),
+  mira: () => givePots(3), tobin: () => giveGold(60 + wave * 6), dagna: () => giveItem('armor', 3), lysa: () => giveItem('ring', 3), ysolde: giveRune, orin: giveRune, hilda: () => givePots(3),
   brann: () => giveItem('weapon', 3), pim: () => givePots(2), rurik: () => giveGold(50 + wave * 5), orla: () => giveGold(80 + wave * 4), eira: giveRune, voss: () => givePots(2),
   pip: () => giveGold(30 + wave * 2), nell: () => giveGold(30 + wave * 2), tam: () => giveGold(30 + wave * 2), _: () => giveGold(50),
 };
@@ -536,7 +683,7 @@ function pairChats(v, dt) {
   for (let i = q.length - 1; i >= 0; i--) { const r = q[i]; if (v.t >= r.t) { q.splice(i, 1); if (!r.n.inside && !r.n.bubble) { r.n.bubble = r.text; r.n.bubbleT = 2.8; r.n.talking = true; sfxNear(r.n, r.n.kid ? 'giggle' : 'murmur', 0.6); } } }
   v.pairT = (v.pairT || 0) - dt; if (v.pairT > 0) return; v.pairT = 1.2;
   if (!hero) return;
-  const cd = v.pairCd || (v.pairCd = {}), list = v.npcs.filter(n => !n.inside && n.alpha > 0.8 && !n.goHome && !n.bubble && !n.talking && Math.hypot(n.x - hero.x, n.y - hero.y) < 520);
+  const cd = v.pairCd || (v.pairCd = {}), list = v.npcs.filter(n => !n.inside && !n.inn && !n.church && n.alpha > 0.8 && !n.goHome && !n.bubble && !n.talking && Math.hypot(n.x - hero.x, n.y - hero.y) < 520);
   for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
     const a = list[i], b = list[j];
     if (Math.hypot(a.x - b.x, a.y - b.y) > 72) continue;
@@ -571,7 +718,7 @@ function makeNpcs(v) {
   v.solids.push({ x: caul[0] + 14, y: caul[1] + 6, r: 14 });
   mk('mira', 'Mira', 'Alchemist', miraStand[0], miraStand[1], {
     shop: 'alch', look: { body: '#6a4fb0', hat: 'cone', hatColor: '#4b3590', hair: '#c9a0e0', cheek: true }, f: 1,
-    lines: ['Potions to patch a hero up. Press Q out there to drink one when the beast bites back.', 'Brewed this morning. Mostly.', "Wave after wave and still on your feet? You've got more spirit than my last customer.", "Careful with that bottle. It glows when it's fresh."],
+    lines: ['Potions to patch a hero up. Keep one close out there, and drink it before the beast bites back.', 'Brewed this morning. Mostly.', "Fight after fight and still on your feet? You've got more spirit than my last customer.", "Careful with that bottle. It glows when it's fresh."],
     chat: ['Eye of newt... or was it toe?', 'Bubble, bubble...', 'A fresh batch!'],
     script: () => [{ t: [3, 6], face: 1 }, { go: [caul[0] - 16, caul[1] - 2] }, { do: 'stir', t: [5, 9], face: 1 }, { go: miraStand }, { t: [4, 8], face: -1 }],
   });
@@ -602,6 +749,13 @@ function makeNpcs(v) {
     chat: ['Hush now, little stone...', 'The runes are restless today.', 'Mind the glow!'],
     script: () => [{ t: [4, 8], face: -1 }, { do: 'wipe', t: [2, 3] }, { go: [ysStand[0] + 52, ysStand[1]] }, { t: [3, 6], face: 1 }, { go: ysStand }],
   });
+  const orinStand = [b.atelier.x - 30, b.atelier.y + 27];
+  mk('orin', 'Orin', 'Runesmith', orinStand[0], orinStand[1], {
+    shop: 'atelier', look: { dress: '#2c5f6e', apron: '#d8d0b8', hat: 'cap', hatColor: '#1f3f4c', hair: '#8a8a8a', beard: '#8a8a8a' }, f: 1,
+    lines: ['A rune is raw until it is worked. Hand it here and I will bring out what is in it.', 'Ysolde finds them. I make them mean something.', 'Imbuing is no trick: the essence wants a blade, the blade wants an essence. I only introduce them.', 'Patience. A rune improved in haste is a rune broken.'],
+    chat: ['Tap, tap, tap...', 'Steady now...', 'Mind the sparks!'],
+    script: () => [{ t: [4, 8], face: -1 }, { do: 'wipe', t: [2, 3] }, { go: [orinStand[0] + 52, orinStand[1]] }, { t: [3, 6], face: 1 }, { go: orinStand }],
+  });
   mk('hilda', 'Hilda', 'Innkeeper', b.inn.x - 70, b.inn.y + 30, {
     special: 'inn', look: { dress: '#b04a5a', apron: '#f0ead8', hat: 'kerchief', hatColor: '#e8d8a8', hair: '#7a4a2a', cheek: true },
     lines: ["Rest here and you'll walk out with your strength back, and your journey safely written down.", "No charge for heroes. You'll earn your keep soon enough.", 'The road beyond the gate? A beast waits there. {tier} champions have tried before you.', 'Mind the step. And the cat. I do not own a cat, but it is always there.'],
@@ -619,7 +773,7 @@ function makeNpcs(v) {
   });
   // --- villagers with routines ---
   const wellSpot = [v.plaza.x - 32, v.plaza.y + 38];
-  const G = v.garden, gx = G.gapAt === 'E' ? G.x1 + 26 : G.x0 - 26, lane = G.y0 + 57, roadSpot = [gx, VIL_ROAD + 14];
+  const G = v.garden, gx = G.gapAt === 'E' ? G.x1 + 26 : G.x0 - 26, lane = G.y0 + 57, roadSpot = vilNearNet(v, gx, lane + 40);
   mk('pim', 'Old Pim', 'Gardener', gx + (G.gapAt === 'E' ? 16 : -16), lane - 2, {
     nightHome: true, home: door('houseA'), look: { body: '#6a8a3a', hat: 'straw', hatColor: '#c0392b', hair: '#d8d8d8', beard: '#e6e6e6', cheek: true }, speed: 46,
     lines: ['Cabbages for the winter and flowers for the soul!', "Water them every day and they'll reward you. Not unlike a good sword arm.", "{biome} soil is peculiar, but my carrots don't seem to mind."],
@@ -652,7 +806,7 @@ function makeNpcs(v) {
       chat: ['Pass it here!', 'Over here!', 'Haha!', "Can't catch me!", 'Again, again!'],
     });
   }
-  mk('orla', 'Granny Orla', 'Elder', v.benchA.x, v.benchA.y + 6, {
+  mk('orla', 'Granny Wenna', 'Elder', v.benchA.x, v.benchA.y + 6, {
     nightHome: true, home: door('houseA'), look: { dress: '#8a6aa8', hat: 'bun', glasses: true, skin: '#fff' }, f: -1, speed: 34,
     lines: ["I've seen heroes come and go, dear. You've kind eyes.", 'The road was safer in my day. Well... safer.', 'Take care out there. And come back for tea.'],
     chat: ['Knit one, purl two...', 'Lovely day for it.', 'Hm, hm.'],
@@ -665,6 +819,7 @@ function makeNpcs(v) {
     chat: ['Hm hm...', 'The light is kind today.', 'Begin again, and again.'],
     script: (v, n) => churchRoutine(v, n),
   });
+  churchFolk(mk); innFolk(mk); guildFolk(mk);                                                                         // the nuns and the guests of the church (church.js)
   mk('voss', 'Sgt. Voss', 'Gate Guard', v.gate.x - 98 * v.E, v.gate.y - 28, {
     special: 'guard', look: { body: '#4a5a7a', hat: 'helmet', hatColor: '#c0392b', beard: '#6a5a4a', spear: true }, f: -v.E, speed: 36,
     lines: ['Beyond this gate the road runs to a beast. Are you ready to face it?'],
@@ -679,12 +834,12 @@ function makeNpcs(v) {
 function prop2(v, kind, x, y, extra) { const p = { x, y, ...extra }; v.statics.push({ y, d: () => VPROP[kind](p, curNight > 0.45) }); return p; }
 
 function makeAnimals(v) {
-  const dog = { x: v.plaza.x + 60, y: VIL_ROAD + 40, f: 1, walkT: 0, moving: false, pose: 'stand', pt: 0, mode: 'trot', wp: null, t: 2, ph: Math.random() * 6, happy: false, alpha: 1, r: 8, fT: 0, cool: 6, kind: 'dog' };
+  const dog = { x: v.plaza.x - 60, y: v.plaza.y + 30, f: 1, walkT: 0, moving: false, pose: 'stand', pt: 0, mode: 'trot', wp: null, t: 2, ph: Math.random() * 6, happy: false, alpha: 1, r: 8, fT: 0, cool: 6, kind: 'dog' };
   v.animals.push(dog); v.dog = dog;
-  v.dogRoadWp = [v.sleepAt.x, VIL_ROAD - 8];
+  v.dogRoadWp = vilNearNet(v, v.sleepAt.x, v.sleepAt.y);
   v.dogWps = [];                                           // places for the dog to trot to: anywhere free between the shops and the lane
   const rr = mulberry(v.seed ^ 0x77);
-  for (let i = 0; i < 600 && v.dogWps.length < 18; i++) { const x = 120 + rr() * (VIL_W - 240), y = 420 + rr() * (VIL_LANE - 420); if (!vilOverlaps(v, x, y, 16)) v.dogWps.push([x, y]); }
+  for (let i = 0; i < 600 && v.dogWps.length < 18; i++) { const x = 120 + rr() * (VIL_W - 240), y = 250 + rr() * (VIL_H - 350); if (!vilOverlaps(v, x, y, 16)) v.dogWps.push([x, y]); }
   for (let i = 0; i < 4; i++) {
     const h = { x: v.yard.x0 + 10 + Math.random() * (v.yard.x1 - v.yard.x0 - 20), y: v.yard.y0 + 4 + Math.random() * (v.yard.y1 - v.yard.y0 - 8), f: Math.random() < 0.5 ? 1 : -1, walkT: 0, moving: false, pose: 'peck', pt: Math.random() * 3, t: Math.random() * 2, wp: null, alpha: 1, r: 4, col: i === 3 ? '#c8864a' : '#f2eee4', kind: 'hen', ph: Math.random() * 6 };
     v.hens.push(h);
@@ -850,7 +1005,15 @@ function npcTick(n, dt, v) {
   if (n.fadeOut) { n.alpha = Math.max(0, n.alpha - dt * 3); if (n.alpha <= 0) { n.fadeOut = false; n.inside = true; n.cur = null; n.queue = null; return; } }
   else n.alpha = Math.min(1, n.alpha + dt * 2.5);
 
-  if (n.kid && !n.goHome && !n.exiting) kidTick(n, dt, v); else runScript(n, dt, v);
+  // someone walking past stops when you come up to them (for a few seconds), so the talk prompt does not slip away just as you reach for it
+  const hd0 = Math.hypot(hero.x - n.x, hero.y - n.y); n.pauseCd = Math.max(0, (n.pauseCd || 0) - dt);
+  if (!n.kid && !n.goHome && !n.exiting && !n.fadeOut && !n.inn && !n.church) {
+    if (!(n.holdT > 0) && n.moving && hd0 < 95 && n.pauseCd <= 0 && !v.talk) n.holdT = 0.001;
+    if (n.holdT > 0) { n.holdT += dt; if (hd0 > 130 || n.holdT > 6) { n.holdT = 0; n.pauseCd = 12; } }
+  }
+  if (n.holdT > 0 && (n.goHome || n.exiting || n.fadeOut)) n.holdT = 0;
+  if (n.holdT > 0) { n.moving = false; n.pose = 'stand'; n.f = hero.x >= n.x ? 1 : -1; }
+  else if (n.kid && !n.goHome && !n.exiting) kidTick(n, dt, v); else runScript(n, dt, v);
 
   // greet the hero when they walk up, and chat every now and then
   const hd = Math.hypot(hero.x - n.x, hero.y - n.y);
@@ -1040,7 +1203,7 @@ function updateVillageHero(dt, v) {
     hero.stepT -= dt;
     if (hero.stepT <= 0) {
       hero.stepT = 0.32;
-      const onRoad = Math.abs(hero.y - VIL_ROAD) < 26 || inEllipse(hero.x, hero.y, v.plaza, 0);
+      const onRoad = v.net.some(q => Math.abs(q[0] - hero.x) < 28 && Math.abs(q[1] - hero.y) < 28) || inEllipse(hero.x, hero.y, v.plaza, 0);
       Sound.step(onRoad ? 'stone' : v.B.surface);
     }
   } else hero.walkT = 0;
@@ -1056,6 +1219,7 @@ function updateVillageHero(dt, v) {
 
 function updateVillage(dt) {
   const v = vil; if (!v || !hero) return;
+  if (v.talk && openMenu === null) { if (v.talk.kind === 'npc' && v.talk.ref) v.talk.ref.talking = false; v.talk = null; }          // a conversation that was closed some other way (Esc, a click outside) must not leave the prompts switched off
   tAnim += dt; v.t += dt;
   if (!(v.skip && v.skip.t > 0.3 && !v.skip.done)) { const before = tod; tod = (tod + dt / DAY_LEN) % 1; if (tod < before) dayCount++; }
   curNight = night01();
@@ -1066,6 +1230,7 @@ function updateVillage(dt) {
     if (sk.t > 0.9 && sk.t < SLEEP_WAKE - 0.2 && (sk.snoreT -= dt) <= 0) { sk.snoreT = 0.95; sfx('snore'); }
     if (sk.t >= SLEEP_WAKE && !sk.done) {
       sk.done = true; tod = sk.to; dayCount += sk.days; curNight = night01(); settleVillage(v);
+      if (sk.rest && sk.room) { hero.buffs.rested = RESTED_TIME; popups.push({ text: 'Well rested: stronger and quicker to recover for 10 minutes', x: VW / 2, y: 190, t: 3.4, screen: true, small: true, color: '#ffd86a' }); }
       if (sk.rest) { hero.hp = hero.maxHp; hero.stamina = maxStamina(); saveGame(false); sfx('save'); sfx('wake'); popups.push({ text: `Day ${dayCount} · ${campClockLabel(tod)}: rested, healed and saved`, x: VW / 2, y: 150, t: 3, big: true, screen: true, color: '#fff' }); }
       else popups.push({ text: `${sk.label}: ${campClockLabel(tod)} · Day ${dayCount}`, x: VW / 2, y: 150, t: 2.6, big: true, screen: true, color: '#fff' });
       if (night01() < 0.3) Sound.call('birdsong');
@@ -1075,7 +1240,7 @@ function updateVillage(dt) {
   if (v.leaveT > 0) { v.leaveT -= dt; if (v.leaveT <= 0 && !v.doneLeave) { v.doneLeave = true; leaveVillage(); return; } }
   updateVillageHero(dt, v);
   if (!v.inChurch) {
-    for (const n of v.npcs) if (n.special !== 'shrine') npcTick(n, dt, v);
+    for (const n of v.npcs) if (n.special !== 'shrine' && !n.church && !n.inn) npcTick(n, dt, v);
     pairChats(v, dt);
     for (const a of v.animals) animalTick(a, dt, v);
     for (const h of v.hens) animalTick(h, dt, v);
@@ -1089,13 +1254,17 @@ function updateVillage(dt) {
   // what can the hero talk to?
   if (v.inChurch) { churchNear(v, dt); return churchCam(v, dt); }
   let best = null, bd = 1e9;
-  const consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y); if (d < r && d < bd) { bd = d; best = { kind, ref, x, y, label, tag }; } };
+  const prev = v.near, consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y), same = prev && prev.kind === kind && prev.ref === ref && prev.label === label, de = same ? d * 0.6 : d; if (d < (same ? r * 1.4 : r) && de < bd) { bd = de; best = { kind, ref, x, y, label, tag }; } };
   for (const n of v.npcs) if (!n.inside && n.alpha > 0.5 && !n.goHome) consider('npc', n, n.x, n.y, n.shop ? 72 : 64, n.name, n.role);
-  if (v.b.craft && !v.talk) consider('craft', null, v.b.craft.door.x, v.b.craft.door.y + 6, 62, 'Crafting Hall', 'Opening soon');
+  if (v.b.craft && !v.talk) consider('craft', null, v.b.craft.door.x, v.b.craft.door.y + 40, 88, 'Crafting Hall', 'Opening soon');
   if (Math.abs(hero.x - v.gate.x) < 110 && Math.abs(hero.y - v.gate.y) < 80) consider('gate', null, v.gate.x - 24 * v.E, v.gate.y - 40, 999, 'The road', 'Leave the village');
-  if (!v.talk) consider('church', null, v.church.door.x, v.church.door.y + 4, 66, 'Church of Return', 'Enter');
+  if (!v.talk) consider('guild', null, v.b.guild.door.x, v.b.guild.door.y + 40, 88, "Adventurers' Guild", 'Enter');
+  if (!v.talk) consider('inn', null, v.b.inn.door.x, v.b.inn.door.y + 40, 88, "Hilda's Inn", 'Enter');
+  if (!v.talk) consider('church', null, v.church.door.x, v.church.door.y + 40, 92, 'Church of Return', 'Enter');
   consider('board', null, v.board.x, v.board.y - 40, 70, 'Notice board', 'Read');
   if (!best) consider('dog', v.dog, v.dog.x, v.dog.y - 14, 46, 'Biscuit', 'Pet');     // the dog never steals the prompt from a person
+  if (best) v.nearAt = tAnim;
+  else if (prev && prev.kind === 'npc' && tAnim - (v.nearAt || 0) < 0.35 && !prev.ref.inside && prev.ref.alpha > 0.3) best = { ...prev, x: prev.ref.x, y: prev.ref.y };      // a moment of grace: the prompt does not blink out as someone shuffles
   v.near = best;
   // camera
   const vw = VW / VIL_ZOOM, vh = VH / VIL_ZOOM;
@@ -1107,102 +1276,7 @@ function updateVillage(dt) {
   if (v.soundT <= 0) { v.soundT = 0.5; Sound.setScene({ biome: 'village', night: curNight > 0.5, wind: 0.02, rain: 0, pitch: 450 }); }
 }
 
-// ---------------------------------------------------------------- the church: a room of its own, entered through the big door (E); the priestess and the rite of rebirth are in here
-const CHURCH = { w: 640, h: 300, ox: 400, oy: 250 };
-function churchSolids(v) {
-  const c = CHURCH, S = [{ x0: c.ox - 90, y0: c.oy - 90, x1: c.ox + 14, y1: c.oy + c.h + 90 }, { x0: c.ox + c.w - 14, y0: c.oy - 90, x1: c.ox + c.w + 90, y1: c.oy + c.h + 90 }, { x0: c.ox - 90, y0: c.oy - 90, x1: c.ox + c.w + 90, y1: c.oy + 102 }, { x0: c.ox - 90, y0: c.oy + c.h - 2, x1: c.ox + c.w + 90, y1: c.oy + c.h + 90 },
-    { x0: c.ox + 274, y0: c.oy + 104, x1: c.ox + 366, y1: c.oy + 128 }];
-  v.cpots = [[34, 128], [606, 128], [226, 178], [414, 178]].map(([x, y], k) => ({ x: c.ox + x, y: c.oy + y, k, wet: 0 })); for (const p of v.cpots) S.push({ x: p.x, y: p.y - 4, r: 9 });
-  c.pews = []; for (const y1 of [176, 222, 268]) for (const [x0, x1] of [[50, 190], [450, 590]]) { const p = { x0: c.ox + x0, y0: c.oy + y1 - 16, x1: c.ox + x1, y1: c.oy + y1 }; c.pews.push(p); S.push({ x0: p.x0, y0: p.y0 - 4, x1: p.x1, y1: p.y1 }); }
-  return S;
-}
-// the priestess keeps herself busy: she waters the flowers, prays on one of the pews (any of them) or at the altar, polishes the altar, and stands by it between times
-function churchRoutine(v, n) {
-  const c = CHURCH, rnd = (a, b) => a + Math.random() * (b - a), pick = a => a[Math.floor(Math.random() * a.length)];
-  const kind = pick(['water', 'water', 'pew', 'pew', 'altar', 'polish'].filter(k => k !== n.lastKind)); n.lastKind = kind;
-  const post = [{ go: [c.ox + 320, c.oy + 152], speed: 30 }, { t: [4, 8], face: Math.random() < 0.5 ? 1 : -1 }];
-  if (kind === 'water') {
-    const pot = pick(v.cpots), sd = pot.x < c.ox + 320 ? 1 : -1;
-    return [{ go: [pot.x + sd * 24, pot.y + 8], speed: 34 }, { do: 'water', t: [4, 6], face: -sd, tick: (n2, v2, dt) => {
-      if (Math.random() < dt * 22) vfx(v2, { x: n2.x + n2.f * 24, y: n2.y - 34, vx: n2.f * (30 + Math.random() * 20), vy: 10, grav: 340, life: 0.55, size: 1.6, color: '#a6d8ff' }); pot.wet = 1; } }, ...post];
-  }
-  if (kind === 'pew') {
-    const p = pick(c.pews), x = rnd(p.x0 + 24, p.x1 - 24);
-    return [{ go: [x, p.y1 + 8], speed: 34 }, { do: 'sitpray', t: [14, 24], face: Math.random() < 0.5 ? 1 : -1 }, ...post];
-  }
-  if (kind === 'altar') {
-    const sd = Math.random() < 0.5 ? 1 : -1;
-    return [{ go: [c.ox + 320 + sd * 26, c.oy + 137], speed: 34 }, { do: 'pray', t: [10, 16], face: -sd }, ...post];
-  }
-  const sd = Math.random() < 0.5 ? 1 : -1;                         // polishing the altar from the side
-  return [{ go: [c.ox + 320 + sd * 70, c.oy + 116], speed: 34 }, { do: 'wipe', t: [3, 5], face: -sd }, ...post];
-}
-function enterChurch() {
-  const v = vil, c = CHURCH; if (!v || v.inChurch) return;
-  v.inChurch = true; v.cOut = { x: hero.x, y: hero.y }; v.solidsOut = { s: v.solids, h: v.solidsH }; v.solids = v.cSolids; v.solidsH = v.cSolids;
-  hero.x = c.ox + 320; hero.y = c.oy + 248; hero.facing = 1; hero.moving = false; hero.walkT = 0; hero.scarf.forEach(p => { p.x = hero.x; p.y = hero.y - 50; });
-  for (const k in keys) keys[k] = false;
-  v.fade = 1; v.near = null; cam.x = c.ox; cam.y = c.oy - 20;
-  sfx('door'); sfx('bell'); popups = popups.filter(p => p.screen); popups.push({ text: 'Church of Return', x: VW / 2, y: 70, t: 2.6, big: true, screen: true, color: '#f4ecd0' });
-}
-function leaveChurch() {
-  const v = vil; if (!v || !v.inChurch) return;
-  v.inChurch = false; v.solids = v.solidsOut.s; v.solidsH = v.solidsOut.h; v.talk = null;
-  const d = v.church.door, c = vilCollide(v, d.x, d.y + 34, 9, undefined, undefined, true);
-  hero.x = c.x; hero.y = c.y; hero.facing = 1; hero.moving = false; hero.walkT = 0; hero.scarf.forEach(p => { p.x = hero.x; p.y = hero.y - 50; });
-  for (const k in keys) keys[k] = false;
-  v.fade = 1; v.near = null; sfx('door');
-  const vw = VW / VIL_ZOOM, vh = VH / VIL_ZOOM; cam.x = clampN(hero.x - vw / 2, 0, VIL_W - vw); cam.y = clampN(hero.y - vh / 2 - 12, 0, VIL_H - vh);
-}
-function churchNear(v, dt) {
-  const c = CHURCH, e = v.npcs.find(n => n.special === 'shrine');
-  if (e) {
-    e.alpha = 1;
-    if (v.talk && v.talk.ref === e) { e.moving = false; e.pose = 'stand'; e.f = hero.x >= e.x ? 1 : -1; }          // she stops what she is doing to talk
-    else { runScript(e, dt, v); if (e.pose === 'stand' && !e.moving && Math.hypot(hero.x - e.x, hero.y - e.y) < 70 && !e.cur) e.f = hero.x >= e.x ? 1 : -1; }
-    const dx = hero.x - e.x, dy = hero.y - e.y, d = Math.hypot(dx, dy), min = 9 + e.r + 2;                               // nobody walks through her
-    if (d < min) { const k = d < 0.01 ? 0 : (min - d) / d; hero.x += d < 0.01 ? min : dx * k; hero.y += dy * k; const cc = vilCollide(v, hero.x, hero.y, 9, undefined, undefined, true); hero.x = cc.x; hero.y = cc.y; }
-    for (const p of v.cpots) p.wet = Math.max(0, p.wet - dt * 0.25);
-    if (e.bubbleT > 0) { e.bubbleT -= dt; if (e.bubbleT <= 0) { e.bubble = null; e.talking = false; } }
-  }
-  let best = null, bd = 1e9;
-  const consider = (kind, ref, x, y, r, label, tag) => { const d = Math.hypot(hero.x - x, hero.y - y); if (d < r && d < bd) { bd = d; best = { kind, ref, x, y, label, tag }; } };
-  if (e) consider('npc', e, e.x, e.y, 78, e.name, e.role + (e.pose === 'sitpray' || e.pose === 'pray' ? ' · praying' : ''));
-  consider('exit', null, c.ox + 320, c.oy + c.h - 6, 44, 'the church', 'Leave');
-  v.near = best;
-}
-function churchCam(v, dt) {
-  const c = CHURCH; cam.x = c.ox; cam.y = c.oy - 20; cam.shake = 0;
-  for (const p of popups) { p.t -= dt; if (p.pop !== undefined) p.pop += dt; if (!p.big && !p.screen) p.y -= 30 * dt; }
-  popups = popups.filter(p => p.t > 0);
-  v.soundT -= dt; if (v.soundT <= 0) { v.soundT = 0.5; Sound.setScene({ biome: 'village', night: false, wind: 0, rain: 0, pitch: 450 }); }
-}
-function drawChurchInside(v) {
-  const c = CHURCH, Z = VIL_ZOOM, t = v.t;
-  ctx.fillStyle = '#08080e'; ctx.fillRect(0, 0, VW, VH);
-  ctx.save(); ctx.scale(Z, Z); ctx.translate(-c.ox, -(c.oy - 20));
-  drawChurchRoom(v, { x: c.ox, y: c.oy });
-  const things = [], e = v.npcs.find(n => n.special === 'shrine');
-  for (const p of c.pews) things.push({ y: p.y1, d: () => drawChurchPew(p) });
-  for (const p of v.cpots) things.push({ y: p.y, d: () => drawChurchPot(p, t) });
-  const altar = { x: c.ox + 320, y: c.oy + 128 }; things.push({ y: altar.y, d: () => drawChurchAltar(altar, t) });
-  if (e) things.push({ y: e.y, d: () => drawVillager(e) });
-  things.push({ y: hero.y, d: () => drawHero(hero) });
-  things.sort((a, b) => a.y - b.y).forEach(o => o.d());
-  drawChurchLight(c.ox + 320, c.oy + 38, t);
-  for (const f of v.fx) { const a = Math.max(0, Math.min(1, f.life / f.max)); ctx.save(); ctx.globalAlpha = a; ctx.fillStyle = f.color; ctx.beginPath(); ctx.arc(f.x, f.y, f.size, 0, Math.PI * 2); ctx.fill(); ctx.restore(); }
-  if (e && e.bubble) drawBubble(e.x, e.y - 82, e.bubble, 1);
-  if (v.near && !v.talk) {
-    const q = v.near, ty = q.kind === 'npc' ? q.ref.y - 100 : q.y - 22, bob = Math.sin(tAnim * 5) * 2;
-    ctx.save(); ctx.fillStyle = 'rgba(20,20,28,0.88)'; ctx.strokeStyle = '#f5c451'; ctx.lineWidth = 2; ctx.beginPath(); ctx.roundRect(q.x - 11, ty - 11 + bob, 22, 22, 6); ctx.fill(); ctx.stroke();
-    ctx.fillStyle = '#f5c451'; ctx.font = 'bold 14px "Segoe UI", sans-serif'; ctx.textAlign = 'center'; ctx.fillText(keyLabel('interact'), q.x, ty + 5 + bob); ctx.restore();
-  }
-  ctx.restore();
-  const vg = ctx.createRadialGradient(VW / 2, VH * 0.45, VH * 0.35, VW / 2, VH * 0.45, VW * 0.62); vg.addColorStop(0, 'rgba(10,6,16,0)'); vg.addColorStop(1, 'rgba(10,6,16,0.5)'); ctx.fillStyle = vg; ctx.fillRect(0, 0, VW, VH);
-  if (v.fade > 0) { ctx.fillStyle = `rgba(2,3,10,${v.fade})`; ctx.fillRect(0, 0, VW, VH); }
-  drawVillageHUD(v);
-  drawPopups(true);
-}
+// (the church, its floors and the people in it are in church.js)
 
 // ---------------------------------------------------------------- entering and leaving
 function enterVillage() {
@@ -1249,6 +1323,7 @@ const HELLO = {
   hilda: ['Welcome to {village}, dear. Hilda keeps the inn, and the fire, and the peace.', '{name}! The road has been hard on you, I can tell. Sit, sit.'],
   brann: ['Hm. {name}. Brann. Forge is hot, so be quick.', 'A hero. Good. Heroes break a lot of iron.'],
   dagna: ['Dagna, armourer. Let me look at what you are wearing... hm. We can do better.', 'Welcome, {name}. Steel is cheaper than a funeral.'],
+  orin: ['Hm. Another one with a pouch full of stones. Come in, {name}. Orin. Runes are my trade.', 'Welcome to the atelier, {name}. Mind the anvil, mind the sparks.'],
   ysolde: ['Ah. A new face, and not a rune on them. Come in, {name}. Ysolde, enchantress.', 'Welcome to my sanctum, {name}. Mind the glow, and do not touch anything that hums.'],
   lysa: ['Oh, hello! Lysa. Small things, big luck. Have a look.', 'Welcome, {name}. Careful, everything here is worth more than it looks.'],
   pim: ['Well met, {name}! Mind the cabbages.', 'A visitor! Come to admire the garden?'],
@@ -1260,16 +1335,16 @@ const HELLO = {
 function contextLines(n) {
   const h = hero, out = [], night = night01() > 0.5, hpf = h.hp / h.maxHp, morning = tod > 0.28 && tod < 0.45, id = n.id;
   const all = (c, t) => { if (c) out.push(t); };
-  all(h.points > 0, 'You have ' + h.points + ' stat point' + (h.points === 1 ? '' : 's') + ' unspent, {name}. Press M and put them to use before you head out.');
+  all(h.points > 0, 'You look like someone who has learned more than they have put to use, {name}. Take a quiet moment to practise before you head out.');
   all(hpf < 0.5, 'You look worse for wear, {name}. Mind yourself out there.');
   const wk = typeof weather !== 'undefined' && weather ? weather.kind : 'clear';
   all(wk === 'rain' || wk === 'drizzle', 'Wet one, is it not? Mind the mud, {name}.'); all(wk === 'storm', 'Thunder again. Best keep to the inn tonight, {name}.'); all(wk === 'snowfall' || wk === 'blizzard', 'Snow again. At least it keeps the beasts quiet.');
   all(wk === 'fog', 'Fog like milk. Do not wander off the road, {name}.'); all(wk === 'sandstorm', 'Grit in everything. Even the soup.'); all(wk === 'heat' || wk === 'mirage', 'Hot enough to fry an egg on the well.');
-  all(h.gold >= 2000, 'That is a lot of gold to carry down a beast road, {name}. Spend a little here, I say.'); all(h.level >= levelCap(), 'You have reached the top, {name}. Eira at the church can show you what comes next.');
-  all(hasAilment(), 'You do not look well, {name}. A healing potion clears every ailment, you know.'); all(rebirths() >= 1, 'Reborn already? I could swear I remember you from before. Or I imagine it.');
-  all(bondOf(id) >= 3, 'Always good to see you, {name}. ...Do not tell the others I said so.'); all(bondOf(id) >= 6, 'You are a friend of this village, {name}. We look after our own.'); all(bondOf(id) >= BOND_MAX, 'Eight hearts! There is nobody in {village} who would not stand beside you, {name}.');
-  all(wave >= 19, 'Wave {wave} already. Tier {tier} beasts out there. You are braver than most.');
-  if (id === 'mira') { all(!h.potions, 'No potions on you? That is how heroes end up in a ditch. Buy a few.'); all(h.potions >= POTION_MAX, 'A full satchel of potions. Good. Now do not waste them.'); all(hasAilment() && !h.cures, 'Poisoned, and not a Cure-All on you? Take one of mine. Please.'); all(!h.cures && h.level >= 8, 'A Cure-All potion clears poison and chills. Press R to switch to it, Q to drink.'); all(night, 'Night brews best. The fumes are... livelier.'); }
+  all(h.gold >= 2000, 'That is a lot of gold to carry down a beast road, {name}. Spend a little here, I say.'); all(h.level >= levelCap(), 'You carry yourself like someone who has seen all this road can teach, {name}. Eira at the church can show you what comes next.');
+  all(hasAilment(), 'You do not look well, {name}. A healing potion clears every ailment, you know.'); all(rebirths() >= 1, 'Back from the Rite already? I could swear I remember you from before. Or I imagine it.');
+  all(bondOf(id) >= 3, 'Always good to see you, {name}. ...Do not tell the others I said so.'); all(bondOf(id) >= 6, 'You are a friend of this village, {name}. We look after our own.'); all(bondOf(id) >= BOND_MAX, 'There is nobody in {village} who would not stand beside you, {name}.');
+  all(wave >= 19, 'So far down the road, {name}, and still walking. You are braver than most.');
+  if (id === 'mira') { all(!h.potions, 'No potions on you? That is how heroes end up in a ditch. Buy a few.'); all(h.potions >= POTION_MAX, 'A full satchel of potions. Good. Now do not waste them.'); all(hasAilment() && !h.potions, 'Poisoned, and not a single draught on you? Take one of mine. Please.'); all(h.potions > 0 && h.potions < 3, 'A healing draught clears poison and chills alike. Keep a few close.'); all(night, 'Night brews best. The fumes are... livelier.'); }
   if (id === 'tobin') { all(night, 'A lantern at night is worth ten swords, mark me.'); all((h.lamp | 0) >= 3, 'The Radiant Lantern! My finest. Lights up half the road.'); all((h.lamp | 0) === 0 && h.gold >= 140, 'You can afford a lantern now. The dark hides things that bite.'); all(h.gold < 30, 'Empty pockets? Come back when the beasts have been generous.'); }
   if (id === 'hilda') { all(night, 'The inn is quiet tonight. If you want the hours to pass, I can sort that.'); all(morning, 'Good morning, {name}. Porridge is on, and the day is yours.'); all(hpf < 0.5, 'Sit down before you fall down. A rest is free, dear.'); }
   if (id === 'brann') { all(h.inv.length >= INV_MAX - 2, 'Your pack is nearly bursting. Sell me the junk.'); all(h.gold >= 600, 'Coin to burn? Let me temper that gear for you.'); all(night, 'Fire never sleeps. Neither do I, when there is iron to turn.'); }
@@ -1277,9 +1352,9 @@ function contextLines(n) {
   if (id === 'lysa') { all(!h.equip.ring1 && !h.equip.ring2, 'Bare fingers! A ring will fix that. Take your pick.'); all(!h.equip.necklace, 'Not a necklace on you. I have just the thing.'); }
   if (id === 'ysolde') { all(!RUNE_KEYS.some(k => runeCount(k)), 'Not one rune in your pouch? The first is the cheapest. Well. Cheap-ish.'); all(RUNE_KEYS.some(k => RUNES[k].tier >= 4 && runeCount(k)), 'A Brilliant rune! You carry real power, {name}.'); all(night, 'Runes glow brightest after dark. Look at them.'); all(h.gold >= 5000, 'That is a heavy purse. Runes are the finest way to lighten it.'); }
   if (id === 'pim') { all(morning, 'Best time to water is the morning. The plants drink it up.'); all(night, 'You should be indoors in this dark. I will see to the beds tomorrow.'); }
-  if (id === 'rurik') { all(night, 'Cannot chop in the dark, can I? The axe knows when to rest.'); all(wave >= 10, 'The trees by the road thin out every set. Whatever is out there, it is hungry.'); }
-  if (id === 'orla') { all(night, 'The night air is bad for old bones. Come and tell me a story in the morning.'); all(h.level >= 10, 'Level {name}... such a hero. In my day we just had a stout stick.'); }
-  if (id === 'eira') { all(h.level >= levelCap(), 'You have climbed as far as you can, {name}. The church is ready for you whenever you are.'); all(h.level < levelCap(), 'Level {name}... not yet at the top. Come back at level ' + levelCap() + '.'); all(rebirths() > 0, 'Reborn ' + rebirths() + ' time' + (rebirths() === 1 ? '' : 's') + ' already. The church knows you.'); }
+  if (id === 'rurik') { all(night, 'Cannot chop in the dark, can I? The axe knows when to rest.'); all(wave >= 10, 'The trees by the road are thinning. Whatever is out there, it is hungry.'); }
+  if (id === 'orla') { all(night, 'The night air is bad for old bones. Come and tell me a story in the morning.'); all(h.level >= 10, 'Such a hero, {name}. In my day we just had a stout stick.'); }
+  if (id === 'eira') { all(h.level >= levelCap(), 'You have climbed as far as you can, {name}. The church is ready for you whenever you are.'); all(h.level < levelCap(), 'Not yet, {name}. The road still has things to teach you. Come back when it has.'); all(rebirths() > 0, 'You have returned ' + rebirths() + ' time' + (rebirths() === 1 ? '' : 's') + ' already. The church knows you.'); }
   if (id === 'voss') { all(hpf < 0.7, 'You are bleeding, {name}. See the innkeeper before you go out that gate.'); all(h.potions === 0, 'Not a single potion? I would not walk that road without one.'); }
   if (n.kid) { all(h.gold >= 400, 'Whoa, you have so much gold! Are you rich?'); all(night, 'Mum says I should be in bed...'); }
   return out;
@@ -1301,10 +1376,12 @@ const TIME_STOPS = [['Dawn', 0.27], ['Sunrise', 0.30], ['Morning', 0.38], ['Midd
 const timeUntil = at => ((at - tod) % 1 + 1) % 1;                       // how much of a day until the clock reaches `at`, always forwards
 const SLEEP_LEN = 4.2, SLEEP_WAKE = 2.3;                                 // seconds in all; the clock jumps at SLEEP_WAKE
 const REST_AT = 7 / 24;                                                  // resting at the inn always ends the next morning at 7:00
-function startTimeSkip(at) {
+const RESTED_TIME = 600;                                                                     // a night in a rented room: 10 minutes of +15% damage and quicker stamina
+const INN_ROOM_NAMES = ['Rose Room', 'Sapphire Room', 'Ivy Room', 'Amber Room'], roomPrice = () => Math.round(60 + wave * 6);
+function startTimeSkip(at, room) {
   const v = vil; if (!v || v.skip) return;
   const d = at === null ? timeUntil(REST_AT) + (tod < REST_AT ? 1 : 0) : (timeUntil(at) || 1);       // null = rest: on to 7:00 of the next day, even from the small hours
-  v.skip = { from: tod, span: d, to: (tod + d) % 1, days: Math.floor(tod + d + 1e-9), t: 0, done: false, rest: at === null, snoreT: 0, label: at === null ? 'Rested' : (TIME_STOPS.find(x => Math.abs(x[1] - at) < 1e-6) || ['later'])[0] };
+  v.skip = { from: tod, span: d, to: (tod + d) % 1, days: Math.floor(tod + d + 1e-9), t: 0, done: false, rest: at === null, room: !!room, snoreT: 0, label: at === null ? 'Rested' : (TIME_STOPS.find(x => Math.abs(x[1] - at) < 1e-6) || ['later'])[0] };
   Sound.music('inn');
   sfx('yawn');
 }
@@ -1328,7 +1405,13 @@ function villageInteract() {
   const v = vil; if (!v || !v.near || v.leaveT > 0 || v.skip || paused) return;
   const t = v.near;
   if (t.kind === 'church') { enterChurch(); return; }
+  if (t.kind === 'inn') { enterChurch('inn'); return; }
+  if (t.kind === 'guild') { enterChurch('guild'); return; }
+  if (t.kind === 'bed') { startTimeSkip(null, true); return; }
+  if (t.kind === 'bedlocked') { sfx('denied'); popups.push({ text: v.room ? 'This is not your room: it is the ' + INN_ROOM_NAMES[v.room.idx] : 'Rent a room first: ask Dunn or Hilda', x: VW / 2, y: 130, t: 2.2, screen: true, small: true, color: '#f88' }); return; }
   if (t.kind === 'exit') { leaveChurch(); return; }
+  if (t.kind === 'stairs') { churchStairs(); return; }
+  if (t.kind === 'bell') { ringChurchBell(); return; }
   if (t.kind === 'dog') { v.dog.pets = (v.dog.pets | 0) + 1; if (v.dog.pets % 3 === 0 && hero.gold >= 5) { hero.gold -= 5; sfx('treat'); popups.push({ text: 'Biscuit loves the treat (-5 gold)', x: VW / 2, y: 120, t: 2, screen: true, small: true, color: '#ffd86a' }); v.dog.mode = 'follow'; v.dog.fT = 45; v.dog.cool = 0; } v.dog.petT = 3; v.dog.pose = 'sit'; v.dog.f = hero.x >= v.dog.x ? 1 : -1; v.dog.moving = false; sfx('chirp'); sfxNear(v.dog, 'bark', 0.5); for (let i = 0; i < 4; i++) vfx(v, { x: v.dog.x + (Math.random() - 0.5) * 16, y: v.dog.y - 26, vx: (Math.random() - 0.5) * 20, vy: -30, life: 1, size: 3, color: '#ff7a9a' }); return; }
   if (t.kind === 'npc') { const n = t.ref; n.f = hero.x >= n.x ? 1 : -1; hero.facing = n.x >= hero.x ? 1 : -1; n.moving = false; }
   if (t.kind === 'npc') Sound.voice(voicePitch(t.ref)); else if (t.kind === 'board') sfx('paper'); else sfx('menuOpen');
@@ -1337,6 +1420,7 @@ function villageInteract() {
 const voicePitch = n => (n.look && n.look.dress ? 330 : 190) * (n.kid ? 1.6 : 1) * (0.9 + ([...(n.id || 'x')].reduce((a, c) => a + c.charCodeAt(0), 0) % 7) / 35);
 function openTalk(text, override) {
   const v = vil, t = v.talk; if (!t) return;
+  if (!override && !text && t.kind === 'npc') { const dq = hero.quests.active.find(q => q.kind === 'deliver' && q.to === t.ref.id && q.armed); if (dq) { text = `${t.ref.name} takes the parcel. "Just what I was waiting for. Thank you, traveller! Tell the guild it arrived safe."`; completeQuest(dq); sfx('gift'); } }
   let name = '', role = '', body = text, btns = [];
   if (t.kind === 'npc') {
     const n = t.ref; name = n.name; role = n.role; body = body || talkText(n);
@@ -1344,25 +1428,31 @@ function openTalk(text, override) {
     if (n.shop === 'store') btns.push(['shop', 'Browse wares']);
     if (n.shop === 'armour') btns.push(['shop', 'Browse armour']);
     if (n.shop === 'jewel') btns.push(['shop', 'Browse jewellery']);
-    if (n.shop === 'enchant') btns.push(['shop', 'Runes and enchanting']);
+    if (n.shop === 'enchant') btns.push(['shop', 'Buy runes']);
+    if (n.shop === 'atelier') btns.push(['shop', 'Improve runes, imbue weapons']);
     if (n.shop === 'smith') btns.push(['shop:smithBuy', 'Buy weapons'], ['shop:smithUp', 'Upgrade gear'], ['shop:smithSell', 'Sell gear']);
-    if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], ['wait', 'Wait for a time of day...'], ['respec', `Reset stat points (${respecCost()} gold)`]);
+    if (n.special === 'inn') btns.push(['rest', 'Rest and save (free)'], v.room ? ['roomInfo', `Your room: the ${INN_ROOM_NAMES[v.room.idx]}`] : ['room', `Rent a room for the night (${roomPrice()} gold)`], ['wait', 'Wait for a time of day...'], ['respec', `Reset stat points (${respecCost()} gold)`]);
+    if (n.special === 'inn' || n.special === 'guild' || n.adv || n.inn) btns.push(['rumor', 'Ask what people are saying']);
+    if (n.special === 'guild') btns.push(['shop:quests', hero.quests.claim.length ? 'Quests (a reward is waiting!)' : 'Quests']);
+    if (n.adv) btns.push(['comp', 'Ask about travelling together']);
     if (n.special === 'guard') btns.push(['go', 'Head out to face the boss']);
-    if (n.special === 'shrine') btns.push(['shop:rebirth', hero.level >= levelCap() ? 'The Rite of Return (rebirth)' : 'The Rite of Return (see what rebirth gives)']);
-    btns.push(['chat', `Chat ${hearts(n.id)}`], ['bye', 'Goodbye']);
+    if (n.special === 'shrine') btns.push(['shop:rebirth', 'The Rite of Return']);
+    if (CHAT_ON) btns.push(['chat', `Chat ${hearts(n.id)}`]);                       // the Chat option is switched off for now
+    btns.push(['bye', 'Goodbye']);
     n.talking = true;
   } else if (t.kind === 'gate') {
     name = 'The Road'; role = 'Leave the village';
-    body = body || `The road beyond the gate leads to the boss (wave ${wave + 1}). Your progress is saved when you leave. Head out?`;
+    body = body || `The road beyond the gate leads to the beast that waits ahead. Rest and ready yourself first if you need to. Head out?`;
     btns = [['go', 'Head out'], ['bye', 'Stay a while']];
   } else if (t.kind === 'craft') {
     name = 'Crafting Hall'; role = 'Opening soon';
     body = body || 'The shutters are closed and something heavy is being hammered inside. A note on the door reads: "Forging and crafting are coming. Please be patient."';
     btns = [['bye', 'Close']];
   } else if (t.kind === 'board') {
-    name = 'Notice board'; role = vil.name;
+    const gb = t.ref === 'guild'; name = gb ? 'Quest board' : 'Notice board'; role = gb ? "Adventurers' Guild" : vil.name;
     body = body || ['NOTICE: The road beyond the gate is dangerous. Heroes are advised to rest, resupply and heal before departing.', 'WANTED: Brave souls to deal with the beast on the road. Reward: our eternal gratitude.', 'LOST: One red ball. If found, return to the children. -- Pip', 'FOR SALE: Lanterns. Inquire with Tobin at the General Store.', 'REMINDER: Biscuit the dog is not a guard dog. Please stop asking him to guard things.'][Math.floor(Math.random() * 5)];
-    btns = [['shop:quests', hero.quests.claim.length ? 'Read the quest board (a reward is waiting!)' : 'Read the quest board'], ['bye', 'Close']];
+    if (!gb) body = body + ' (Quests are posted at the Adventurers\' Guild.)';
+    btns = gb ? [['shop:quests', hero.quests.claim.length ? 'Read the quest board (a reward is waiting!)' : 'Read the quest board'], ['bye', 'Close']] : [['bye', 'Close']];
   }
   const col = t.kind === 'npc' ? (t.ref.look.body || t.ref.look.dress || '#8a8aa0') : '#c9a86a';
   const badge = t.kind === 'npc' ? `<span class="avatar" style="background:${col}">${escapeHtml(name.replace(/^(Old|Granny|Sgt\.)\s+/, '').charAt(0))}</span>` : '';
@@ -1390,46 +1480,69 @@ document.getElementById('talk').addEventListener('click', e => {
   else if (k.startsWith('time:')) { v.talk = null; showMenu(null); startTimeSkip(parseFloat(k.slice(5))); }
   else if (k === 'shop') { v.shop = t.ref.shop; sfx('shopBell'); showMenu('shop'); }
   else if (k.startsWith('shop:')) { v.shop = k.slice(5); v.rbArm = false; sfx('shopBell'); showMenu('shop'); }
-  else if (k === 'rest') {
-    v.talk = null; showMenu(null); startTimeSkip(null);
+  else if (k === 'comp') openTalk("The guild is still drawing up the contracts for travelling companions. Ask again soon.");
+  else if (k === 'rumor') rumorTalk(t.ref);
+  else if (k === 'rumorYes') rumorAccept();
+  else if (k === 'rest') { v.talk = null; showMenu(null); startTimeSkip(null); }
+  else if (k === 'room') {
+    const price = roomPrice();
+    if (v.room) openTalk(`You already have the ${INN_ROOM_NAMES[v.room.idx]}, upstairs. The name is on the door.`);
+    else if (hero.gold < price) openTalk(`A bed for the night is ${price} gold, and I will not take less. Come back when you have it.`);
+    else {
+      hero.gold -= price; sfx('coin'); sfx('unlock'); const idx = Math.floor(Math.random() * INN_ROOMS.length); v.room = { idx };
+      popups.push({ text: `Room rented: the ${INN_ROOM_NAMES[idx]} (upstairs, see your map)`, x: VW / 2, y: 130, t: 3.2, screen: true, small: true, color: '#ffd86a' });
+      openTalk(`That is ${price} gold. You have the ${INN_ROOM_NAMES[idx]}, upstairs: each door has its name on a sign, and yours is marked on your map. The bed is yours until you leave the village. A night in a proper room leaves you rested for a good while. Sleep well.`);
+    }
   }
+  else if (k === 'roomInfo') openTalk(`You have the ${INN_ROOM_NAMES[v.room.idx]}, upstairs: the door with that name on it. Your map shows it. Sleep in the bed and you wake well rested.`);
   else if (k === 'respec') {
     const n = spentPoints(), cost = respecCost();
-    if (n <= 0) openTalk("You haven't spent any stat points yet, dear. Nothing to take back.");
-    else if (hero.gold < cost) openTalk(`I can take back your ${n} spent point${n === 1 ? '' : 's'} so you can choose again, but it costs ${cost} gold, and you only have ${hero.gold}.`);
-    else openTalk(`I can take back your ${n} spent point${n === 1 ? '' : 's'} so you can choose again. That is ${cost} gold. Your stats go back to zero until you spend the points again (press M). Shall I?`,
+    if (n <= 0) openTalk("You haven't trained yourself in anything yet, dear. Nothing to take back.");
+    else if (hero.gold < cost) openTalk(`I can help you unlearn what you have trained, so you can train again another way, but it costs ${cost} gold, and you only have ${hero.gold}.`);
+    else openTalk(`I can help you unlearn what you have trained, so you can train again another way. That is ${cost} gold, and you start again from nothing. Shall I?`,
       [['respecYes', `Yes, reset (${cost} gold)`], ['bye', 'No, keep my stats']]);
   }
   else if (k === 'respecYes') {
     const n = spentPoints();
-    if (respecStats()) { sfx('unlock'); popups.push({ text: `${n} stat point${n === 1 ? '' : 's'} returned: press M to spend them`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#fd4' }); openTalk('Done. Your points are yours to spend again. Press M when you are ready.'); }
+    if (respecStats()) { sfx('unlock'); popups.push({ text: `${n} stat point${n === 1 ? '' : 's'} returned: press M to spend them`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#fd4' }); openTalk('Done. You are free to train again however you like.'); }
     else openTalk('Hm, something is off. Come back when you have the gold.');
   }
 });
 
 function renderShop() {
   const v = vil; if (!v || !v.shop) return;
-  const big = ['smithUp', 'enchant', 'smithBuy', 'armour', 'jewel', 'smithSell', 'smith', 'quests'].includes(v.shop);
+  const big = ['smithUp', 'enchant', 'atelier', 'smithBuy', 'armour', 'jewel', 'smithSell', 'smith', 'quests'].includes(v.shop);
   document.querySelector('.shop-panel').classList.toggle('upgrade', big);                       // the wide windows: boxes on the left, the chosen piece on the right (nothing to scroll down to)
   document.querySelector('.shop-panel').classList.toggle('tiles', v.shop === 'alch' || v.shop === 'store');
-  document.querySelector('.shop-panel').classList.toggle('enchant', v.shop === 'enchant');
+  document.querySelector('.shop-panel').classList.toggle('enchant', v.shop === 'enchant' || v.shop === 'atelier');
   if (v.shop === 'rebirth') { renderRebirth(); return; }
   if (v.shop === 'smith' || v.shop === 'smithSell') { renderSellShop(); return; }
   if (v.shop === 'smithBuy' || v.shop === 'armour' || v.shop === 'jewel') { renderGearShop(v.shop); return; }
   if (v.shop === 'smithUp') { renderUpgradeShop(); return; }
-  if (v.shop === 'enchant') { renderEnchantShop(); return; }
+  if (v.shop === 'enchant' || v.shop === 'atelier') { renderEnchantShop(); return; }
   if (v.shop === 'quests') { renderQuestBoard(); return; }
   const alch = v.shop === 'alch';
   document.getElementById('shopTitle').textContent = alch ? "MIRA'S POTIONS" : "TOBIN'S GENERAL STORE";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
   const sel = (v.tSel || (v.tSel = {}));
   if (alch) {
-    const price = potionCost(), left = v.stock.potion | 0, have = hero.potions | 0, can = hero.gold >= price && left > 0 && have < POTION_MAX, P = POTIONS.heal;
-    const tiles = [{ id: 'potion', svg: potionSvg(P.color, 44), name: 'Healing Potion', color: P.color, sub: left > 0 ? `${price} g · ${left} left` : 'Sold out', on: true, dim: left <= 0 }];
-    const detail = tHead(potionSvg(P.color, 56), 'Healing Potion', P.color, `You carry ${have} of ${POTION_MAX}`) +
+    const price = potionCost(), left = v.stock.potion | 0, have = hero.potions | 0, P = POTIONS.heal, pick = BUFF_KEYS.includes(sel.alch) ? sel.alch : 'potion';
+    const tiles = [{ id: 'potion', svg: potionSvg(P.color, 44), name: 'Healing Potion', color: P.color, sub: left > 0 ? `${price} g · ${left} left` : 'Sold out', on: pick === 'potion', dim: left <= 0 },
+      ...BUFF_KEYS.map(k => ({ id: k, svg: potionSvg(POTIONS[k].color, 44), name: POTIONS[k].name, color: POTIONS[k].color, sub: (vil.stock[k] | 0) > 0 ? `${buffPotionCost(k).toLocaleString()} g · ${vil.stock[k]} left` : 'Sold out', on: pick === k, dim: (vil.stock[k] | 0) <= 0 }))];
+    let detail;
+    if (pick === 'potion') {
+      const can = hero.gold >= price && left > 0 && have < POTION_MAX;
+      detail = tHead(potionSvg(P.color, 56), 'Healing Potion', P.color, `You carry ${have} of ${POTION_MAX}`) +
       `<div class="tdesc">Restores ${Math.round(POTION_HEAL * 100)}% of your health <b>and cures every ailment</b>: poison, chill, bleeding, burning, freezing, weakness, blindness and curses. A curse halves the healing. Drink with <kbd>Q</kbd>.</div>
       <div class="srow"><span>Price</span><b>${price.toLocaleString()} g</b></div><div class="srow"><span>In stock</span><b>${left}</b></div>
       <div class="ubuy"><button class="go" data-buy="potion" ${can ? '' : 'disabled'}>${have >= POTION_MAX ? 'Your satchel is full' : left <= 0 ? 'Sold out' : `Buy · ${price.toLocaleString()} g`}</button></div>`;
+    } else {
+      const B = POTIONS[pick], cost = buffPotionCost(pick), n = potionCount(pick), left = vil.stock[pick] | 0, can = hero.gold >= cost && n < BUFF_MAX && left > 0;
+      detail = tHead(potionSvg(B.color, 56), B.name, B.color, `You carry ${n} of ${BUFF_MAX}`) +
+      `<div class="tdesc">${pick === 'str' ? 'Your blows hit <b>25% harder</b> for 2½ minutes.' : pick === 'swift' ? 'You run <b>25% faster</b> for 2½ minutes: easier to kite, easier to flee.' : pick === 'ward' ? 'Blows land <b>20% softer</b> for 2½ minutes, on top of your armour.' : 'Raises your <b>luck</b>: more loot from drops and a better chance that gear comes in a high grade, for 4 minutes.'} Equip it with the hold-<kbd>${escapeHtml(keyLabel('utility'))}</kbd> wheel, then press <kbd>${escapeHtml(keyLabel('potion'))}</kbd>. Drinking while it still works only tops it up once it is below 60%.</div>
+      <div class="srow"><span>Price</span><b>${cost.toLocaleString()} g</b></div><div class="srow"><span>In stock</span><b>${left}</b></div>
+      <div class="ubuy"><button class="go" data-buy="${pick}" ${can ? '' : 'disabled'}>${n >= BUFF_MAX ? 'Your satchel is full' : left <= 0 ? 'Sold out' : `Buy · ${cost.toLocaleString()} g`}</button></div>`;
+    }
     document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 3);
     return;
   }
@@ -1468,15 +1581,17 @@ const gearPrice = it => Math.max(18, Math.round(it.value * 3.4));
 function makeStock(v) {
   const depth = depthOf() + 0.4, level = hero.level + 2;
   const roll = slot => {
-    let it = rollItem({ slot, tier: depth, level });
+    let it = rollItem({ slot, tier: depth + Math.random() * 0.9, level });
     if (it.rarity < 1 || it.rarity > 5) it = rollItem({ slot, rarity: Math.max(1, Math.min(5, it.rarity)), level });     // shops never sell Broken, Mythical or Secret pieces
     return { item: it, price: gearPrice(it) };
   };
-  v.stock.smith = ['weapon', 'weapon', 'weapon', 'weapon'].map(roll);
-  v.stock.armour = ['armor', 'armor', 'helmet', 'helmet'].map(roll);
-  v.stock.jewel = ['ring', 'ring', 'necklace', 'artifact'].map(roll);
-  v.stock.runes = [];                                                           // the Enchantress's shelf: six different runes, the luck ones rarer, nothing above Brilliant (an Eternal rune has to be made at her altar)
-  for (let i = 0; v.stock.runes.length < 6 && i < 80; i++) { const k = rollRuneKey(2.5, 4); if (!v.stock.runes.some(e => e.k === k)) v.stock.runes.push({ k, price: runePrice(k) }); }
+  v.stock.smith = Array(10).fill('weapon').map(roll);
+  const own = SWORDS.filter(s => s.shop && s.lvl <= hero.level + 5).sort(() => Math.random() - 0.5).slice(0, 2);        // Brann's own make: weapons nobody drops, sold only here
+  for (const s of own) { const it = rollItem({ slot: 'weapon', base: s.id, tier: depth, level, rarity: Math.max(2, Math.min(5, Math.round(depth * 0.6) + 2)) }); v.stock.smith.push({ item: it, price: gearPrice(it) }); }
+  v.stock.armour = ['armor', 'armor', 'armor', 'armor', 'armor', 'armor', 'helmet', 'helmet', 'helmet', 'helmet', 'helmet', 'helmet'].map(roll);
+  v.stock.jewel = ['ring', 'ring', 'ring', 'ring', 'ring', 'necklace', 'necklace', 'necklace', 'artifact', 'artifact', 'artifact', 'artifact'].map(roll);
+  v.stock.runes = [];                                                           // the Enchantress's shelf: nine different runes, the luck ones rarer, nothing above Brilliant (an Eternal rune has to be made at her altar)
+  for (let i = 0; v.stock.runes.length < 12 && i < 160; i++) { const k = rollRuneKey(2.5, 4); if (!v.stock.runes.some(e => e.k === k)) v.stock.runes.push({ k, price: runePrice(k) }); }
 }
 const gearScore = it => Object.entries(it.stats).reduce((a, [k, x]) => a + x / GEAR_STATS[k].max, 0);
 const statLine = it => Object.entries(it.stats).map(([k, x]) => `${GEAR_STATS[k].name} ${GEAR_STATS[k].fmt(x)}`).join(' · ');
@@ -1501,12 +1616,13 @@ function renderGearShop(kind) {
 // A failed improvement costs the gold and the rune falls a tier (a Faint rune just stays Faint), like a failed upgrade at the forge.
 function renderEnchantShop() {
   const v = vil, R0 = k => RUNES[k];
-  document.getElementById('shopTitle').textContent = "YSOLDE'S ENCHANTING SANCTUM";
+  const work = v.shop === 'atelier';                                                      // Ysolde sells the runes; Orin's atelier does the work on them
+  document.getElementById('shopTitle').textContent = work ? "ORIN'S RUNE ATELIER" : "YSOLDE'S ENCHANTING SANCTUM";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
-  const tab = ['up', 'fx', 'ess'].includes(v.enchTab) ? v.enchTab : 'buy', owned = RUNE_KEYS.filter(k => runeCount(k) > 0), total = owned.reduce((a, k) => a + runeCount(k), 0);
-  const tabs = `<div class="etabs"><button data-etab="buy" class="${tab === 'buy' ? 'on' : ''}"><i>✦</i> Rune shelf</button><button data-etab="up" class="${tab === 'up' ? 'on' : ''}"><i>✧</i> Rune altar</button><button data-etab="fx" class="${tab === 'fx' ? 'on' : ''}"><i>⚔</i> Imbue weapons</button><button data-etab="ess" class="${tab === 'ess' ? 'on' : ''}"><i>❂</i> Essence altar</button><span class="ehave">${total} rune${total === 1 ? '' : 's'} · ${essTotal()} essence${essTotal() === 1 ? '' : 's'}</span></div>`;
+  const tab = work ? (['up', 'fx', 'ess'].includes(v.enchTab) ? v.enchTab : 'up') : 'buy', owned = RUNE_KEYS.filter(k => runeCount(k) > 0), total = owned.reduce((a, k) => a + runeCount(k), 0);
+  const tabs = `<div class="etabs">${work ? '' : `<button data-etab="buy" class="${tab === 'buy' ? 'on' : ''}"><i>✦</i> Rune shelf</button>`}${work ? `<button data-etab="up" class="${tab === 'up' ? 'on' : ''}"><i>✧</i> Rune altar</button><button data-etab="fx" class="${tab === 'fx' ? 'on' : ''}"><i>⚔</i> Imbue weapons</button><button data-etab="ess" class="${tab === 'ess' ? 'on' : ''}"><i>❂</i> Essence altar</button>` : ''}<span class="ehave"><b>${hero.gold.toLocaleString()} g</b><small>${total} rune${total === 1 ? '' : 's'} · ${essTotal()} essence${essTotal() === 1 ? '' : 's'}</small></span></div>`;
   const stat = k => { const S = GEAR_STATS[R0(k).stat]; return `<div class="srow"><span>${S.name}</span><b>${S.fmt(R0(k).val)}</b></div>`; };
-  const tile = (k, pick, on, sub) => `<button class="utile rtile${on ? ' on' : ''}" data-epick="${pick}" style="--rc:${R0(k).tier > 1 ? R0(k).tc : R0(k).color};--rk:${R0(k).color}" title="${escapeHtml(runeLine(k))}"><div class="uic">${runeSvg(k, 46)}</div><span class="una" style="color:${R0(k).tier > 1 ? R0(k).tc : R0(k).color}">${escapeHtml(R0(k).title)}</span><small>${sub}</small></button>`;
+  const tile = (k, pick, on, sub) => `<button class="utile rtile${on ? ' on' : ''}" data-epick="${pick}" style="--rc:${R0(k).tier > 1 ? R0(k).tc : R0(k).color};--rk:${R0(k).color}" title="${escapeHtml(runeLine(k))}"><div class="uic">${runeSvg(k, 46)}</div><div class="rtxt"><span class="una" style="color:${R0(k).tier > 1 ? R0(k).tc : R0(k).color}">${escapeHtml(R0(k).title)}</span><small>${sub}</small></div></button>`;
   let tiles = '', detail = '';
   if (tab === 'buy') {
     const list = (v.stock.runes || []).map((e, i) => e && { ...e, i }).filter(Boolean);
@@ -1517,7 +1633,7 @@ function renderEnchantShop() {
     detail = `<div class="upg-detail rdetail" style="--rc:${R.tier > 1 ? R.tc : R.color}"><div class="uhead"><div class="uic big">${runeSvg(k, 62)}</div><div><b style="color:${R.tier > 1 ? R.tc : R.color}">${escapeHtml(R.title)}</b>
       <small>Tier ${R.tier} of ${RUNE_TIERS.length} · you hold ${runeCount(k)}</small></div></div>
       <div class="ustats">${stat(k)}</div>
-      <div class="rnote">Set into any Uncommon or better piece at Brann's forge. ${R.tier < RUNE_TIERS.length ? `It can be improved at the altar to ${escapeHtml(R0(runeNext(k)).title)}.` : 'It is the finest tier a rune can reach.'}</div>
+      <div class="rnote">Fits ${runeFitText(k)}, set at Brann's forge. ${R.tier < RUNE_TIERS.length ? `It can be improved at the altar to ${escapeHtml(R0(runeNext(k)).title)}.` : 'It is the finest tier a rune can reach.'}</div>
       <div class="ubuy"><button class="go" data-ebuy="${sel.i}" ${can ? '' : 'disabled'}>${runeCount(k) >= RUNE_MAX ? 'You hold the most you can' : `Buy · ${sel.price.toLocaleString()} g`}</button></div></div>`;
   } else if (tab === 'up') {
     if (!owned.length) { emptyEnchant(tabs, 'You carry no runes. Monsters leave them now and then (bosses most often), and Ysolde sells them on her shelf.'); return; }
@@ -1540,7 +1656,7 @@ function renderEnchantShop() {
     const mine = ESS_KEYS.filter(k => essCount(k) > 0), cur = sel.fx ? essKey(sel.fx.k, sel.fx.lv) : null;
     const pick = mine.includes(v.fxEss) ? v.fxEss : mine[0] || null; v.fxEss = pick;
     tiles = weps.map(it => { const R = RARITIES[it.rarity], F = it.fx && WFX[it.fx.k], wield = it === hero.equip.weapon;
-      return `<button class="utile rtile${it === sel ? ' on' : ''}" data-epick="fxw:${escapeHtml(it.id)}" style="--rc:${F ? F.color : R.color}" title="${escapeHtml(it.name)}">${wield ? '<i class="worn">Wielded</i>' : ''}<div class="uic" style="border-color:${R.color}">${slotSvg('weapon', R.color, it)}</div><span class="una" style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</span><small style="${F ? 'color:' + F.color : ''}">${F ? F.name + ' ' + ROMAN[it.fx.lv] : 'No effect'}</small></button>`; }).join('');
+      return `<button class="utile rtile${it === sel ? ' on' : ''}" data-epick="fxw:${escapeHtml(it.id)}" style="--rc:${F ? F.color : R.color}" title="${escapeHtml(it.name)}">${wield ? '<i class="worn">Wielded</i>' : ''}<div class="uic" style="border-color:${R.color}">${slotSvg('weapon', R.color, it)}</div><div class="rtxt"><span class="una" style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</span><small style="${F ? 'color:' + F.color : ''}">${F ? F.name + ' ' + ROMAN[it.fx.lv] : 'No effect'}</small></div></button>`; }).join('');
     const R = RARITIES[sel.rarity], sw = SWORDS.find(s => s.id === sel.base), dmg = (sw ? sw.dmg : 10) + Math.round(sel.stats.dmg || 0);
     const msg = v.fxMsg ? `<div class="umsg ${v.fxMsg.kind}">${escapeHtml(v.fxMsg.text)}</div>` : '';
     const E = pick && ESS[pick], fee = pick ? imbueFee(sel, pick) : 0, same = pick && cur === pick;
@@ -1555,7 +1671,7 @@ function renderEnchantShop() {
     if (!mine.length) { emptyEnchant(tabs, 'You carry no essences. Elites and bosses drop them (bosses most often), and nobody sells them.'); return; }
     if (!mine.includes(v.essSel)) v.essSel = mine[0];
     const k = v.essSel, E = ESS[k], nk = essNext(k), chance = essUpChance(k), cost = essUpCost(k), can = canEssUp(k) && hero.gold >= cost, lower = E.lv > 1 ? ESS[essKey(E.fx, E.lv - 1)].title : null;
-    tiles = mine.map(c => `<button class="utile rtile${c === k ? ' on' : ''}" data-epick="ess:${c}" style="--rc:${ESS[c].color}" title="${escapeHtml(ESS[c].title)}"><div class="uic">${essSvg(c, 46)}</div><span class="una" style="color:${ESS[c].color}">${escapeHtml(ESS[c].title)}</span><small>×${essCount(c)}</small></button>`).join('');
+    tiles = mine.map(c => `<button class="utile rtile${c === k ? ' on' : ''}" data-epick="ess:${c}" style="--rc:${ESS[c].color}" title="${escapeHtml(ESS[c].title)}"><div class="uic">${essSvg(c, 46)}</div><div class="rtxt"><span class="una" style="color:${ESS[c].color}">${escapeHtml(ESS[c].title)}</span><small>×${essCount(c)}</small></div></button>`).join('');
     const msg = v.essMsg ? `<div class="umsg ${v.essMsg.kind}">${escapeHtml(v.essMsg.text)}</div>` : '';
     detail = `<div class="upg-detail rdetail" style="--rc:${E.color}"><div class="uhead"><div class="uic big" style="border-color:${E.color}">${essSvg(k, 62)}</div><div><b style="color:${E.color}">${escapeHtml(E.title)}</b><small>Level ${E.lv} of ${WFX_LV} · you hold ${essCount(k)}</small></div></div>
       ${nk ? `<div class="rup"><div class="uic">${essSvg(k, 44)}</div><span>✦</span><div class="uic">${essSvg(nk, 44)}</div></div><div class="ulevel">Improve to <b style="color:${E.color}">${escapeHtml(ESS[nk].title)}</b></div>` : '<div class="ulevel">This essence is at its finest level</div>'}
@@ -1564,19 +1680,24 @@ function renderEnchantShop() {
         <small>${lower ? `If it fails, it falls to ${escapeHtml(lower)}` : 'If it fails, nothing is lost but the gold'}${gearStat('upLuck') ? ` · includes +${Math.round(gearStat('upLuck') * 50)}% from your upgrade luck` : ''}</small></div></div>` : ''}${msg}
       <div class="ubuy"><button class="go" data-eessup="${k}" ${can ? '' : 'disabled'}>${!nk ? 'Fully improved' : essCount(nk) >= ESS_MAX ? 'You hold the most of the next level' : `Improve · ${cost.toLocaleString()} g`}</button></div></div>`;
   }
-  document.getElementById('shopBody').innerHTML = `<div class="ench">${tabs}<div class="upg">${detail}<div class="upg-grid">${tiles}${padTiles(tiles, 4)}</div></div></div>`;
+  const heads = { buy: 'On the shelf', up: 'Your runes: pick one to improve', fx: 'Your weapons: pick one to imbue', ess: 'Your essences: pick one to improve' };
+  document.getElementById('shopBody').innerHTML = `<div class="ench">${tabs}<div class="upg">${detail}<div class="eleft"><div class="ehead">${heads[tab]}</div><div class="upg-grid">${tiles}</div></div></div></div>`;
 }
 // Brann improves gear. The pieces you own sit in a grid of tiles; click one and its stats appear on the left with the stats it would have after the next level, the odds,
 // and the Upgrade button. A failed upgrade costs the gold and drops the piece one level; a success raises it one (see attemptUpgrade in gear.js).
 function renderUpgradeShop() {
   document.getElementById('shopTitle').textContent = "BRANN'S FORGE: UPGRADE GEAR";
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
-  const rows = [...activeSlots().map(k => hero.equip[k]).filter(Boolean).map(it => ({ it, eq: true })), ...hero.inv.map(it => ({ it, eq: false }))].filter(r => Object.keys(r.it.stats).length);
-  if (!rows.length) { document.getElementById('shopBody').innerHTML = '<div class="hint" style="text-align:center">You have no gear with stats to improve yet. Gear drops from monsters, and bosses always drop some.</div>'; return; }
+  const all = [...activeSlots().map(k => hero.equip[k]).filter(Boolean).map(it => ({ it, eq: true })), ...hero.inv.map(it => ({ it, eq: false }))].filter(r => Object.keys(r.it.stats).length);
+  const nWorn = all.filter(r => r.eq).length, hit = all.find(r => r.it.id === vil.upSel), tabNow = vil.upTab || (hit ? (hit.eq ? 'worn' : 'bag') : nWorn ? 'worn' : 'bag');
+  const rows = all.filter(r => r.eq === (tabNow === 'worn'));
+  const utabs = `<div class="etabs utabs"><button data-uptab="worn" class="${tabNow === 'worn' ? 'on' : ''}"><i>🛡</i> Worn <small>${nWorn}</small></button><button data-uptab="bag" class="${tabNow === 'bag' ? 'on' : ''}"><i>🎒</i> Not worn <small>${all.length - nWorn}</small></button></div>`;
+  if (!all.length) { document.getElementById('shopBody').innerHTML = '<div class="hint" style="text-align:center">You have no gear with stats to improve yet. Gear drops from monsters, and bosses always drop some.</div>'; return; }
+  if (!rows.length) { document.getElementById('shopBody').innerHTML = `<div class="upwrap">${utabs}<div class="hint" style="text-align:center">${tabNow === 'worn' ? 'You are wearing nothing that can be improved. Equip a piece, or look in the Not worn tab.' : 'Nothing in your backpack can be improved. Spare pieces from monsters will show up here.'}</div></div>`; return; }
   const sel = rows.find(r => r.it.id === vil.upSel) || rows[0]; vil.upSel = sel.it.id;
   const tiles = rows.map(({ it, eq }, i) => {
     const R = RARITIES[it.rarity], up = it.up | 0;
-    return `<button class="utile${it === sel.it ? ' on' : ''}" data-pick="${escapeHtml(it.id)}" style="--rc:${R.color}" title="${escapeHtml(it.name)}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}${eq ? '<i class="worn">Worn</i>' : ''}<div class="uic">${slotSvg(it.slot, R.color, it)}</div><span class="una" style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</span><small>${up ? '+' + up : 'Lv ' + (it.ilvl || 1)}</small></button>`;
+    return `<button class="utile${it === sel.it ? ' on' : ''}" data-pick="${escapeHtml(it.id)}" style="--rc:${R.color}" title="${escapeHtml(it.name)}">${i < 9 ? `<kbd>${i + 1}</kbd>` : ''}<div class="uic">${slotSvg(it.slot, R.color, it)}</div><span class="una" style="color:${R.color}">${escapeHtml(it.name.replace(/ \+\d+$/, ''))}</span><small>${up ? '+' + up : 'Lv ' + (it.ilvl || 1)}</small></button>`;
   }).join('');
   const it = sel.it, R = RARITIES[it.rarity], up = it.up | 0, max = upgradeMax(it), done = up >= max, cost = upgradeCost(it), can = !done && hero.gold >= cost, chance = upgradeChance(it);
   const next = done ? null : statsAtUp(it, up + 1);
@@ -1584,11 +1705,11 @@ function renderUpgradeShop() {
   const ns = socketsOf(it), rn = it.rn || [], open = vil.sockOpen;
   let sock = '';
   if (ns) {
-    const free = ns - rn.length, owned = RUNE_KEYS.filter(k => runeCount(k) > 0);
+    const free = ns - rn.length, owned = RUNE_KEYS.filter(k => runeCount(k) > 0 && runeFits(it, k));
     sock = `<div class="usock"><div class="slabel">Sockets <small>${rn.length}/${ns}</small></div><div class="sbox">` +
       Array.from({ length: ns }, (_, i) => rn[i] ? `<button class="sk on" data-sock="off:${escapeHtml(it.id)}:${i}" style="--rc:${RUNES[rn[i]].color}" title="${escapeHtml(runeLine(rn[i]))} (click to take it out)">${runeSvg(rn[i], 28)}</button>`
         : `<button class="sk${open === i ? ' sel' : ''}" data-sock="pick:${i}" title="Choose a rune for this socket">+</button>`).join('') + '</div>' +
-      (free > 0 && open !== null && open !== undefined ? `<div class="spick">${owned.length ? owned.map(k => `<button class="rp" data-sock="put:${escapeHtml(it.id)}:${k}" style="--rc:${RUNES[k].color}" title="${escapeHtml(runeLine(k))}">${runeSvg(k, 26)}<b>${runeCount(k)}</b></button>`).join('') : '<small>No runes yet: they drop from monsters, and Ysolde the Enchantress sells them.</small>'}</div>` : '') + '</div>';
+      (free > 0 && open !== null && open !== undefined ? `<div class="spick">${owned.length ? owned.map(k => `<button class="rp" data-sock="put:${escapeHtml(it.id)}:${k}" style="--rc:${RUNES[k].color}" title="${escapeHtml(runeLine(k))}">${runeSvg(k, 26)}<b>${runeCount(k)}</b></button>`).join('') : `<small>${RUNE_KEYS.some(k => runeCount(k) > 0) ? 'None of your runes fit a ' + SLOT_LABEL[it.slot].toLowerCase() + '.' : 'No runes yet: they drop from monsters, and Ysolde the Enchantress sells them.'}</small>`}</div>` : '') + '</div>';
   } else sock = '<div class="usock none"><small>No sockets: Uncommon and better pieces have them.</small></div>';
   const msg = vil.upMsg && vil.upMsg.id === it.id ? `<div class="umsg ${vil.upMsg.kind}">${escapeHtml(vil.upMsg.text)}</div>` : '';
   const odds = done ? '<div class="uodds">Fully upgraded</div>'
@@ -1598,7 +1719,7 @@ function renderUpgradeShop() {
     <div class="ulevel">Upgrade <b>+${up}</b> of ${max}${done ? '' : ` <span>next: +${up + 1}</span>`}</div>
     <div class="ustats">${statRows}</div>${sock}${odds}${msg}
     <div class="ubuy"><button class="go" data-buy="up:${escapeHtml(it.id)}" ${can ? '' : 'disabled'}>${done ? 'Fully upgraded' : `Upgrade · ${cost.toLocaleString()} g`}</button><button data-up5="${escapeHtml(it.id)}" ${can ? '' : 'disabled'} title="Try up to five times, stopping when you cannot afford it">×5</button></div></div>`;
-  document.getElementById('shopBody').innerHTML = `<div class="upg">${detail}<div class="upg-grid">${tiles}</div></div>`;
+  document.getElementById('shopBody').innerHTML = `<div class="upwrap">${utabs}<div class="upg">${detail}<div class="upg-grid">${tiles}</div></div></div>`;
 }
 
 // the blacksmith buys spare gear (equipped pieces are never offered). Tick several pieces and sell them together, or use a quick button to pick everything up to a grade.
@@ -1639,7 +1760,7 @@ document.getElementById('shop').addEventListener('click', e => {
   if (qa && vil) {                                                      // the quest board: accept, abandon, collect
     const [op, id] = qa.dataset.qa.split(':'), Q = hero.quests;
     if (op === 'accept') { const q = (vil.questOffers || []).find(x => x.id === id); if (!q || Q.active.length >= QUEST_MAX) { sfx('denied'); return; } vil.questOffers = vil.questOffers.filter(x => x !== q); Q.active.push(q); vil.tSel.quests = q.id; sfx('unlock'); saveGame(true, true); }
-    else if (op === 'abandon') { const q = Q.active.find(x => x.id === id); if (!q) return; Q.active = Q.active.filter(x => x !== q); sfx('discard'); saveGame(true, true); }
+    else if (op === 'abandon') { const q = Q.active.find(x => x.id === id); if (!q) return; Q.active = Q.active.filter(x => x !== q); escortDone(); sfx('discard'); saveGame(true, true); }
     else if (op === 'claim') { const q = Q.claim.find(x => x.id === id); if (!q || !claimQuest(q)) { sfx('denied'); return; } }
     renderShop(); return;
   }
@@ -1647,7 +1768,7 @@ document.getElementById('shop').addEventListener('click', e => {
   if (tp && vil) {                                                      // a box in a tile shop: choose it (in the sell shop, a click also ticks it)
     const sh = vil.shop, id = tp.dataset.tpick;
     if (sh === 'smithSell' || sh === 'smith') { sellSelClick('pick:' + id); return; }
-    (vil.tSel || (vil.tSel = {}))[sh] = (sh === 'quests' || id === 'scroll') ? id : +id; sfx('tick'); renderShop(); return;
+    (vil.tSel || (vil.tSel = {}))[sh] = (sh === 'quests' || id === 'scroll' || isNaN(+id)) ? id : +id; sfx('tick'); renderShop(); return;
   }
   const sb = e.target.closest('[data-sel]'); if (sb && vil) { sellSelClick(sb.dataset.sel); return; }
   const et = e.target.closest('[data-etab]'); if (et && vil) { vil.enchTab = et.dataset.etab; vil.enchMsg = null; vil.fxMsg = null; vil.essMsg = null; sfx('tick'); renderShop(); return; }
@@ -1693,6 +1814,7 @@ document.getElementById('shop').addEventListener('click', e => {
     popups.push({ text: vil.enchMsg.text, x: VW / 2, y: 120, t: 1.8, screen: true, small: true, color: res === 'up' ? '#cfa8ff' : '#f88' });
     hero.goldPulse = 0.6; sfx(res === 'up' ? 'runeUp' : 'runeFail'); saveGame(true, true); renderShop(); return;
   }
+  const ut = e.target.closest('[data-uptab]'); if (ut && vil) { vil.upTab = ut.dataset.uptab; vil.sockOpen = null; sfx('tab'); renderShop(); return; }
   const pk = e.target.closest('[data-pick]'); if (pk && vil) { vil.upSel = pk.dataset.pick; vil.sockOpen = null; sfx('tick'); renderShop(); return; }
   const sk = e.target.closest('[data-sock]');
   if (sk && vil) {                                                      // sockets: open the chooser, put a rune in, take it out
@@ -1739,6 +1861,10 @@ document.getElementById('shop').addEventListener('click', e => {
     const price = potionCost();
     if (hero.gold < price || (vil.stock.potion | 0) <= 0 || (hero.potions | 0) >= POTION_MAX) { sfx('denied'); return; }
     hero.gold -= price; hero.potions = (hero.potions | 0) + 1; vil.stock.potion--; say('Bought a Healing Potion', '#7fd08a');
+  } else if (BUFF_KEYS.includes(id)) {
+    const cost = buffPotionCost(id), P = POTIONS[id];
+    if (hero.gold < cost || potionCount(id) >= BUFF_MAX || (vil.stock[id] | 0) <= 0) { sfx('denied'); return; }
+    hero.gold -= cost; vil.stock[id]--; hero[P.field] = potionCount(id) + 1; say(`Bought a ${P.name}`, P.color);
   } else if (id === 'scroll') {
     if (hero.gold < recallCost() || (hero.recalls | 0) >= RECALL_MAX) { sfx('denied'); return; }
     hero.gold -= recallCost(); hero.recalls = (hero.recalls | 0) + 1; say('Bought a Return Scroll', '#cfc0ff');
@@ -1780,7 +1906,7 @@ function drawVillage() {
   // speech bubbles and the talk prompt sit on top of everything
   for (const n of v.npcs) if (n.bubble && !n.inside && n.alpha > 0.5) drawBubble(n.x, n.y - 82 * n.scale, n.bubble, Math.min(1, n.bubbleT * 2));
   if (v.near && !v.talk && v.leaveT <= 0) {
-    const t = v.near, ty = t.kind === 'npc' ? t.ref.y - 100 * t.ref.scale : t.y - 14;
+    const t = v.near, ty = t.kind === 'npc' ? t.ref.y - 100 * t.ref.scale : (['guild', 'inn', 'church', 'craft'].includes(t.kind) ? t.y - 62 : t.y - 14);
     const bob = Math.sin(tAnim * 5) * 2;
     ctx.save(); ctx.fillStyle = 'rgba(20,20,28,0.88)'; ctx.strokeStyle = '#f5c451'; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.roundRect(t.x - 11, ty - 11 + bob, 22, 22, 6); ctx.fill(); ctx.stroke();
@@ -1869,8 +1995,55 @@ function drawVillageHitboxes(v) {
   ctx.restore();
 }
 
+const VIL_NAMES = { inn: "Hilda's Inn", alch: 'Alchemist', store: 'General Store', armoury: 'Armoury', jewel: 'Jeweller', craft: 'Crafting Hall', church: 'Church of Return', atelier: 'Rune Atelier', guild: "Adventurers' Guild", enchant: "Ysolde's House", smith: "Brann's Smithy", houseA: "Pim's House", houseB: 'Family House', houseC: "Rurik's House" };
+function drawMapContent(v, rx, ry, rw, rh, mini) {         // the village from above, or the floor plan of the building you are in, fitted into a rectangle
+  const pulse = 0.5 + 0.5 * Math.sin(tAnim * 5); let ox, oy, sc, title;
+  if (v.inChurch) {
+    const f = v.cfl[v.cFloor]; let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9; for (const r of f.walk) { x0 = Math.min(x0, r[0]); y0 = Math.min(y0, r[1]); x1 = Math.max(x1, r[2]); y1 = Math.max(y1, r[3]); }
+    sc = Math.min(rw / (x1 - x0), rh / (y1 - y0)); ox = rx + (rw - (x1 - x0) * sc) / 2 - x0 * sc; oy = ry + (rh - (y1 - y0) * sc) / 2 - y0 * sc; title = chNm(v)[v.cFloor] || chNm(v)[0];
+    ctx.fillStyle = '#2a2018'; ctx.fillRect(ox + x0 * sc - 4, oy + y0 * sc - 4, (x1 - x0) * sc + 8, (y1 - y0) * sc + 8);
+    for (const r of f.walk) { ctx.fillStyle = '#b79a6c'; ctx.fillRect(ox + r[0] * sc, oy + r[1] * sc, (r[2] - r[0]) * sc, (r[3] - r[1]) * sc); }
+    if (v.cKind === 'inn' && v.cFloor === 1 && v.room) { const rx0 = INN_ROOMS[v.room.idx]; ctx.fillStyle = `rgba(255,214,90,${0.35 + 0.35 * pulse})`; ctx.fillRect(ox + rx0 * sc, oy + 170 * sc, 260 * sc, 260 * sc); ctx.strokeStyle = '#ffd24a'; ctx.lineWidth = 2; ctx.strokeRect(ox + rx0 * sc, oy + 170 * sc, 260 * sc, 260 * sc); if (!mini) { ctx.fillStyle = '#3a2a10'; ctx.textAlign = 'center'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.fillText('YOUR ROOM', ox + (rx0 + 130) * sc, oy + 250 * sc); ctx.font = '12px "Segoe UI", sans-serif'; ctx.fillText(INN_ROOM_NAMES[v.room.idx], ox + (rx0 + 130) * sc, oy + 268 * sc); } }
+    if (!mini) for (const p of f.props) { if (p.free || p.k === 'chandelier' || p.k === 'lamp' || p.k === 'plant' || p.k === 'exitsign') continue; ctx.fillStyle = p.k === 'stairs' ? '#f5c451' : p.k === 'bed' ? '#5a7ab0' : '#6a4a2a'; if (p.r !== undefined) { ctx.beginPath(); ctx.arc(ox + p.x * sc, oy + p.y * sc, Math.max(2, p.r * sc), 0, 6.3); ctx.fill(); } else ctx.fillRect(ox + p.x0 * sc, oy + p.y0 * sc, Math.max(2, (p.x1 - p.x0) * sc), Math.max(2, (p.y1 - p.y0) * sc)); }
+    const ex = v.cKind === 'church' ? CH_EXIT : INT[v.cKind].exit; ctx.fillStyle = '#f5c451';
+    if (mini) { ctx.beginPath(); ctx.arc(ox + ex.x * sc, oy + ex.y * sc, 3, 0, 6.3); ctx.fill(); if (v.cKind !== 'guild') { const st = chSt(v); ctx.fillRect(ox + st.x * sc - 2, oy + st.y * sc - 2, 4, 4); } }
+    else { ctx.textAlign = 'center'; ctx.font = 'bold 12px "Segoe UI", sans-serif'; ctx.fillText('EXIT', ox + ex.x * sc, oy + (ex.y + 14) * sc); if (v.cKind !== 'guild') { const st = chSt(v); ctx.fillText(v.cFloor ? 'STAIRS ↓' : 'STAIRS ↑', ox + st.x * sc, oy + (st.y - 8) * sc); } }
+    for (const n of churchFolkOf(v)) { ctx.fillStyle = '#e8e0c8'; ctx.beginPath(); ctx.arc(ox + n.x * sc, oy + n.y * sc, mini ? 1.6 : 3, 0, 6.3); ctx.fill(); }
+  } else {
+    sc = Math.min(rw / VIL_W, rh / VIL_H); ox = rx + (rw - VIL_W * sc) / 2; oy = ry + (rh - VIL_H * sc) / 2; title = `${v.name} · village map`;
+    ctx.fillStyle = '#1c2418'; ctx.fillRect(ox - 3, oy - 3, VIL_W * sc + 6, VIL_H * sc + 6); ctx.drawImage(v.ground, ox, oy, VIL_W * sc, VIL_H * sc);
+    if (!mini) { ctx.fillStyle = 'rgba(20,50,20,0.6)'; for (const t of v.trees || []) { ctx.beginPath(); ctx.arc(ox + t.x * sc, oy + t.y * sc, Math.max(1.5, 7 * sc), 0, 6.3); ctx.fill(); } }
+    for (const b of v.buildings) {
+      const x0 = ox + (b.x - b.w / 2) * sc, y1 = oy + b.y * sc, y0 = oy + (b.y - b.wh - b.rh * 0.5) * sc, c = b.church ? '#a8a8d0' : b.id === 'inn' ? '#d9945a' : b.id === 'guild' ? '#c06060' : b.shop || b.id === 'smith' ? '#c9a46a' : '#9a8a70';
+      if (!mini) { ctx.fillStyle = 'rgba(0,0,0,0.35)'; ctx.fillRect(x0 + 2, y0 + 2, b.w * sc, y1 - y0); }
+      ctx.fillStyle = c; ctx.fillRect(x0, y0, b.w * sc, y1 - y0); ctx.strokeStyle = '#2a1a0e'; ctx.lineWidth = mini ? 1 : 1.5; ctx.strokeRect(x0, y0, b.w * sc, y1 - y0);
+      if (mini) continue;
+      ctx.fillStyle = '#ffe9a8'; ctx.fillRect(ox + b.door.x * sc - 2, y1 - 3, 4, 5);
+      ctx.fillStyle = '#fff'; ctx.font = `bold ${Math.max(10, Math.round(13 * sc * 2.2))}px "Segoe UI", sans-serif`; ctx.textAlign = 'center'; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 3; const lab = VIL_NAMES[b.id] || b.id; ctx.strokeText(lab, x0 + b.w * sc / 2, y0 - 4); ctx.fillText(lab, x0 + b.w * sc / 2, y0 - 4);
+    }
+    for (const [pt, lab, col] of [[v.gate, 'Gate to the road', '#e45'], [v.arrive, 'Welcome', '#5ad'], [v.plaza, 'Plaza', '#fff']]) {
+      const px = ox + pt.x * sc, py = oy + pt.y * sc;
+      if (lab !== 'Plaza') { ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, mini ? 3 : 7, 0, 6.3); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = mini ? 1 : 2; ctx.stroke(); }
+      if (mini) continue; ctx.textAlign = 'center'; ctx.fillStyle = '#fff'; ctx.font = 'bold 13px "Segoe UI", sans-serif'; ctx.strokeStyle = 'rgba(0,0,0,0.85)'; ctx.lineWidth = 3; ctx.strokeText(lab, px, py + (lab === 'Plaza' ? 4 : 22)); ctx.fillText(lab, px, py + (lab === 'Plaza' ? 4 : 22));
+    }
+    if (!mini) for (const n of v.npcs) if (!n.inside) { ctx.fillStyle = n.kid ? '#ffd24a' : '#e8e0c8'; ctx.beginPath(); ctx.arc(ox + n.x * sc, oy + n.y * sc, 2.4, 0, 6.3); ctx.fill(); }
+    if (mini) { ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1; ctx.strokeRect(ox + cam.x * sc, oy + cam.y * sc, VW / VIL_ZOOM * sc, VH / VIL_ZOOM * sc); }
+  }
+  const hx = ox + hero.x * sc, hy = oy + hero.y * sc;
+  if (!mini) { ctx.fillStyle = `rgba(255,70,70,${0.25 + 0.3 * pulse})`; ctx.beginPath(); ctx.arc(hx, hy, 10 + 6 * pulse, 0, 6.3); ctx.fill(); }
+  ctx.fillStyle = mini ? '#fff' : '#ff4646'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(hx, hy, mini ? 2.6 : 6, 0, 6.3); ctx.fill(); if (!mini) ctx.stroke();
+  return title;
+}
+function drawMiniMap(v) {                                   // the little map at the bottom right, in the same frame as the wave map
+  const mw = 150, mh = 100, mx = VW - mw - 14, my = VH - mh - 14;
+  hudPanel(mx - 6, my - 6, mw + 12, mh + 12, { r: 11 });
+  ctx.save(); ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+  const title = drawMapContent(v, mx, my, mw, mh, true); ctx.restore();
+  ctx.fillStyle = '#a3a1b8'; ctx.textAlign = 'center'; ctx.font = `10.5px ${UI_FONT}`; ctx.fillText(fitText(v.inChurch ? title : v.name, mw + 10, 10.5), mx + mw / 2, my - 11);
+}
+
 function drawVillageHUD(v) {
-  drawHeroCard(true);
+  drawHeroCard(true); drawMiniMap(v);
   drawQuestTracker();
   drawVitals(true);
   drawWaveChip(true);
@@ -1883,7 +2056,7 @@ function drawVillageHUD(v) {
   ctx.fillStyle = '#a3a1b8'; ctx.fillText(fitText(`${timePhase()} · Village`, 98, 11), x + 40, y + 32);
   // bottom line: what E does here
   if (v.near && !v.talk) {
-    const t = v.near, label = t.kind === 'gate' ? 'E  Leave the village' : t.kind === 'dog' ? 'E  Pet Biscuit' : t.kind === 'board' ? 'E  Read the notice board' : t.kind === 'church' ? 'E  Enter the church' : t.kind === 'exit' ? 'E  Leave the church' : `E  Talk to ${t.label}${t.tag ? ' · ' + t.tag : ''}`;
+    const t = v.near, label = t.kind === 'gate' ? 'E  Leave the village' : t.kind === 'dog' ? 'E  Pet Biscuit' : t.kind === 'board' ? 'E  Read the notice board' : t.kind === 'church' ? 'E  Enter the church' : t.kind === 'inn' ? 'E  Enter the inn' : t.kind === 'guild' ? 'E  Enter the guild' :  t.kind === 'bed' ? 'E  Sleep in your bed' : t.kind === 'exit' ? 'E  Leave the ' + ({ inn: 'inn', guild: 'guild' }[vil.cKind] || 'church') : t.kind === 'stairs' || t.kind === 'bell' ? 'E  ' + t.label : `E  Talk to ${t.label}${t.tag ? ' · ' + t.tag : ''}`;
     const lbl = fitText(label, VW - 120, 13, true, 10), w = ctx.measureText(lbl).width + 30;
     hudPanel(VW / 2 - w / 2, VH - 100, w, 30, { r: 10, edge: 'rgba(245,196,81,0.55)' });
     ctx.fillStyle = '#f5c451'; ctx.textAlign = 'center'; ctx.fillText(lbl, VW / 2, VH - 80);
@@ -1893,15 +2066,35 @@ function drawVillageHUD(v) {
 
 // ---------------------------------------------------------------- the quest board (#17) and the Return Scroll
 // The notice board in every village offers a handful of quests; up to three can be taken at once and they travel with you across waves and biomes.
-// A finished quest waits for you at the next board (its reward is collected there). Rebirth clears the quests you were doing but keeps rewards you had not collected.
-const QUEST_MAX = 3, QUEST_KINDS = ['kills', 'type', 'elite', 'mut', 'evo', 'leader', 'boss', 'noPotion', 'noHit', 'gold', 'gear', 'chest', 'dungeon'];
+// A finished quest waits for you at the next board (its reward is collected there). Prestige clears the quests you were doing but keeps rewards you had not collected.
+const QUEST_ALIAS = { kills2: 'swarm', evo2: 'evo', leader2: 'leader', noPotion2: 'noPotion', noHit2: 'noHit', waves2: 'waves', type3: 'type', gold2: 'rich', haul2: 'haul', boss2: 'boss' };      // the bigger notices count the same way as the ones they grew from
+const QUEST_MAX = 3, QUEST_KINDS = ['deliver', 'escort', 'escort2', 'kills2', 'evo2', 'leader2', 'noPotion2', 'noHit2', 'waves2', 'type3', 'gold2', 'haul2', 'boss2', 'kills', 'type', 'elite', 'mut', 'evo', 'leader', 'boss', 'noPotion', 'noHit', 'gold', 'gear', 'chest', 'dungeon', 'swarm', 'waves', 'type2', 'haul', 'rich', 'elite2', 'mut2'], QUEST_OFFERED = ['deliver', 'escort', 'escort2', 'kills2', 'evo2', 'leader2', 'noPotion2', 'noHit2', 'waves2', 'type3', 'gold2', 'haul2', 'boss2', 'kills', 'type', 'elite', 'mut', 'evo', 'leader', 'boss', 'noPotion', 'noHit', 'gold', 'gear', 'swarm', 'waves', 'type2', 'haul', 'rich', 'elite2', 'mut2'];       // (no dungeon quests on the board for now)
 const QUEST_TYPES = ['goblin', 'minotaur', 'archer', 'ogre'], QUEST_PLURAL = { goblin: 'goblins', minotaur: 'minotaurs', archer: 'archers', ogre: 'ogres' };
+const questPlural = t => QUEST_PLURAL[t] || (t.replace(/([A-Z])/g, ' $1').toLowerCase() + 's'), BIOME_MOBS_ALL = () => [...new Set(Object.values(typeof BIOME_MOBS !== 'undefined' ? BIOME_MOBS : {}).flat().map(x => typeof x === 'string' ? x : x && x.type).filter(Boolean))];
 const questId = () => 'q' + Date.now().toString(36) + Math.floor(Math.random() * 46656).toString(36);
 const emptyQuests = () => ({ active: [], claim: [] });
+const DELIVER_TO = [
+  { id: 'mira', name: 'Mira', role: 'the alchemist', ask: 'A traveller left a crate of dried herbs.', what: ['a crate of herbs', 'a sealed jar'] },
+  { id: 'tobin', name: 'Tobin', role: 'the shopkeeper', ask: 'A merchant on the road owes Tobin a delivery.', what: ['a bundle of cloth', 'a small strongbox'] },
+  { id: 'brann', name: 'Brann', role: 'the blacksmith', ask: 'The ore wagon never made it to the forge.', what: ['a sack of ore', 'a bar of steel'] },
+  { id: 'dagna', name: 'Dagna', role: 'the armourer', ask: 'Her leather came in at the guild instead.', what: ['a roll of leather', 'a box of rivets'] },
+  { id: 'lysa', name: 'Lysa', role: 'the jeweller', ask: 'A gem-cutter sent this for her.', what: ['a velvet pouch', 'a tiny locked box'] },
+  { id: 'hilda', name: 'Hilda', role: 'the innkeeper', ask: 'A cask of spiced wine was left at the guild.', what: ['a cask of spiced wine', 'a basket of bread'] },
+  { id: 'eira', name: 'Eira', role: 'the priestess', ask: 'A pilgrim asked for this to reach the church.', what: ['a bundle of candles', 'a folded letter'] },
+  { id: 'rurik', name: 'Rurik', role: 'the woodcutter', ask: 'His new axe handle arrived late.', what: ['an axe handle', 'a coil of rope'] },
+  { id: 'orla', name: 'Granny Wenna', role: 'the elder', ask: 'A letter for the village elder came in on a cart.', what: ['a sealed letter', 'a bag of tea'] },
+];
+const ESCORT_FOLK = [
+  { id: 'pilgrim', title: 'a pilgrim', text: 'A pilgrim has to reach the next shrine on foot.', he: 'the pilgrim', him: 'the pilgrim' },
+  { id: 'peddler', title: 'a peddler', text: 'A peddler wants to follow the road to the next village.', he: 'the peddler', him: 'the peddler' },
+  { id: 'scholar', title: 'a scholar', text: 'A scholar is walking the road to copy old stones.', he: 'the scholar', him: 'the scholar' },
+];
 function questDef(kind) {
-  const w = Math.max(1, wave), lv = 1 + w * 0.05, R = (g, x, e = {}) => ({ gold: Math.round(g * lv), xp: Math.round(x * lv), ...e }), pick = a => a[Math.floor(Math.random() * a.length)];
-  const nR = (a, b, s = 1) => a + Math.floor(Math.random() * ((b - a) / s + 1)) * s;
+  const w = Math.max(1, wave), lv = 1 + w * 0.05, R = (g, x, e = {}) => ({ gold: Math.round(g * lv * 1.6), xp: Math.round(x * lv), ...e }), pick = a => a[Math.floor(Math.random() * a.length)];
+  const inc = Math.round(18 * Math.pow(1.17, w)), nR = (a, b, s = 1) => a + Math.floor(Math.random() * ((b - a) / s + 1)) * s;
   switch (kind) {
+    case 'deliver': { const who = pick(DELIVER_TO), what = pick(who.what); return { goal: 1, to: who.id, title: `Carry ${what} to ${who.name}`, text: `${who.ask} It is meant for ${who.name}, ${who.role}. Win a wave on the road first, then bring it to them in the village.`, reward: R(260, 110, { potions: 1 }) }; }
+    case 'escort': case 'escort2': { const n = kind === 'escort' ? nR(2, 3) : nR(4, 6), who = pick(ESCORT_FOLK); return { goal: n, title: 'Guard ' + who.title + ' for ' + n + ' waves', text: who.text + ' Keep ' + who.him + ' alive: ' + who.him + ' walks with you and creatures will go for ' + who.him + '. Clear ' + n + ' waves with ' + who.him + ' at your side.', reward: kind === 'escort' ? R(n * 190, n * 70, { potions: 1 }) : R(n * 200, n * 75, { gear: 1, potions: 1 }), folk: who.id }; }
     case 'kills': { const n = nR(20, 35, 5); return { goal: n, title: `Slay ${n} creatures`, text: `The roads must be quieter. Slay ${n} creatures of any kind.`, reward: R(n * 9, n * 5) }; }
     case 'type': { const t = pick(QUEST_TYPES.filter(x => TYPES[x].from <= w + 3)), n = nR(6, 12, 2); return { type: t, goal: n, title: `Hunt ${n} ${QUEST_PLURAL[t]}`, text: `${QUEST_PLURAL[t][0].toUpperCase() + QUEST_PLURAL[t].slice(1)} have been troubling the travellers. Hunt ${n} of them, wherever you find them.`, reward: R(n * 16, n * 9, n >= 10 ? { rune: 1 } : {}) }; }
     case 'elite': { const n = nR(1, 3); return { goal: n, title: n > 1 ? `Defeat ${n} elites` : 'Defeat an elite', text: `Named brutes lead the beasts. Defeat ${n > 1 ? n + ' of them' : 'one'}.`, reward: R(n * 140, n * 60, n >= 2 ? { ess: 1 } : {}) }; }
@@ -1911,16 +2104,33 @@ function questDef(kind) {
     case 'boss': return { goal: 1, title: 'Fell the guardian of the road', text: 'The beast that waits on the road has terrorised us long enough. Defeat the next boss.', reward: R(900, 400, { gear: 1, potions: 2, ess: 1 }) };
     case 'noPotion': { const n = nR(3, 5); return { goal: n, title: `${n} waves without a potion`, text: `Clear ${n} waves in a row without drinking a potion. Drinking one starts you over.`, reward: R(n * 150, n * 60) }; }
     case 'noHit': { const n = nR(1, 2); return { goal: n, title: n > 1 ? `${n} waves untouched` : 'A wave untouched', text: `Clear ${n > 1 ? n + ' waves in a row' : 'a wave'} without being hurt even once.`, reward: R(n * 320, n * 120, { gear: 1 }) }; }
-    case 'gold': { const n = Math.round((250 + w * 30) / 50) * 50; return { goal: n, title: `Collect ${n} gold`, text: `The village treasury is thin. Bring in ${n} gold from the road (what you pick up counts).`, reward: R(Math.round(n * 0.6), Math.round(n * 0.3)) }; }
+    case 'gold': { const n = Math.max(100, Math.round(inc * 5 / 50) * 50); return { goal: n, title: `Collect ${n} gold`, text: `The village treasury is thin. Bring in ${n} gold from the road (what you pick up counts).`, reward: R(Math.round(n * 0.6), Math.round(n * 0.3)) }; }
     case 'chest': { const n = nR(2, 4); return { goal: n, title: `Open ${n} dungeon chests`, text: `Stone doors open in the ground now and then. Bring back what is in ${n} of their chests.`, reward: R(n * 160, n * 60, { gear: 1 }) }; }
     case 'dungeon': return { goal: 1, title: 'Clear a dungeon', text: 'Go down a stone door, defeat the guardian at the bottom and open its treasure.', reward: R(1100, 500, { gear: 1, rune: 1 }) };
+    case 'swarm': { const n = nR(50, 80, 5); return { goal: n, title: `Slay ${n} creatures`, text: `A great cull: ${n} creatures of any kind. Take your time, but not too much of it.`, reward: R(n * 8, n * 5, { potions: 1 }) }; }
+    case 'waves': { const n = nR(3, 6); return { goal: n, title: `Clear ${n} waves`, text: `The road must stay open. Clear ${n} waves.`, reward: R(n * 120, n * 60) }; }
+    case 'type2': { const ok = Object.keys(TYPES).filter(x => !QUEST_TYPES.includes(x) && TYPES[x].from <= w + 2 && !['boss', 'bat', 'mimic'].includes(x) && !(TYPES[x].boss) && BIOME_MOBS_ALL().includes(x)), t = ok.length ? pick(ok) : 'goblin', n = nR(6, 10, 2); return { type: t, goal: n, title: `Hunt ${n} ${questPlural(t)}`, text: `Travellers speak of ${questPlural(t)} on the road. Hunt ${n} of them.`, reward: R(n * 24, n * 11) }; }
+    case 'haul': { const n = nR(8, 12); return { goal: n, title: `Pick up ${n} pieces of gear`, text: `Brann pays by the sackful. Bring in ${n} pieces of gear.`, reward: R(n * 75, n * 28, { gear: 1 }) }; }
+    case 'rich': { const n = Math.max(300, Math.round(inc * 10 / 100) * 100); return { goal: n, title: `Collect ${n} gold`, text: `The guild needs a war chest: ${n} gold from the road.`, reward: R(Math.round(n * 0.55), Math.round(n * 0.25), { potions: 2 }) }; }
+    case 'elite2': { const n = nR(4, 6); return { goal: n, title: `Defeat ${n} elites`, text: `The named brutes are many this season. Defeat ${n} of them.`, reward: R(n * 150, n * 60, { ess: 1, gear: 1 }) }; }
+    case 'mut2': { const n = nR(10, 16, 2); return { goal: n, title: `Slay ${n} mutated creatures`, text: `The twisted beasts are spreading. Slay ${n} of them.`, reward: R(n * 28, n * 14, { rune: 1 }) }; }
+    case 'kills2': { const n = nR(100, 160, 10); return { goal: n, title: `Slay ${n} creatures`, text: `A war of attrition: ${n} creatures of any kind. The guild pays well for a long day.`, reward: R(n * 9, n * 6, { potions: 2, rune: 1 }) }; }
+    case 'evo2': { const n = nR(5, 8); return { goal: n, title: `Slay ${n} evolved creatures`, text: `The named forms are everywhere. Slay ${n} of them.`, reward: R(n * 120, n * 55, { rune: 1, ess: 1 }) }; }
+    case 'leader2': { const n = nR(3, 4); return { goal: n, title: `Fell ${n} pack leaders`, text: `Break ${n} packs by felling their crowned leaders.`, reward: R(n * 170, n * 65, { gear: 1 }) }; }
+    case 'noPotion2': { const n = nR(6, 9); return { goal: n, title: `${n} waves without a potion`, text: `A real test: ${n} waves in a row with no potion. Drinking one starts you over.`, reward: R(n * 160, n * 65, { gear: 1, ess: 1 }) }; }
+    case 'noHit2': { const n = nR(3, 4); return { goal: n, title: `${n} waves untouched`, text: `Clear ${n} waves in a row without being hurt even once.`, reward: R(n * 340, n * 130, { gear: 1, rune: 1 }) }; }
+    case 'waves2': { const n = nR(8, 12); return { goal: n, title: `Clear ${n} waves`, text: `Hold the road for a long march: clear ${n} waves.`, reward: R(n * 125, n * 62, { potions: 2 }) }; }
+    case 'type3': { const t = pick(QUEST_TYPES.filter(x => TYPES[x].from <= w + 3)), n = nR(14, 20, 2); return { type: t, goal: n, title: `Hunt ${n} ${QUEST_PLURAL[t]}`, text: `${QUEST_PLURAL[t][0].toUpperCase() + QUEST_PLURAL[t].slice(1)} have overrun the roads. Hunt ${n} of them.`, reward: R(n * 17, n * 9, { rune: 1, potions: 1 }) }; }
+    case 'gold2': { const n = Math.max(600, Math.round(inc * 20 / 100) * 100); return { goal: n, title: `Collect ${n} gold`, text: `The guild is paying for a new hall: ${n} gold from the road.`, reward: R(Math.round(n * 0.55), Math.round(n * 0.25), { potions: 3, gear: 1 }) }; }
+    case 'haul2': { const n = nR(16, 24); return { goal: n, title: `Pick up ${n} pieces of gear`, text: `Brann is stocking up: bring in ${n} pieces of gear.`, reward: R(n * 75, n * 28, { gear: 1, rune: 1 }) }; }
+    case 'boss2': return { goal: 2, title: 'Fell two guardians', text: 'Two guardians of the road must fall. Defeat the next two bosses.', reward: R(1900, 800, { gear: 1, potions: 3, ess: 1, rune: 1 }) };
     case 'gear': { const n = nR(3, 5); return { goal: n, title: `Pick up ${n} pieces of gear`, text: `Brann wants scrap to melt. Pick up ${n} pieces of gear.`, reward: R(n * 80, n * 30) }; }
   }
 }
 function makeQuestOffers(v) {                                                    // five different quests for this visit (never one you are already doing)
-  const doing = new Set([...hero.quests.active, ...hero.quests.claim].map(q => q.kind)), pool = QUEST_KINDS.filter(k => !doing.has(k));
+  const doing = new Set([...hero.quests.active, ...hero.quests.claim].map(q => q.kind)), pool = QUEST_OFFERED.filter(k => !doing.has(k));
   for (let i = pool.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [pool[i], pool[j]] = [pool[j], pool[i]]; }
-  v.questOffers = pool.slice(0, 5).map(k => ({ id: questId(), kind: k, n: 0, ...questDef(k) }));
+  v.questOffers = pool.slice(0, 12).map(k => ({ id: questId(), kind: k, n: 0, ...questDef(k) }));
 }
 function completeQuest(q) {
   const Q = hero.quests; Q.active = Q.active.filter(x => x !== q); q.n = q.goal; Q.claim.push(q);
@@ -1930,21 +2140,23 @@ function questEvent(ev, a) {
   if (!hero || !hero.quests) return;
   const Q = hero.quests.active; if (!Q.length) return;
   for (const q of Q.slice()) {
-    const n0 = q.n;
+    const n0 = q.n, qk = QUEST_ALIAS[q.kind] || q.kind;
     if (ev === 'kill') {
       const m = a;
-      if (q.kind === 'kills') q.n++; else if (q.kind === 'type' && m.type === q.type) q.n++; else if (q.kind === 'elite' && m.elite) q.n++;
-      else if (q.kind === 'mut' && m.mut && m.mut.length && !m.elite) q.n++; else if (q.kind === 'evo' && m.evo) q.n++; else if (q.kind === 'leader' && m.leader) q.n++; else if (q.kind === 'boss' && m.type === 'boss') q.n++;
-    } else if (ev === 'gold' && q.kind === 'gold') q.n += a;
-    else if (ev === 'gear' && q.kind === 'gear') q.n++;
-    else if (ev === 'chest' && q.kind === 'chest') q.n++;
-    else if (ev === 'dungeon' && q.kind === 'dungeon') q.n++;
-    else if (ev === 'potion' && q.kind === 'noPotion') q.n = 0;
-    else if (ev === 'hit' && q.kind === 'noHit') q.n = 0;
-    else if (ev === 'waveClear' && (q.kind === 'noPotion' || q.kind === 'noHit')) q.n++;
+      if (qk === 'kills' || qk === 'swarm') q.n++; else if ((qk === 'type' || qk === 'type2') && m.type === q.type) q.n++; else if ((qk === 'elite' || qk === 'elite2') && m.elite) q.n++;
+      else if ((qk === 'mut' || qk === 'mut2') && m.mut && m.mut.length && !m.elite) q.n++; else if (qk === 'evo' && m.evo) q.n++; else if (qk === 'leader' && m.leader) q.n++; else if (qk === 'boss' && m.type === 'boss') q.n++;
+    } else if (ev === 'gold' && (qk === 'gold' || qk === 'rich')) q.n += a;
+    else if (ev === 'gear' && (qk === 'gear' || qk === 'haul')) q.n++;
+    else if (ev === 'chest' && qk === 'chest') q.n++;
+    else if (ev === 'waveClear' && (qk === 'escort' || qk === 'escort2')) { if (escort && escort.q === q && !escort.dead) q.n++; }
+    else if (ev === 'waveClear' && qk === 'deliver') q.armed = true;
+    else if (ev === 'dungeon' && qk === 'dungeon') q.n++;
+    else if (ev === 'potion' && qk === 'noPotion') q.n = 0;
+    else if (ev === 'hit' && qk === 'noHit') q.n = 0;
+    else if (ev === 'waveClear' && (qk === 'noPotion' || qk === 'noHit' || qk === 'waves')) q.n++;
     if (q.n >= q.goal) completeQuest(q);
     else if (q.n !== n0 && ev !== 'gold') popups.push({ text: `${q.title}: ${q.n} / ${q.goal}`, x: VW / 2, y: VH - 150, t: 1.2, screen: true, small: true, color: '#9fd8a0' });
-  }
+  }  escortDone();
 }
 const rewardLines = r => [r.gold && `${r.gold.toLocaleString()} gold`, r.xp && `${r.xp.toLocaleString()} XP`, r.potions && `${r.potions} Healing Potion${r.potions > 1 ? 's' : ''}`, r.gear && 'A piece of gear', r.rune && 'A rune', r.ess && 'An essence'].filter(Boolean);
 function claimQuest(q) {                                                         // hand over the reward (the board is in the village, so it can be collected only there)
@@ -1965,16 +2177,17 @@ function cleanQuests(q) {                                                       
   for (const list of ['active', 'claim']) for (const r of (q && Array.isArray(q[list]) ? q[list] : []).slice(0, 8)) {
     if (!r || !QUEST_KINDS.includes(r.kind)) continue;
     const rw = r.reward || {};
-    out[list].push({ id: String(r.id || questId()).slice(0, 20), kind: r.kind, type: QUEST_TYPES.includes(r.type) ? r.type : undefined, goal: cl(r.goal, 1, 99999) || 1, n: cl(r.n, 0, 99999), title: String(r.title || r.kind).slice(0, 60), text: String(r.text || '').slice(0, 200),
-      reward: { gold: cl(rw.gold, 0, 1e7), xp: cl(rw.xp, 0, 1e7), potions: cl(rw.potions, 0, 5), gear: rw.gear ? 1 : 0, rune: rw.rune ? 1 : 0, ess: rw.ess ? 1 : 0 } });
+    out[list].push({ id: String(r.id || questId()).slice(0, 20), kind: r.kind, type: TYPES[r.type] ? r.type : undefined, goal: cl(r.goal, 1, 99999) || 1, n: cl(r.n, 0, 99999), title: String(r.title || r.kind).slice(0, 60), text: String(r.text || '').slice(0, 200),
+      to: DELIVER_TO.some(d => d.id === r.to) ? r.to : undefined, armed: !!r.armed, folk: ESCORT_FOLK.some(d => d.id === r.folk) ? r.folk : undefined, reward: { gold: cl(rw.gold, 0, 1e7), xp: cl(rw.xp, 0, 1e7), potions: cl(rw.potions, 0, 5), gear: rw.gear ? 1 : 0, rune: rw.rune ? 1 : 0, ess: rw.ess ? 1 : 0 } });
   }
   out.active = out.active.slice(0, QUEST_MAX); return out;
 }
 const QUEST_COLOR = { claim: '#ffd24a', active: '#7fd08a', offer: '#cdb68c' };
 const questSvg = (kind, c, px = 40) => {
-  const hunt = ['kills', 'type', 'elite', 'mut', 'evo', 'leader'].includes(kind), body = hunt ? `<path d="M7 25 L22 10 M7 10 L22 25 M22 10 l3 -3 M7 25 l-2 2" stroke="${c}" stroke-width="2.6" stroke-linecap="round" fill="none"/>`
+  kind = QUEST_ALIAS[kind] || kind; const hunt = ['kills', 'type', 'elite', 'mut', 'evo', 'leader', 'swarm', 'type2', 'elite2', 'mut2'].includes(kind), body = hunt ? `<path d="M7 25 L22 10 M7 10 L22 25 M22 10 l3 -3 M7 25 l-2 2" stroke="${c}" stroke-width="2.6" stroke-linecap="round" fill="none"/>`
     : kind === 'boss' ? `<path d="M6 24 V12 L11 17 L16 7 L21 17 L26 12 V24 Z" fill="${c}" fill-opacity=".3" stroke="${c}" stroke-width="2" stroke-linejoin="round"/><circle cx="12.5" cy="19" r="1.4" fill="${c}"/><circle cx="19.5" cy="19" r="1.4" fill="${c}"/>`
     : kind === 'noPotion' || kind === 'noHit' ? `<path d="M16 5 L26 9 V17 Q26 24 16 28 Q6 24 6 17 V9 Z" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="2" stroke-linejoin="round"/><path d="M11 16 L15 20 L22 12" stroke="${c}" stroke-width="2.4" fill="none" stroke-linecap="round"/>`
+    : kind === 'escort' || kind === 'escort2' ? `<circle cx="16" cy="8" r="3.4" fill="${c}" fill-opacity=".3" stroke="${c}" stroke-width="2"/><path d="M16 12 V20 M16 14 L11 18 M16 14 L21 17 M16 20 L12 27 M16 20 L21 27" stroke="${c}" stroke-width="2.2" fill="none" stroke-linecap="round"/>`
     : kind === 'gold' ? `<circle cx="16" cy="16" r="10" fill="${c}" fill-opacity=".3" stroke="${c}" stroke-width="2"/><path d="M16 9 V23 M12 13 Q16 10 20 13 Q12 17 12 19 Q16 22 20 19" stroke="${c}" stroke-width="1.8" fill="none" stroke-linecap="round"/>`
     : `<path d="M8 11 H24 V25 H8 Z M12 11 V8 H20 V11" fill="${c}" fill-opacity=".25" stroke="${c}" stroke-width="2" stroke-linejoin="round"/><path d="M12 18 H20" stroke="${c}" stroke-width="2"/>`;
   return `<svg viewBox="0 0 32 32" width="${px}" height="${px}">${body}</svg>`;
@@ -1995,7 +2208,7 @@ function renderQuestBoard() {
     `<div class="ubuy">${st === 'claim' ? `<button class="go sell" data-qa="claim:${q.id}">Collect the reward</button>`
       : st === 'active' ? `<button class="go" disabled>In progress</button><button data-qa="abandon:${q.id}" title="Give this quest up">Abandon</button>`
       : `<button class="go" data-qa="accept:${q.id}" ${slots >= QUEST_MAX ? 'disabled' : ''}>${slots >= QUEST_MAX ? `You are on ${QUEST_MAX} quests already` : 'Accept the quest'}</button>`}</div>` +
-    `<div class="hint" style="margin-top:6px">Quests taken: ${slots} of ${QUEST_MAX}. Rebirth ends the ones in progress.</div>`;
+    `<div class="hint" style="margin-top:6px">Quests taken: ${slots} of ${QUEST_MAX}. Prestige ends the ones in progress.</div>`;
   document.getElementById('shopBody').innerHTML = tileShop(tiles, detail, 4);
 }
 // what you are doing, in the corner of the screen (under your card): a line and a thin bar for each quest
@@ -2035,4 +2248,118 @@ function drawRecallChip(x, cy) {                                                
   if (ch) { ctx.strokeStyle = '#cfc0ff'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(x + w / 2, cy, 19, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * (1 - hero.recallT / RECALL_TIME)); ctx.stroke(); }
   ctx.textAlign = 'right'; const t = String(n); ctx.font = `bold 11px ${UI_FONT}`; ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(0,0,0,0.75)'; ctx.strokeText(t, x + w - 5, y + h - 5); ctx.fillStyle = n ? '#fff' : '#f88'; ctx.fillText(t, x + w - 5, y + h - 5);
   ctx.textAlign = 'left'; ctx.fillStyle = 'rgba(255,255,255,0.55)'; ctx.font = `bold 8px ${UI_FONT}`; ctx.fillText(keyLabel('potion'), x + 5, y + 10);
+}
+
+// ---- escort quests: a traveller walks with you along the road; creatures that reach them hurt them, and if they fall the quest fails
+let escort = null;
+const ESCORT_LOOK = { pilgrim: { body: '#8a7a5a', hat: 'cone', hatColor: '#6a5a3a', hair: '#b8b0a0' }, peddler: { body: '#a06040', hair: '#5a3a22', cheek: true }, scholar: { body: '#4a6a9a', hat: 'cone', hatColor: '#2f4a78', hair: '#d8d8e0' } };
+function escortTick(dt) {
+  const q = hero && hero.quests && hero.quests.active.find(x => x.kind === 'escort' || x.kind === 'escort2');
+  if (!q || state !== 'play' || dun || hero.dead) { if (!q) escort = null; return; }
+  if (!escort || escort.q !== q) escort = { q, x: hero.x - 70, y: hero.y + 10, f: 1, walkT: 0, moving: false, hp: 60 + wave * 7, maxHp: 60 + wave * 7, ph: Math.random() * 6, hurtT: 0, look: ESCORT_LOOK[q.folk] || ESCORT_LOOK.pilgrim, dead: false };
+  const e = escort, dx = hero.x - e.x, dy = hero.y + 8 - e.y, d = Math.hypot(dx, dy);
+  if (d > 420) { e.x = hero.x - 80; e.y = hero.y + 10; }                         // back from the village: catch up at once
+  e.moving = d > 76;
+  if (e.moving) { const sp = Math.min(230, 70 + d * 1.6) * dt; e.x += dx / d * sp; e.y += dy / d * sp; e.f = dx >= 0 ? 1 : -1; e.walkT += dt * 7; }
+  e.hurtT = Math.max(0, e.hurtT - dt);
+  for (const m of enemies) {
+    if (m.sleep || (m.spawnT || 0) > 0.4 || m.dieT !== undefined) continue;
+    m._eh = Math.max(0, (m._eh || 0) - dt);
+    if (m._eh <= 0 && Math.hypot(m.x - e.x, (m.y - e.y) * 1.3) < m.r + 20) {
+      const h = Math.max(2, Math.round(m.dmg * 0.4)); e.hp -= h; e.hurtT = 0.3; m._eh = 1.1;
+      popups.push({ text: String(h), x: e.x, y: e.y - 70, t: 0.6, color: '#f8a' }); sfx('hit');
+    }
+  }
+  if (e.hp <= 0) {
+    e.dead = true; escort = null; const Q = hero.quests; Q.active = Q.active.filter(x => x !== q);
+    popups.push({ text: 'Your charge has fallen. The quest failed', x: VW / 2, y: 150, t: 3, screen: true, small: true, color: '#f88' }); sfx('death');
+  }
+}
+function escortDone() {                                                         // called after a quest event: a finished or abandoned escort walks off
+  if (escort && !hero.quests.active.includes(escort.q)) {
+    if (escort.q.n >= escort.q.goal) popups.push({ text: 'The traveller thanks you and walks on, safe', x: VW / 2, y: 176, t: 3, screen: true, small: true, color: '#9fd8a0' });
+    escort = null;
+  }
+}
+function drawEscort() {
+  const e = escort; if (!e || e.dead) return;
+  drawVillager({ x: e.x, y: e.y, f: e.f, scale: 1, look: e.look, pose: 'stand', moving: e.moving, walkT: e.walkT, ph: e.ph, alpha: 1, pt: 0, carry: e.q.folk === 'peddler' ? 'sack' : null });
+  const w = 40, x = e.x - w / 2, y = e.y - 86;
+  ctx.fillStyle = 'rgba(0,0,0,.6)'; ctx.fillRect(x - 1, y - 1, w + 2, 6); ctx.fillStyle = e.hurtT > 0 ? '#fff' : '#7fd08a'; ctx.fillRect(x, y, w * Math.max(0, e.hp / e.maxHp), 4);
+}
+
+// ---- the Quests window (from the Tab wheel): what you have taken and what is waiting to be collected. Rewards are still handed out at the guild's board.
+function renderQuestLog() {
+  const Q = hero.quests, all = [...Q.claim.map(q => ({ q, st: 'claim' })), ...Q.active.map(q => ({ q, st: 'active' }))];
+  document.getElementById('qlogCount').textContent = `${Q.active.length} of ${QUEST_MAX}`;
+  const row = ({ q, st }) => {
+    const c = QUEST_COLOR[st], pct = Math.min(100, Math.round(q.n / q.goal * 100)), esc = q.kind === 'escort' || q.kind === 'escort2', dl = q.kind === 'deliver';
+    const hint = st === 'claim' ? 'Finished: collect the reward at a guild quest board' : dl ? (q.armed ? 'Bring it to ' + (DELIVER_TO.find(d => d.id === q.to) || { name: 'its owner' }).name + ' in the village' : 'Clear a wave on the road first') : esc ? 'Keep your charge alive' : 'In progress';
+    return `<div class="qrow" style="display:flex;gap:14px;align-items:center;padding:12px 14px;margin-bottom:10px;border:1px solid ${c}55;border-radius:10px;background:rgba(0,0,0,.18)">
+      <div>${questSvg(q.kind, c, 46)}</div>
+      <div style="flex:1;min-width:0"><div style="font-weight:700;color:${c}">${escapeHtml(q.title)}</div><div class="tdesc" style="margin:4px 0 8px">${escapeHtml(q.text)}</div>
+      <div class="uodds"><div class="obar"><div class="ofill" style="width:${pct}%"></div></div><div class="otxt"><b>${q.n.toLocaleString()} / ${q.goal.toLocaleString()}</b> &nbsp; <span style="opacity:.75">${escapeHtml(hint)}</span></div></div>
+      <div style="margin-top:6px;opacity:.85;font-size:13px">Reward: ${escapeHtml(rewardLines(q.reward).join(', '))}</div></div></div>`;
+  };
+  document.getElementById('qlogBody').innerHTML = all.length ? all.map(row).join('') : '<div class="tdesc" style="padding:18px 6px">You have no quests. Quests are posted at the Adventurers\' Guild in the village.</div>';
+}
+
+// ---- rumours: the innkeepers, the barkeep and the people at the guild hear things. Some are only colour. Some foretell a stone door on the road. Some start a quest.
+const RUMOR_INTRO = {
+  inn: ['Travellers talk at my tables, and I listen. ', 'Over the bar, this week: ', 'Between you and me, friend: '],
+  guild: ['A courier came through the guild this morning. ', 'It is being said in the guild hall: ', 'The adventurers will not stop talking about it: '],
+};
+const RUMOR_DUN = [
+  'The old stones along the road have been grinding at night. People say doors open where there were none. Keep your eyes open after a fight.',
+  'A shepherd swears the ground cracked and breathed out cold air, out on the road beyond the gate. Something is stirring below.',
+  'There are carvings coming up through the soil out past the gate. Old ones. If you see a door in the stone after a fight, you will know what he meant.',
+  'They say whatever sleeps under the road is waking, and that it leaves a door open for anyone fool enough.',
+];
+const RUMOR_FLAVOR = [
+  'A pedlar from the coast says the sea has gone the wrong colour. Nobody has asked him what that means.',
+  'The old bridge keeper claims the river runs quieter than it used to. He also claims to be forty.',
+  'There is talk of a travelling circus two valleys over. With a bear that plays the fiddle. I would not believe a word.',
+  'Somebody left a boot on the notice board with a note saying "found". Nobody has claimed it. It is a very good boot.',
+  'The miller says the wind has changed. The miller says that every year, but this year he looks worried.',
+  'A tinker passed through swearing he heard singing under the well. Granny Wenna told him it was the well.',
+  'They say the Sergeant has not slept in three days. He says he rests with his eyes open. We have stopped asking.',
+  'A merchant lost a whole cart of cheese on the road and is offering a reward. Even the wolves are said to be avoiding it.',
+  'Some folk swear the stars are brighter on the nights a hero walks the road. I would say that is just good manners.',
+  'Strange tracks near the northern fence. Larger than a wolf, smaller than a regret.',
+];
+const RUMOR_QUEST = {
+  kills: 'A drover lost half his flock to the roadside beasts. Whoever thins them out will be thanked in coin.',
+  type: 'The beasts of one kind have grown bold on the road, and the carters will not pass. Someone should put them back in their place.',
+  elite: 'A named brute has been taking tolls on the road. The carters would pay to see him gone.',
+  mut: 'Twisted creatures have been seen on the road. The herders are frightened, and it is bad for trade.',
+  evo: 'Some of the beasts have grown into something larger than they should be. Folk would feel safer with a few fewer of them.',
+  leader: 'A crowned pack leader has been marshalling the beasts near the road. Take the crown and the pack scatters.',
+  gold: 'The village treasury is thin. The council would pay well for coin recovered from the road.',
+  haul: 'The smith is short of scrap. He pays by the sackful for gear off the road.',
+  waves: 'The road must be held for a few days while the carters cross. Someone needs to keep it clear.',
+  deliver: 'A parcel was left behind in the guild hall and must reach its owner. Whoever carries it will be rewarded.',
+  escort: 'A traveller needs to be walked along the road, and nobody here will go. It pays.',
+};
+function rumorTalk(n) {
+  const v = vil, Q = hero.quests, kind = n.int === 'guild' || n.special === 'guild' || n.adv ? 'guild' : 'inn', intro = RUMOR_INTRO[kind][Math.floor(Math.random() * RUMOR_INTRO[kind].length)];
+  if (n.rumored) { openTalk(kind === 'guild' ? 'I have told you everything I know for today. Come back after the road has given you something new.' : 'I have told you all I have heard today, friend. Come back when the road has given the talkers something new.'); return; }
+  n.rumored = true; const r = Math.random(), pick = a => a[Math.floor(Math.random() * a.length)];
+  if (r < 0.34 && !v.rumorDun) {                                                          // a stone door is foretold (true three times in four)
+    v.rumorDun = true; if (Math.random() < 0.75) hero.rumorDun = 3;
+    openTalk(intro + pick(RUMOR_DUN)); return;
+  }
+  const doing = new Set([...Q.active, ...Q.claim].map(q => q.kind)), pool = Object.keys(RUMOR_QUEST).filter(k => !doing.has(k));
+  if (r < 0.7 && pool.length && Q.active.length < QUEST_MAX && !v.rumorQuest) {          // a rumour that is also a quest
+    const k = pick(pool), def = questDef(k), q = { id: questId(), kind: k, n: 0, ...def, title: ('Rumour: ' + def.title).slice(0, 58), text: RUMOR_QUEST[k] + ' ' + def.text, rumor: true };
+    q.reward = { ...q.reward, gold: Math.round((q.reward.gold || 0) * 1.15) }; v.rumorQuest = q; v.pendingRumor = q;
+    openTalk(intro + RUMOR_QUEST[k] + ' Shall I tell them you will look into it?', [['rumorYes', 'I will look into it'], ['bye', 'Not now']]); return;
+  }
+  openTalk(intro + pick(RUMOR_FLAVOR));
+}
+function rumorAccept() {
+  const v = vil, q = v.pendingRumor, Q = hero.quests; v.pendingRumor = null;
+  if (!q) { openTalk('Hm? Never mind.'); return; }
+  if (Q.active.length >= QUEST_MAX) { openTalk(`You already have ${QUEST_MAX} quests on the go. Finish one, and ask me again tomorrow.`); v.rumorQuest = null; return; }
+  Q.active.push(q); sfx('unlock'); popups.push({ text: `New quest: ${q.title}`, x: VW / 2, y: 130, t: 2.6, screen: true, small: true, color: '#ffd86a' });
+  openTalk('Good. The reward is waiting at the guild board when you are done. Keep your wits about you.');
 }

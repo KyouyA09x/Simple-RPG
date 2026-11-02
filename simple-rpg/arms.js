@@ -9,7 +9,8 @@ function shotOrigin(sw, f) {
   const p = hero.attackT > 0 ? clamp01(1 - hero.attackT / hero.attackDur) : 0.5;
   const J = poseStick(hero.x, hero.y, f, { p: 0, run: false, lean: 0.02, breath: 0, atk: p, tuck: false, kind: sw.kind, variant: hero.attackVar | 0 });
   const h = J.front.e;
-  if (sw.kind === 'staff') return { x: h.x + f * Math.cos(J.blade) * sw.len, y: h.y + Math.sin(J.blade) * sw.len };
+  if (sw.kind === 'staff' || sw.kind === 'wand') return { x: h.x + f * Math.cos(J.blade) * sw.len, y: h.y + Math.sin(J.blade) * sw.len };
+  if (sw.kind === 'crossbow') return { x: h.x + f * (sw.len + 2), y: h.y };
   return { x: h.x + f * 12, y: h.y };
 }
 // the nearest creature ahead of you decides where a shot is aimed (so it flies into the lane it is in); with nothing ahead it goes straight
@@ -84,7 +85,7 @@ function drawHeroShot(s) {
   if (s.kind === 'arrow') {
     ctx.translate(x, y); ctx.rotate(a);
     ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5; line(-26, 0, -10, 0);
-    ctx.strokeStyle = '#8a6a3c'; ctx.lineWidth = 2; line(-12, 0, 8, 0);
+    ctx.strokeStyle = '#8a6a3c'; ctx.lineWidth = s.sw.kind === 'crossbow' ? 3 : 2; line(s.sw.kind === 'crossbow' ? -7 : -12, 0, 8, 0);
     ctx.fillStyle = s.sw.sig ? s.color : '#dfe6ef'; ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(6, -3); ctx.lineTo(6, 3); ctx.closePath(); ctx.fill();
     ctx.fillStyle = s.sw.sig ? s.color : '#e8e0c8'; ctx.beginPath(); ctx.moveTo(-12, 0); ctx.lineTo(-17, -3.5); ctx.lineTo(-14, 0); ctx.lineTo(-17, 3.5); ctx.closePath(); ctx.fill();
   } else {

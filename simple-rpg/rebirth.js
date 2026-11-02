@@ -1,15 +1,16 @@
 // Rebirth: when you reach the level cap, the shrine keeper in the village can send you back to level 1 for permanent bonuses.
-// Every number the rest of the game needs about rebirth lives here, so tuning it is one table.
-// hero.rebirth is how many times you have done it. Level cap: 15, then +5 per rebirth (15, 20, 25...).
+// Every number the rest of the game needs about prestige lives here, so tuning it is one table.
+// hero.rebirth is how many times you have done it. Level cap: 15, then +5 per prestige (15, 20, 25...).
 // Kept: Mythical and Secret gear, lanterns, every bonus below. Lost: level, spent stats, gold, potions, all other gear. Wave goes back to 1.
 
 const REBIRTH = {
   capBase: 15, capStep: 5,
-  dmg: 0.025, hp: 0.025,                 // percent of your damage / max health, per rebirth
-  dodge: 0.0025, dodgeCap: 0.12,         // a rebirth-only stat: it is not on the Character screen and never comes from levelling
+  dmg: 0.05, hp: 0.04,                 // percent of your damage / max health, per prestige
+  dodge: 0.0025, dodgeCap: 0.12,         // a prestige-only stat: it is not on the Character screen and never comes from levelling
+  str: 3,                                // flat sword damage per prestige, before the percentage bonus
   xp: 0.10,                              // more XP from everything
-  goldFirst: 0.20, gold: 0.10,           // more gold: 20% for the first rebirth, 10% for each one after
-  startPoints: 2,                        // stat points you begin the next life with
+  goldFirst: 0.20, gold: 0.10,           // more gold: 20% for the first prestige, 10% for each one after
+  startPoints: 4,                        // stat points you begin the next life with
   slots: 2, slotsMax: 60,                // backpack slots
   luck: 0.04, luckMax: 2,                // gear drop chance multiplier (potions are not affected)
   rarity: 0.01, rarityMax: 0.25,         // push towards higher grades (Rare gets 1 x this, Polished 2 x, Legendary 3 x, Mythical 4 x on top of its odds)
@@ -18,6 +19,7 @@ const REBIRTH = {
 const rebirths = () => (typeof hero !== 'undefined' && hero && hero.rebirth) | 0;
 const levelCap = (r = rebirths()) => REBIRTH.capBase + REBIRTH.capStep * r;
 const rbDmgMul = (r = rebirths()) => 1 + REBIRTH.dmg * r;
+const rbStrength = (r = rebirths()) => REBIRTH.str * r;
 const rbXpMul = (r = rebirths()) => 1 + REBIRTH.xp * r;
 const rbGoldMul = (r = rebirths()) => r <= 0 ? 1 : 1 + REBIRTH.goldFirst + REBIRTH.gold * (r - 1);
 const dodgeChance = (r = rebirths()) => Math.min(REBIRTH.dodgeCap, REBIRTH.dodge * r);
@@ -26,15 +28,17 @@ const pointsPerLevel = (r = rebirths()) => POINTS_PER_LEVEL + (r >= REBIRTH.poin
 const invSlotsFor = (r = rebirths()) => Math.min(REBIRTH.slotsMax, 24 + REBIRTH.slots * r);
 const dropLuck = (r = rebirths()) => Math.min(REBIRTH.luckMax, 1 + REBIRTH.luck * r);
 const rarityLuck = (r = rebirths()) => Math.min(REBIRTH.rarityMax, REBIRTH.rarity * r);
-// Level stats are a small edge. The single Critical stat (crit rate and crit damage together) is hard-capped at 10 points and never grows with rebirth; what grows is how many
-// points Vitality, Strength and Stamina can take (20 at first, +4 per rebirth, at most 80). Gear is still the build.
-const CRIT_POINTS_MAX = 10, drCap = () => 0.10, speedCap = () => 0.06;
+// Level stats are a small edge. The single Critical stat (crit rate and crit damage together) is hard-capped at 10 points and never grows with prestige; what grows is how many
+// points Vitality, Strength and Stamina can take (20 at first, +4 per prestige, at most 80). Gear is still the build.
+// Crits are rare: the ceiling starts low and rises with every prestige (to 50% and 4x at the very top). Gear and the skill tree fill what the ceiling allows.
+const critCap = (r = rebirths()) => Math.min(0.5, 0.2 + 0.02 * r), critDmgCap = (r = rebirths()) => Math.min(4, 1.8 + 0.2 * r);
+const CRIT_POINTS_MAX = 0, drCap = () => 0.10, speedCap = () => 0.06;
 const vitMax = (r = rebirths()) => Math.min(80, 20 + 4 * r);
-const strMax = (r = rebirths()) => Math.min(80, 20 + 4 * r);
+const strMax = (r = rebirths()) => Math.min(100, 20 + 6 * r);
 const staMax = (r = rebirths()) => Math.min(80, 20 + 4 * r);
 
 function applyRebirthPerks() { INV_MAX = invSlotsFor(); }
-// max HP from rebirth is tracked on its own (hero.rbHp), the way gear HP is, so it follows every change to the base
+// max HP from prestige is tracked on its own (hero.rbHp), the way gear HP is, so it follows every change to the base
 function syncRebirthHp() {
   if (typeof hero === 'undefined' || !hero) return;
   const have = hero.rbHp | 0, base = hero.maxHp - have, want = Math.round(base * REBIRTH.hp * rebirths()), d = want - have;
@@ -67,7 +71,7 @@ function doRebirth() {
   const { worn, bag } = keptGear(), next = rebirths() + 1;
   hero.rebirth = next; applyRebirthPerks();
   hero.level = 1; hero.xp = 0; hero.xpNext = xpNeed(1); hero.stats = newStats(); hero.points = rbStartPoints(next);
-  hero.gold = 0; hero.potions = 0; hero.recalls = 0; hero.recallT = 0; hero.quests.active = []; hero.potionSel = 'heal'; hero.ail = {}; hero.maxHp = 100; hero.rbHp = 0; hero.gearHp = 0;               // the lantern (hero.lamp) is kept on purpose
+  hero.gold = 0; hero.potions = 0; hero.strPots = 0; hero.luckPots = 0; hero.swiftPots = 0; hero.wardPots = 0; hero.buffs = {}; hero.recalls = 0; hero.recallT = 0; hero.quests.active = []; hero.potionSel = 'heal'; hero.ail = {}; hero.maxHp = 100; hero.rbHp = 0; hero.gearHp = 0;               // the lantern (hero.lamp) is kept on purpose
   const gone = essTotal() + RUNE_KEYS.reduce((a, k) => a + runeCount(k), 0) + rebirthLost().reduce((a, i) => a + (i.rn || []).length, 0);
   hero.runes = {}; hero.ess = {};                                                                                    // runes are lost with the old life: the pouch empties and the runes in lost gear go with it (kept Mythical and Secret pieces keep theirs)
   hero.inv = bag.slice(0, INV_MAX);
@@ -80,7 +84,7 @@ function doRebirth() {
   loadSlot(currentSlot);                                                                            // start the new life from the save, so what is shown is exactly what was saved
   sfx('rebirth');
   startRebirthFx(next);
-  if (gone) popups.push({ text: `${gone} magic item${gone === 1 ? '' : 's'} lost to the rebirth`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#cfa8ff' });
+  if (gone) popups.push({ text: `${gone} magic item${gone === 1 ? '' : 's'} lost in the prestige`, x: VW / 2, y: 120, t: 3, screen: true, small: true, color: '#cfa8ff' });
   return true;
 }
 
@@ -93,34 +97,40 @@ function renderRebirth() {
   document.getElementById('shopGold').textContent = hero.gold.toLocaleString();
   const { worn, bag } = keptGear(), lost = rebirthLost(), lamp = LAMPS[hero.lamp | 0];
   const keptNames = [...Object.values(worn), ...bag].map(i => `<span style="color:${RARITIES[i.rarity].color}">${escapeHtml(i.name)}</span>`);
+  // every gain as "now -> next": the next value is shown in green, with what it adds
+  const cmp = (k, now, next, add) => `<div class="rbrow"><span class="rbk">${k}</span><span class="rbnow">${now}</span><span class="rbarrow">➜</span><span class="rbnext">${next}${add ? ` <small>${add}</small>` : ''}</span></div>`;
   const gains = [
-    row('Level cap', `${cap} → ${levelCap(N)}`),
-    row('Damage', `+${pctS(REBIRTH.dmg)} (total +${pctS(REBIRTH.dmg * N)})`),
-    row('Max health', `+${pctS(REBIRTH.hp)} (total +${pctS(REBIRTH.hp * N)})`),
-    row('Dodge', `${pctS(dodgeChance(R), 2)} → ${pctS(dodgeChance(N), 2)} (cap ${pctS(REBIRTH.dodgeCap, 0)})`),
-    row('XP gained', `×${rbXpMul(N).toFixed(2)}`),
-    row('Gold gained', `×${rbGoldMul(N).toFixed(2)}`),
-    row('Starting stat points', `${rbStartPoints(N)}${pointsPerLevel(N) > POINTS_PER_LEVEL ? ` (and ${pointsPerLevel(N)} per level)` : ''}`),
-    row('Backpack', `${invSlotsFor(R)} → ${invSlotsFor(N)} slots`),
-    row('Gear drop luck', `×${dropLuck(N).toFixed(2)} drop chance · +${pctS(rarityLuck(N))} better grades`),
-    row('Vitality, Strength and Stamina', `each takes up to ${vitMax(N)} points (now ${vitMax(R)})`),
+    cmp('Level cap', cap, levelCap(N), `+${REBIRTH.capStep}`),
+    cmp('Damage', `+${pctS(REBIRTH.dmg * R)}`, `+${pctS(REBIRTH.dmg * N)}`, `+${pctS(REBIRTH.dmg)}`),
+    cmp('Strength', `+${REBIRTH.str * R}`, `+${REBIRTH.str * N}`, 'sword damage'),
+    cmp('Max health', `+${pctS(REBIRTH.hp * R)}`, `+${pctS(REBIRTH.hp * N)}`, ''),
+    cmp('Dodge', pctS(dodgeChance(R), 2), pctS(dodgeChance(N), 2), `cap ${pctS(REBIRTH.dodgeCap, 0)}`),
+    cmp('Crit chance ceiling', pctS(critCap(R), 0), pctS(critCap(N), 0), 'gear and skills fill it'),
+    cmp('Crit damage ceiling', `${critDmgCap(R).toFixed(1)}×`, `${critDmgCap(N).toFixed(1)}×`, ''),
+    cmp('XP gained', `×${rbXpMul(R).toFixed(2)}`, `×${rbXpMul(N).toFixed(2)}`, ''),
+    cmp('Gold gained', `×${rbGoldMul(R).toFixed(2)}`, `×${rbGoldMul(N).toFixed(2)}`, ''),
+    cmp('Starting stat points', rbStartPoints(R), rbStartPoints(N), pointsPerLevel(N) > POINTS_PER_LEVEL ? `and ${pointsPerLevel(N)} per level` : ''),
+    cmp('Backpack', `${invSlotsFor(R)} slots`, `${invSlotsFor(N)} slots`, ''),
+    cmp('Gear drop chance', `×${dropLuck(R).toFixed(2)}`, `×${dropLuck(N).toFixed(2)}`, `+${pctS(rarityLuck(N))} better grades`),
+    cmp('Vitality and Stamina points', vitMax(R), vitMax(N), ''),
+    cmp('Strength points', strMax(R), strMax(N), ''),
   ];
-  if (N === REBIRTH.ringAt) gains.push(row('<span style="color:#fd4">Milestone</span>', 'a third ring slot'));
-  if (N === REBIRTH.swapAt) gains.push(row('<span style="color:#fd4">Milestone</span>', 'a spare weapon slot (press X to swap)'));
-  if (N === REBIRTH.pointAt) gains.push(row('<span style="color:#fd4">Milestone</span>', '+1 stat point on every level'));
+  if (N === REBIRTH.ringAt) gains.push(`<div class="rbmile">★ Milestone: a third ring slot</div>`);
+  if (N === REBIRTH.swapAt) gains.push(`<div class="rbmile">★ Milestone: a spare weapon slot (press X to swap)</div>`);
+  if (N === REBIRTH.pointAt) gains.push(`<div class="rbmile">★ Milestone: +1 stat point on every level</div>`);
   const armed = !!v.rbArm;
-  let html = `<div class="hint" style="margin-top:0">${R ? `You have been reborn ${R} time${R === 1 ? '' : 's'}.` : 'You have never been reborn.'} At level ${cap} the shrine can send you back to level 1 in return for permanent strength. It is the one thing in this game that cannot be undone.</div>`;
+  let html = `<div class="hint" style="margin-top:0">${R ? `You have prestiged ${R} time${R === 1 ? '' : 's'}.` : 'You have never been prestiged.'} At level ${cap} the shrine can send you back to level 1 in return for permanent strength. It is the one thing in this game that cannot be undone.</div>`;
   html += `<h3>Requirement</h3><div class="summary">${row('Level', `<span style="color:${ready ? '#7fd08a' : '#f88'}">${hero.level} / ${cap}</span>`)}</div>`;
-  let action; if (armed) action = `<div class="item"><div class="im"><b style="color:#f88">Are you sure?</b><small>This cannot be undone. You will be reborn at level 1 with the bonuses above.</small></div><button data-buy="rb:cancel"><kbd>1</kbd>Not yet</button><button data-buy="rb:go" class="danger"><kbd>2</kbd>Yes, be reborn</button></div>`;
-  else action = `<div class="item"><div class="im"><b>Begin the rebirth</b><small>${ready ? 'You will be asked once more before anything changes.' : `Reach level ${cap} first. You can still read this at any time.`}</small></div><button data-buy="rb:arm" ${ready ? '' : 'disabled'}><kbd>1</kbd>Begin</button></div>`;
+  let action; if (armed) action = `<div class="item"><div class="im"><b style="color:#f88">Are you sure?</b><small>This cannot be undone. You will return to level 1 with the bonuses above.</small></div><button data-buy="rb:cancel"><kbd>1</kbd>Not yet</button><button data-buy="rb:go" class="danger"><kbd>2</kbd>Yes, be prestiged</button></div>`;
+  else action = `<div class="item"><div class="im"><b>Begin the prestige</b><small>${ready ? 'You will be asked once more before anything changes.' : `Reach level ${cap} first. You can still read this at any time.`}</small></div><button data-buy="rb:arm" ${ready ? '' : 'disabled'}><kbd>1</kbd>Begin</button></div>`;
+  html += `<h3>You gain <span style="color:#7fe08a">(prestige ${N})</span></h3><div class="summary rbgrid"><div class="rbrow rbhead"><span class="rbk"></span><span class="rbnow">Now</span><span class="rbarrow"></span><span class="rbnext">Next</span></div>${gains.join('')}</div>`;
   html += action;
   html += `<h3>You keep</h3><div class="summary">${row('Mythical and Secret gear', keptNames.length ? keptNames.join(', ') : 'none right now')}${row('Lantern', escapeHtml(lamp ? lamp.name : 'none'))}${row('Rebirth bonuses', 'all of them')}${row('Backpack slots', 'all unlocked ones')}</div>`;
   html += `<h3>You lose</h3><div class="summary">${row('Level and stat points', `level ${hero.level} → 1`)}${row('Gold', hero.gold.toLocaleString())}${row('Potions', String((hero.potions | 0)))}${row('Other gear', `${lost.length} piece${lost.length === 1 ? '' : 's'}`)}${row('Progress', `wave ${wave} → 1, back to the first land`)}</div>`;
   const sock = lost.reduce((a, i) => a + (i.rn || []).length, 0), pouch = RUNE_KEYS.reduce((a, k) => a + runeCount(k), 0);
   const ess = essTotal();
-  if (pouch + sock + ess) html += `<div class="hint">Runes and essences are lost too: ${pouch} runes${ess ? ` and ${ess} essences` : ''} in your pouch${sock ? ` and ${sock} socketed in gear you lose` : ''}. Runes socketed in the Mythical and Secret pieces you keep stay with them.</div>`;
+  if (pouch + sock + ess) html += `<div class="hint">Runes and essences are lost too: ${pouch} rune${pouch === 1 ? '' : 's'}${ess ? ` and ${ess} essence${ess === 1 ? '' : 's'}` : ''} in your pouch${sock ? ` and ${sock} socketed in gear you lose` : ''}. Runes socketed in the Mythical and Secret pieces you keep stay with them.</div>`;
   html += `<div class="hint">Gear and gold are both lost, so spend your gold and sell what you do not need before you begin.</div>`;
-  html += `<h3>You gain (rebirth ${N})</h3><div class="summary">${gains.join('')}</div>`;
   document.getElementById('shopBody').innerHTML = html;
 }
 function rebirthClick(id) {
@@ -131,7 +141,7 @@ function rebirthClick(id) {
   renderShop();
 }
 
-// ---------------------------------------------------------------- the rebirth transition (plays over the freshly loaded new life; the game stands still until it ends)
+// ---------------------------------------------------------------- the prestige transition (plays over the freshly loaded new life; the game stands still until it ends)
 //   0-1.6s  the shrine's light floods the screen
 //   1-3.6s  motes of light spiral in and the hero is drawn out of them
 //   2.2s    REBIRTH n, and a line about the shrine
@@ -216,7 +226,7 @@ function drawRebirthFx() {
   if (ta > 0) {
     ctx.globalAlpha = ta; ctx.font = 'bold 60px Georgia, serif';
     if (glow) { ctx.shadowColor = '#b8a0ff'; ctx.shadowBlur = 26; }
-    ctx.fillStyle = '#f4efff'; ctx.fillText(`REBIRTH ${fx.n}`, cx, VH * 0.2);
+    ctx.fillStyle = '#f4efff'; ctx.fillText(`PRESTIGE ${fx.n}`, cx, VH * 0.2);
     ctx.shadowBlur = 0;
     ctx.globalAlpha = ssm(2.8, 3.6, t) * out; ctx.font = 'italic 19px Georgia, serif'; ctx.fillStyle = '#cfc4ee'; ctx.fillText(fx.line, cx, VH * 0.2 + 36);
   }

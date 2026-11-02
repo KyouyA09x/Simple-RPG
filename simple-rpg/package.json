@@ -1,7 +1,7 @@
 {
   "name": "stick-rpg",
   "productName": "Stick RPG",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Stick RPG: a stickman hero, waves of monsters, villages, bosses and eight biomes.",
   "main": "main.js",
   "private": true,
@@ -9,10 +9,12 @@
   "scripts": {
     "start": "electron .",
     "selftest": "node build/selftest.js",
-    "pack": "node build/pack.js"
+    "pack": "node build/pack.js",
+    "installer": "node build/installer.js"
   },
   "devDependencies": {
     "@electron/packager": "^20.3.0",
-    "electron": "^44.5.1"
+    "electron": "^44.5.1",
+    "electron-builder": "^26.18.0"
   }
 }
